@@ -1,0 +1,1 @@
+This directory contains Matlab scripts and simulink models used to help design the control algorithms used in the FC. Also included are some useful scripts that make use of Matlabs symbollic equation solver which were used to design the attitude observer.
