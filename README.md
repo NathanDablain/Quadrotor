@@ -1,12 +1,13 @@
 Modeling, design, and implementation of an autonomous quadrotor on the AVR128DB48 MCU from Microchip. Consult the Bill of Materials (BOM) within the References folder for a detailed description of components as well as where they can be purchased from. The same PCB was used for both the Flight Controller (FC) and the Ground Controller (GC), if purchasing from JLCPCB the minimum required quantity of PCBs is two so this build makes use of both of them. Beyond the materials included in the BOM, the following tools are required to make the quadrotor:<br/>
 <br/>
+
 | Tool           | Recommendation    |
 |----------------|-------------------|
 | ISP            | Atmel ICE         |
 | Soldering Iron | X-Tronic 3020-XTS |
 <br/>
-The following toolchain was used to build the binary:<br/>
 <br/>
+
 | Component | Tool Used        | Version  |
 |-----------|------------------|----------|
 | IDE       | Microchip Studio | 7.0.2594 |
