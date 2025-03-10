@@ -42,7 +42,7 @@ void Run_Motors(unsigned int Throttle_Commands[4]){
 	unsigned int mapped_throttle_commands[4] = {0};
 	// Map commands, saturate if out of bounds
 	for (unsigned char i=0;i<4;i++){
-		Throttle_Commands[i] = (Throttle_Commands[i]>100)?100:Throttle_Commands[i];
+		Throttle_Commands[i] = (Throttle_Commands[i]>1000)?1000:Throttle_Commands[i];
 		mapped_throttle_commands[i] = motor_lookup[Throttle_Commands[i]];
 	}
 	// Set motor throttles
@@ -65,6 +65,33 @@ ISR(TCA0_CMP0_vect){
 	PORTD_OUT &= ~PIN0_bm;
 	// Clear int flag
 	TCA0_SINGLE_INTFLAGS |= TCA_SINGLE_CMP0_bm;
-	// Disable timer
-	TCA0_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
+	// If the three motors using TCA0 are updated, disable timer
+	if (!(PORTD_OUT & ~MOTOR_TCA0_bm)) 	TCA0_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
+}
+
+ISR(TCA0_CMP1_vect){
+	// Set pin low
+	PORTD_OUT &= ~PIN1_bm;
+	// Clear int flag
+	TCA0_SINGLE_INTFLAGS |= TCA_SINGLE_CMP1_bm;
+	// If the three motors using TCA0 are updated, disable timer
+	if (!(PORTD_OUT & ~MOTOR_TCA0_bm)) 	TCA0_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
+}
+
+ISR(TCA0_CMP2_vect){
+	// Set pin low
+	PORTD_OUT &= ~PIN2_bm;
+	// Clear int flag
+	TCA0_SINGLE_INTFLAGS |= TCA_SINGLE_CMP2_bm;
+	// If the three motors using TCA0 are updated, disable timer
+	if (!(PORTD_OUT & ~MOTOR_TCA0_bm)) 	TCA0_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
+}
+
+ISR(TCA1_CMP0_vect){
+	// Set pin low
+	PORTD_OUT &= ~PIN3_bm;
+	// Clear int flag
+	TCA1_SINGLE_INTFLAGS |= TCA_SINGLE_CMP0_bm;
+	// Only motor 4 uses TCA1, so disable timer
+	TCA1_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
 }

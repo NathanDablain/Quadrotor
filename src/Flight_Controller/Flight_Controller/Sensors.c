@@ -17,7 +17,7 @@ unsigned char Setup_Bar(){
 
 unsigned char Read_Bar(States *Drone){
 	static unsigned long pressure_window[BAR_WINDOW_SIZE];
-	static unsigned char window_counter = 0;
+	static unsigned char window_counter;
 	unsigned char Read_status = 0;
 	unsigned char Data[3] = {0};
 	Read_status = Read_SPI(PORT_BAR, CS_BAR, (BAR_DATA_START|0x80), Data, sizeof(Data));
@@ -68,9 +68,10 @@ unsigned char Setup_IMU(){
 }
 
 unsigned char Read_IMU(States *Drone){
-	static signed int a_xyz_window[3][IMU_WINDOW_SIZE];
-	static signed int w_xyz_window[3][IMU_WINDOW_SIZE];
-	static signed int w_bias[3] = {0};
+	static signed int 
+		a_xyz_window[3][IMU_WINDOW_SIZE],
+		w_xyz_window[3][IMU_WINDOW_SIZE],
+		w_bias[3];
 	static unsigned char window_counter = 0;
 	unsigned char Read_status = 0;
 	
@@ -130,11 +131,12 @@ unsigned char  Setup_Mag(){
 }
 
 unsigned char Read_Mag(States *Drone){
-	static signed int m_xyz_window[3][MAG_WINDOW_SIZE];
-	static signed int m_max[3] = {0};
-	static signed int m_min[3] = {0};
-	static signed int hard_iron[3] = {0};
-	static unsigned char window_counter = 0;
+	static signed int 
+		m_xyz_window[3][MAG_WINDOW_SIZE],
+		m_max[3],
+		m_min[3],
+		hard_iron[3];
+	static unsigned char window_counter;
 	unsigned char Read_status = 0;
 	
 	unsigned char Data[6] = {0};
@@ -185,8 +187,8 @@ unsigned char Read_Mag(States *Drone){
 }
 
 // GPS CODE
-volatile char g_GPS_Data[256] = {0};
-volatile unsigned char g_GPS_Data_Index = 0;
+static volatile char g_GPS_Data[256];
+static volatile unsigned char g_GPS_Data_Index;
 volatile unsigned char g_GPS_Read_Flag = 0;
 
 unsigned char Setup_GPS(){
@@ -262,19 +264,24 @@ unsigned char Setup_GPS(){
 }
 
 unsigned char Read_GPS(States *Drone){
-	static signed long Latitude_window[GPS_WINDOW_SIZE] = {0};
-	static signed long Longitude_window[GPS_WINDOW_SIZE] = {0};
-    static char GPS_Position_Status;
-	static char GPS_Position_Mode;
-	static unsigned char window_counter = 0;
-	
-	unsigned char i = 0;
-	unsigned char j = 0;
-	signed char start_index = -1;
-	signed char end_index = -1;
-	signed char comma_indices[13] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
-	char GPS_Data[100] = {0};
-	char Check_Sum[2] = {0};
+	static signed long 
+		Latitude_window[GPS_WINDOW_SIZE],
+		Longitude_window[GPS_WINDOW_SIZE];
+    static char 
+		GPS_Position_Status,
+		GPS_Position_Mode;
+	static unsigned char 
+		window_counter;
+	unsigned char 
+		i = 0,
+		j = 0;
+	signed char 
+		start_index = -1,
+		end_index = -1,
+		comma_indices[13] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
+	char 
+		GPS_Data[100] = {0},
+		Check_Sum[2] = {0};
 	
 	while(i != g_GPS_Data_Index){
 		if (g_GPS_Data[i] == 36){start_index = i;}
@@ -373,12 +380,13 @@ unsigned char Read_GPS(States *Drone){
 
 unsigned char LLA_to_NED(signed long Latitude, signed long Longitude, float Height, float Position_NED[3]){
 	// First convert LLA -> ECEF using WGS 84
-	const float a = 6378137.0; // Earth Equatorial Radius (m)
-	const float b = 6356752.3142; // Earth Polar Radius (m)
-	const float e = (pow(a,2)-pow(b,2))/pow(a,2); // Eccentricity
-	const float c1 = 0.9;
-	const float c2 = 1.0-c1;
-	static float Reference_Position_ecef[3] = {0};
+	const float 
+		a = 6378137.0, // Earth Equatorial Radius (m)
+		b = 6356752.3142, // Earth Polar Radius (m)
+		e = (pow(a,2)-pow(b,2))/pow(a,2), // Eccentricity
+		c1 = 0.9,
+		c2 = 1.0-c1;
+	static float Reference_Position_ecef[3];
 	float Position_ecef[3];
 	static unsigned char reference_flag = 0;
 	
@@ -432,10 +440,11 @@ ISR(USART3_RXC_vect){
 
 // OBSERVER CODE
 void Observer(States *Drone){
-	const float L = 0.05; // Observer gain, increasing the gain increases the trust on the model(gyro),
+	const float 
+		L = 0.05, // Observer gain, increasing the gain increases the trust on the model(gyro),
 	// and decreasing it increases the trust on the measurement (accelerometer and magnetometer)
-	const float dt = 0.04; // Time between integrations
-	const float Gimbal_Lock_Check_Angle = 5.0*D2R;
+		dt = 0.04, // Time between integrations
+		Gimbal_Lock_Check_Angle = 5.0*D2R;
 	// Measure
 	
 	float phi_m = atan2f(Drone->g_vec[1], Drone->g_vec[2]);

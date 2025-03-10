@@ -27,7 +27,8 @@ extern volatile unsigned long g_seconds;
 // Function Declarations
 unsigned char 
 	Setup();
-void 
+void
+	Setup_Timers(),
 	Run(unsigned char Setup_Bitmask),
 	Delay(unsigned long long length);
 
@@ -57,37 +58,5 @@ typedef struct{
 #include "SSD.h"
 #include "LoRa.h"
 #include "Motors.h"
-
-inline void Setup_Timers(){
-	//-Setup Real Time Clock for keeping track of total run time-//
-	RTC_CTRLA |= RTC_CORREN_bm | RTC_RTCEN_bm;
-	RTC_INTCTRL |= RTC_CMP_bm;
-	RTC_CMP = 32768;
-	//----------------------------------------------------------//
-	//--------Setup Timer/Counter A0 for output compare---------//
-	// Is triggered every 10 ms, is used by:
-	//  -> Motors
-	TCA0_SINGLE_CTRLA |= TCA_SINGLE_CLKSEL_DIV8_gc;
-	TCA0_SINGLE_INTCTRL |= TCA_SINGLE_CMP0_bm;
-	//---------------------------------------------------------//
-	//-------Setup Timer/Counter B0 for output compare---------//
-	// Generates an interrupt every 5 ms, is used by:
-	//  -> Motors running at 100 Hz
-	//	-> Magnetometer running at 100 Hz
-	//  -> Barometer running at 75 Hz
-	//	-> Attitude observer running at 25 Hz
-	//	-> Print statements, variable frequency
-	TCB0_CTRLA |= TCB_ENABLE_bm | TCB_CLKSEL_DIV2_gc; // Enables timer, uses main clock with a prescaler of two
-	TCB0_INTCTRL |= TCB_CAPT_bm; // Enables interrupt on capture
-	TCB0_CCMP = 60000; // Value at which timer generates interrupt and resets
-	//--------------------------------------------------------//
-	//-------Setup Timer/Counter B1 for output compare--------//
-	// Generates an interrupt every 4.807 ms, is used by:
-	//	-> IMU running at 208 Hz
-	TCB1_CTRLA |= TCB_ENABLE_bm | TCB_CLKSEL_DIV2_gc;
-	TCB1_INTCTRL |= TCB_CAPT_bm;
-	TCB1_CCMP = 57693;
-	//-------------------------------------------------------//
-}
 
 #endif

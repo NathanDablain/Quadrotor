@@ -154,8 +154,9 @@ unsigned char Write_TWI(unsigned char Slave_Address, unsigned char Address_Byte,
 
 // LONG RANGE (LORA) CODE
 unsigned char Setup_LoRa(){
-	unsigned char LoRa_Address = 0;
-	unsigned char LoRa_status = 2;
+	unsigned char 
+		LoRa_Address = 0,
+		LoRa_status = 2;
 	LoRa_status &= Read_SPI(PORT_LORA,CS_LORA,0x42,&LoRa_Address,1);
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_OP_MODE|0x80),0b10000000); // Set LoRa mode, still in standby
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_MSB|0x80),0b11100100); // Set frequency to 915 MHz
@@ -275,34 +276,35 @@ inline unsigned char Write_Display_Double(unsigned char Address_Byte, unsigned c
 }
 
 unsigned char Write_Character(char Character_to_write){
-	const unsigned char SSD_space[3] = {0x00, 0x00, 0x00};
-	const unsigned char SSD_dot[3] = {0x00, 0b01000000, 0x00};
-	const unsigned char SSD_dash[3] = {0b00001000, 0b00001000, 0b00001000};
-	const unsigned char SSD_comma[3] = {0b00100000, 0b01100000, 0b00000000};
-	const unsigned char SSD_asterisk[3] = {0b00000010, 0b00000111, 0b00000010};
-	const unsigned char SSD_dollar[5] = {0b01001111, 0b01001001, 0b011111111, 0b01001001, 0b01111001};
-	const unsigned char SSD_0[4] = {0b00111110, 0b01000001, 0b01000001, 0b00111110};
-	const unsigned char SSD_1[3] = {0b01000010, 0b01111111, 0b01000000};
-	const unsigned char SSD_2[4] = {0b01111001, 0b01001001, 0b01001001, 0b01001111};
-	const unsigned char SSD_3[5] = {0b01000001, 0b01001001, 0b01001001, 0b01010101, 0b00110110};
-	const unsigned char SSD_4[5] = {0b00010000, 0b00011000, 0b00010100, 0b00010010, 0b01111111};
-	const unsigned char SSD_5[4] = {0b01001111, 0b01001001, 0b01001001, 0b01111001};
-	const unsigned char SSD_6[5] = {0b00011100, 0b00101010, 0b01001001, 0b00101001, 0b00010000};
-	const unsigned char SSD_7[6] = {0b01000001, 0b00100001, 0b00010001, 0b00001001, 0b00000101, 0b00000011};
-	const unsigned char SSD_8[5] = {0b00010100, 0b00101010, 0b01001001, 0b00101010, 0b00010100};
-	const unsigned char SSD_9[5] = {0b01000110, 0b00101010, 0b00011001, 0b00001010, 0b00000100};
-	const unsigned char SSD_G[5] = {0b00011100, 0b00100010, 0b01010001, 0b01010001, 0b01110010};
-	const unsigned char SSD_N[7] = {0b01111111, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000, 0b01111111};
-	const unsigned char SSD_M[5] = {0b01111111, 0b00000010, 0b00000100, 0b00000010, 0b01111111};
-	const unsigned char SSD_h[4] = {0b01111111, 0b00001000, 0b00001000, 0b01111111};
-	const unsigned char SSD_E[4] = {0b01111111, 0b01001001, 0b01001001, 0b01001001};
-	const unsigned char SSD_L[4] = {0b01111111, 0b01000000, 0b01000000, 0b01000000};
-	const unsigned char SSD_O[4] = {0b00111110, 0b01000001, 0b01000001, 0b00111110};
-	const unsigned char SSD_R[5] = {0b01111111, 0b00001001, 0b00011001, 0b00100110, 0b01000000};
-	const unsigned char SSD_A[7] = {0b01000000, 0b00010000, 0b00010100, 0b00000010, 0b00010100, 0b00010000, 0b01000000};
-	const unsigned char SSD_C[4] = {0b00011100, 0b00100010, 0b01000001, 0b00100010};
-	const unsigned char SSD_F[4] = {0b01111111, 0b00010001, 0b00010001, 0b00000001};
-	const unsigned char SSD_D[4] = {0b01111111, 0b01000001, 0b00100010, 0b00011100};
+	const unsigned char 
+		SSD_space[3] = {0x00, 0x00, 0x00},
+		SSD_dot[3] = {0x00, 0b01000000, 0x00},
+		SSD_dash[3] = {0b00001000, 0b00001000, 0b00001000},
+		SSD_comma[3] = {0b00100000, 0b01100000, 0b00000000},
+		SSD_asterisk[3] = {0b00000010, 0b00000111, 0b00000010},
+		SSD_dollar[5] = {0b01001111, 0b01001001, 0b011111111, 0b01001001, 0b01111001},
+		SSD_0[4] = {0b00111110, 0b01000001, 0b01000001, 0b00111110},
+		SSD_1[3] = {0b01000010, 0b01111111, 0b01000000},
+		SSD_2[4] = {0b01111001, 0b01001001, 0b01001001, 0b01001111},
+		SSD_3[5] = {0b01000001, 0b01001001, 0b01001001, 0b01010101, 0b00110110},
+		SSD_4[5] = {0b00010000, 0b00011000, 0b00010100, 0b00010010, 0b01111111},
+		SSD_5[4] = {0b01001111, 0b01001001, 0b01001001, 0b01111001},
+		SSD_6[5] = {0b00011100, 0b00101010, 0b01001001, 0b00101001, 0b00010000},
+		SSD_7[6] = {0b01000001, 0b00100001, 0b00010001, 0b00001001, 0b00000101, 0b00000011},
+		SSD_8[5] = {0b00010100, 0b00101010, 0b01001001, 0b00101010, 0b00010100},
+		SSD_9[5] = {0b01000110, 0b00101010, 0b00011001, 0b00001010, 0b00000100},
+		SSD_G[5] = {0b00011100, 0b00100010, 0b01010001, 0b01010001, 0b01110010},
+		SSD_N[7] = {0b01111111, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000, 0b01111111},
+		SSD_M[5] = {0b01111111, 0b00000010, 0b00000100, 0b00000010, 0b01111111},
+		SSD_h[4] = {0b01111111, 0b00001000, 0b00001000, 0b01111111},
+		SSD_E[4] = {0b01111111, 0b01001001, 0b01001001, 0b01001001},
+		SSD_L[4] = {0b01111111, 0b01000000, 0b01000000, 0b01000000},
+		SSD_O[4] = {0b00111110, 0b01000001, 0b01000001, 0b00111110},
+		SSD_R[5] = {0b01111111, 0b00001001, 0b00011001, 0b00100110, 0b01000000},
+		SSD_A[7] = {0b01000000, 0b00010000, 0b00010100, 0b00000010, 0b00010100, 0b00010000, 0b01000000},
+		SSD_C[4] = {0b00011100, 0b00100010, 0b01000001, 0b00100010},
+		SSD_F[4] = {0b01111111, 0b00010001, 0b00010001, 0b00000001},
+		SSD_D[4] = {0b01111111, 0b01000001, 0b00100010, 0b00011100};
 	
 	const unsigned char *output;
 	unsigned char output_size;
@@ -426,8 +428,9 @@ unsigned char Write_Character(char Character_to_write){
 }
 
 unsigned char Clear_Display(){
-	unsigned char page = 0;
-	unsigned char Clear_Status = 1;
+	unsigned char 
+		page = 0,
+		Clear_Status = 1;
 	
 	while(1){
 		switch (page){
@@ -473,8 +476,9 @@ unsigned char Clear_Display(){
 }
 
 unsigned char Print_Page(unsigned char page, char *to_print, unsigned char length_to_print){
-	unsigned char counter = 0;
-	unsigned char Print_status = 1;
+	unsigned char 
+		counter = 0,
+		Print_status = 1;
 	Print_status &= Write_Display(0x00);
 	Print_status &= Write_Display(0x10);
 	switch (page){
