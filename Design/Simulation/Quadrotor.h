@@ -1,6 +1,9 @@
 #pragma once
+
 #include <vector>
 #include <cstdlib>
+#include <cstdint>
+#include "Linear_Algebra.hpp"
 
 using namespace std;
 
@@ -29,11 +32,21 @@ class Quadrotor{
         // Final time of simulation in (s)
         double sim_tf;
         // Inertia matrix
-        vector<vector<double>> inertia = {{Ixx, 0.0, 0.0},{0.0, Iyy, 0.0},{0.0, 0.0, Izz}};
+        Mat3 inertia;
         // Forces applied to drone at each time step in North-East-Down coordinate frame (N)
-        vector<double> Forces_NED;
+        Vec3 Forces_NED;
         // Moments applied to drone at each time step in North-East-Down coordinate frame (N-m)
-        vector<double> Moments_NED;
+        Vec3 Moments_NED;
+        // Forces applied to drone at each time step in Forward-Right-Down drone body coordinate frame (N)
+        Vec3 Forces_Body;
+        // Moments applied to drone at each time step in Forward-Right-Down drone body coordinate frame (N-m)
+        Vec3 Moments_Body;
+        // Body linear velocity
+        Vec3 v;
+        // Body angular velocity
+        Vec3 w;
+        // NED to body quaternion
+        Vec q;
         // Current state of the drone according to the MCU, should mirror the performance in src/Flight_Controller
         States MCU;
         // Desired state of the drone, should mirror its counterpart in src/Flight_Controller
@@ -43,4 +56,6 @@ class Quadrotor{
         void
             Update_drone_states(),
             Run_sim();
+        Vec
+            Differential_equation_momentum(Vec &x_in);
 };

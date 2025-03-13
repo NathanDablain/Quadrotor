@@ -4,7 +4,7 @@ OPT = -O0
 #CPPFLAGS = -g $(INCDIRS) $(OPT)
 CPPFLAGS = -g $(OPT)
 
-CPPFILES != find ./ -iname "*.cpp"
+CPPFILES = main.cpp Quadrotor.cpp Environment.cpp
 OBJECTS := $(CPPFILES:.cpp=.o)
 
 BINARY = sim
