@@ -10,7 +10,7 @@ using namespace std;
 #define D2R PI/180.0
 class Environment{
     private:
-        double 
+        double
             lla[3],
             a_c = 6378137.0, // Equator radius, a
             b_c = 6356752.314, // Polar radius, b
@@ -22,7 +22,9 @@ class Environment{
         double
             gravity,
             height,
-            pressure;
+            pressure,
+            ground_stiffness = 1000,
+            ground_damping = ground_stiffness/10.0;
         Environment(double Longitude, double Latitude, double Altitude_MSL);
         void 
             Apply_forces_moments(vector<double> &Forces_NED, vector<double> &Moments_NED);

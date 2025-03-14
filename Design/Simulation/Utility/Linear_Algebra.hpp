@@ -222,6 +222,14 @@ class Vec{
 
             return result;
         }
+
+        double magnitude(){
+            double result = 0.0;
+            for (size_t i = 0; i < data.size(); i++){
+                result += data[i];
+            }
+            return result;
+        }
 };
 
 class Mat{

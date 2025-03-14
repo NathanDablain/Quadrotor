@@ -1,10 +1,9 @@
 CXX = g++
-#INCDIRS = -I Utility -I MCU -I Environment
+INCDIRS = -I Utility #-I MCU -I Environment
 OPT = -O0
-#CPPFLAGS = -g $(INCDIRS) $(OPT)
-CPPFLAGS = -g $(OPT)
+CPPFLAGS = -g $(INCDIRS) $(OPT)
 
-CPPFILES = main.cpp Quadrotor.cpp Environment.cpp
+CPPFILES = main.cpp Quadrotor.cpp Environment.cpp Motor.cpp
 OBJECTS := $(CPPFILES:.cpp=.o)
 
 BINARY = sim
@@ -17,8 +16,8 @@ $(BINARY): $(OBJECTS)
 %.o:%.cpp
 		$(CXX) $(CPPFLAGS) -c -o $@ $^
 
-# %.o:Utility/%.cpp
-# 		$(CXX) $(CPPFLAGS) -c -o $@ $^
+%.o:Utility/%.cpp
+		$(CXX) $(CPPFLAGS) -c -o $@ $^
 
 # %.o:MCU/%.cpp
 # 		$(CXX) $(CPPFLAGS) -c -o $@ $^
