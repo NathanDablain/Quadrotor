@@ -1,8 +1,4 @@
 #include "Quadrotor.h"
-#include "Environment.h"
-#include "Coordinate_Frames.hpp"
-#include <iostream>
-#include <iomanip>
 
 using namespace std;
 
@@ -20,6 +16,8 @@ void Quadrotor::Run_sim(){
     Environment env(-97.06265, 32.79100, 0.0);
 
     while(sim_t < (sim_tf - sim_dt)){
+        env.Update(Position_NED, q);
+
         Run_MCU(env);
 
         Update_drone_forces_moments(env.gravity, env.ground_stiffness, env.ground_damping);
@@ -159,25 +157,25 @@ void Quadrotor::Run_MCU(Environment &env){
     }
 
     // NAVIGATION //
-
+/*
     if (GPS_Read_Flag){
         GPS_Read_Flag = 0;
-        uint8_t GPS_status = Read_GPS(MCU);
+        Read_GPS(MCU, env);
     }
-
+*/
     if (BAR_Read_Flag >= 3){
         BAR_Read_Flag = 0;
-        uint8_t BAR_status = Read_Bar(MCU);
+        Read_Bar(MCU, env);
     }
-
+/*
     if (MAG_Read_Flag >= 2){
         MAG_Read_Flag = 0;
-        uint8_t MAG_status = Read_Mag(MCU);
+        Read_Mag(MCU, env);
     }
 
     if (IMU_Read_Flag){
         IMU_Read_Flag = 0;
-        uint8_t IMU_status = Read_IMU(MCU);
+        Read_IMU(MCU, env);
     }
 
     if (Attitude_Observer_Run_Flag >= 8){
@@ -187,9 +185,9 @@ void Quadrotor::Run_MCU(Environment &env){
 
     if (LoRa_Read_Flag){
         LoRa_Read_Flag = 0;
-        uint8_t LoRa_status = Read_LoRa(Reference);
+        Read_LoRa(Reference, env);
     }
-
+*/
     // GUIDANCE //
 
 
@@ -200,8 +198,33 @@ void Quadrotor::Run_MCU(Environment &env){
     }
 }
 
-uint8_t Quadrotor::Read_Bar(States &mcu){
-    
+void Quadrotor::Read_Bar(States &mcu, Environment &env){
+	static uint32_t pressure_window[BAR_WINDOW_SIZE];
+	static uint8_t window_counter;
+
+    uint32_t pressure_LSB = env.Get_pressure();
+	
+	pressure_window[window_counter++] = pressure_LSB;
+	
+	if (window_counter >= BAR_WINDOW_SIZE){
+		uint32_t pressure_oversampled = 0;
+		for (uint8_t i=0;i<BAR_WINDOW_SIZE;i++){
+			pressure_oversampled += pressure_window[i];
+		}
+		pressure_oversampled >>= 4;
+		mcu.pressure_altitude = Height_Bar(pressure_oversampled);
+		window_counter = 0;
+	}
+	
+}
+
+float Height_Bar(uint32_t pressure_LSB){
+	const float c1 = BAR_TB/BAR_LB;
+	const float c2 = (-BAR_R*BAR_LB)/(BAR_G*BAR_M);
+	
+	float pressure_Pa = ((float)pressure_LSB)*BAR_SENS;
+	float height = c1*(pow(pressure_Pa/BAR_PB,c2)-1.0);
+	return height;
 }
 
 void Quadrotor::Run_Motors(uint16_t motor_throttles[4]){

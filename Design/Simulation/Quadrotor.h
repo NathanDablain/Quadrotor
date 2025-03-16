@@ -3,10 +3,25 @@
 #include <vector>
 #include <cstdlib>
 #include <cstdint>
+#include <iostream>
+#include <iomanip>
 #include "Linear_Algebra.hpp"
 #include "Motor.h"
+#include "Environment.h"
+#include "Coordinate_Frames.h"
 
 using namespace std;
+
+#define BAR_SENS 1.0/40.96 // Pa/LSB
+#define BAR_WINDOW_SIZE 16
+#define BAR_TB 288.15 // Standard temperature at sea level (K)
+#define BAR_G 9.8065 // Acceleration due to gravity (m/s^2)
+#define BAR_LB -0.0065 // Standard temperature lapse rate (K/m)
+#define BAR_PB 101325.0 // Standard static pressure at sea level (Pa)
+#define BAR_R 8.31432 // Universal gas constant (J/(mol-K))S
+#define BAR_M 0.0289644 // Molar mass of air (kg/mol)
+
+float Height_Bar(uint32_t pressure_LSB);
 
 struct States{
     float w[3];
@@ -80,13 +95,12 @@ class Quadrotor{
             Run_MCU(Environment &env),
             Run_Motors(uint16_t throttles[4]),
             Observer(States &mcu),
-            Run_sim();
-        uint8_t
-            Read_GPS(States &mcu),
-            Read_Bar(States &mcu),
-            Read_Mag(States &mcu),
-            Read_IMU(States &mcu),
-            Read_LoRa(States &reference);
+            Run_sim(),
+            Read_GPS(States &mcu, Environment &env),
+            Read_Bar(States &mcu, Environment &env),
+            Read_Mag(States &mcu, Environment &env),
+            Read_IMU(States &mcu, Environment &env),
+            Read_LoRa(States &reference, Environment &env);
         Vec
             Differential_equation_momentum(Vec &x_in);
 };
