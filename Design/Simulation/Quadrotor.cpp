@@ -9,6 +9,7 @@ using namespace std;
 Quadrotor::Quadrotor(double Sim_dt, double Sim_tf){
     sim_dt = Sim_dt;
     sim_tf = Sim_tf;
+    sim_t = 0.0;
     inertia.data[0][0] = Ixx;
     inertia.data[1][1] = Iyy;
     inertia.data[2][2] = Izz;
@@ -16,12 +17,11 @@ Quadrotor::Quadrotor(double Sim_dt, double Sim_tf){
 }
 
 void Quadrotor::Run_sim(){
-    double sim_t = 0.0;
     Environment env(-97.06265, 32.79100, 0.0);
-    // Forces_Body = {1.0, 2.0 , 3.0};
-    // Moments_Body = {0.01, 0.02 , 0.03};
 
     while(sim_t < (sim_tf - sim_dt)){
+        Run_MCU(env);
+
         Update_drone_forces_moments(env.gravity, env.ground_stiffness, env.ground_damping);
         
         Update_drone_states();
@@ -52,9 +52,9 @@ void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffn
     // -> Front motor (2) produces positive pitching torque and negative yawing torque
     // -> Right motor (3) produces negative rolling torque and positive yawing torque
     Vec3 motor_moment_Body = {
-        length*(motor_thrusts.data[1] - motor_thrusts.data[3]),
-        length*(motor_thrusts.data[2] - motor_thrusts.data[0]),
-        length*(Motors[1].Get_motor_torque() + Motors[3].Get_motor_torque() - Motors[0].Get_motor_torque() - Motors[2].Get_motor_torque())};
+        length_l_r*(motor_thrusts.data[1] - motor_thrusts.data[3]),
+        length_f_b*(motor_thrusts.data[2] - motor_thrusts.data[0]),
+        length_l_r*(Motors[1].Get_motor_torque() + Motors[3].Get_motor_torque()) - length_f_b*(Motors[0].Get_motor_torque() - Motors[2].Get_motor_torque())};
     // Ground force
     // Model the ground as a lumped parameter model, it has some stiffness and some damping
     Vec3 ground_forces_Body;
@@ -124,4 +124,104 @@ Vec Quadrotor::Differential_equation_momentum(Vec &x_in){
              P_dot.data[0], P_dot.data[1], P_dot.data[2]};
 
     return x_dot;
+}
+
+void Quadrotor::Run_MCU(Environment &env){
+    // This method models the flight controller source code in src/flight_controller
+    static double rtc_timelast, tcb0_timelast, tcb1_timelast, gps_timelast;
+    static uint8_t seconds, LoRa_Read_Flag, Motor_Run_Flag, BAR_Read_Flag, Attitude_Observer_Run_Flag,
+         MAG_Read_Flag, IMU_Read_Flag, GPS_Read_Flag;
+    static uint16_t motor_throttles[4] = {0};
+
+    // Timing
+    if (sim_t - rtc_timelast > rtc_rate){
+        ++seconds;
+        ++LoRa_Read_Flag;
+        rtc_timelast = sim_t;
+    }
+
+    if (sim_t - tcb0_timelast > tcb0_rate){
+        ++Motor_Run_Flag;
+        ++BAR_Read_Flag;
+        ++Attitude_Observer_Run_Flag;
+        ++MAG_Read_Flag;
+        tcb0_timelast = sim_t;
+    }
+    
+    if (sim_t - tcb1_timelast > tcb1_rate){
+        ++IMU_Read_Flag;
+        tcb1_timelast = sim_t;
+    }
+
+    if (sim_t - gps_timelast > gps_rate){
+        ++GPS_Read_Flag;
+        gps_timelast = sim_t;
+    }
+
+    // NAVIGATION //
+
+    if (GPS_Read_Flag){
+        GPS_Read_Flag = 0;
+        uint8_t GPS_status = Read_GPS(MCU);
+    }
+
+    if (BAR_Read_Flag >= 3){
+        BAR_Read_Flag = 0;
+        uint8_t BAR_status = Read_Bar(MCU);
+    }
+
+    if (MAG_Read_Flag >= 2){
+        MAG_Read_Flag = 0;
+        uint8_t MAG_status = Read_Mag(MCU);
+    }
+
+    if (IMU_Read_Flag){
+        IMU_Read_Flag = 0;
+        uint8_t IMU_status = Read_IMU(MCU);
+    }
+
+    if (Attitude_Observer_Run_Flag >= 8){
+        Attitude_Observer_Run_Flag = 0;
+        Observer(MCU);
+    }
+
+    if (LoRa_Read_Flag){
+        LoRa_Read_Flag = 0;
+        uint8_t LoRa_status = Read_LoRa(Reference);
+    }
+
+    // GUIDANCE //
+
+
+    // CONTROL //
+    if (Motor_Run_Flag >= 2){
+        Motor_Run_Flag = 0;
+        Run_Motors(motor_throttles);
+    }
+}
+
+uint8_t Quadrotor::Read_Bar(States &mcu){
+    
+}
+
+void Quadrotor::Run_Motors(uint16_t motor_throttles[4]){
+    static uint16_t motor_lookup[1001] = {0};
+	// Build the lookup table if it hasn't been built yet, enable pins for output
+	if (!(motor_lookup[0])){ 
+		for (uint16_t i=0;i<1001;i++){
+			motor_lookup[i] = 3*i + 3000;
+		}
+	}
+	uint16_t mapped_throttle_commands[4] = {0};
+	// Map commands, saturate if out of bounds
+	for (uint8_t i=0;i<4;i++){
+		motor_throttles[i] = (motor_throttles[i]>1000)?1000:motor_throttles[i];
+		mapped_throttle_commands[i] = motor_lookup[motor_throttles[i]];
+	}
+	// Set motor throttles
+	Motors[0].Send_throttle_command(mapped_throttle_commands[0]); // Motor 0, back
+	Motors[1].Send_throttle_command(mapped_throttle_commands[1]); // Motor 1, left
+	Motors[2].Send_throttle_command(mapped_throttle_commands[2]); // Motor 2, front
+	Motors[3].Send_throttle_command(mapped_throttle_commands[3]); // Motor 3, right
+
 }

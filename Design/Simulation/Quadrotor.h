@@ -24,8 +24,10 @@ class Quadrotor{
     private:
         // Actual mass of drone in (kg)
         double mass = 0.441;
-        // Distance from drone center of gravity to motor thrust vector in (m)
-        double length =  0.1;
+        // Distance from front and back motor thrust vectors to drone center of gravity in (m)
+        double length_f_b =  0.117;
+        // Distance from left and right motor thrust vectors to drone center of gravity in (m)
+        double length_l_r = 0.1205;
         // Actual mass moments of drone in (kg-m^2)
         double Ixx = 0.00149;
         double Iyy = 0.00262;
@@ -34,6 +36,16 @@ class Quadrotor{
         double sim_dt;
         // Final time of simulation in (s)
         double sim_tf;
+        // Current time in simulation in (s)
+        double sim_t;
+        // Step time for MCU Real Time Clock in (s)
+        double rtc_rate = 1.0;
+        // Step time for MCU Timer/Counter B0 in (s)
+        double tcb0_rate = 0.005;
+        // Step time for MCU Timer/Counter B1 in (s)
+        double tcb1_rate = 0.004807;
+        // Step time for GPS transmission in (s)
+        double gps_rate = 0.125;
         // Inertia matrix
         Mat3 inertia;
         // Forces applied to drone at each time step in North-East-Down coordinate frame (N)
@@ -65,7 +77,16 @@ class Quadrotor{
         void
             Update_drone_states(),
             Update_drone_forces_moments(double gravity, double ground_stiffness, double ground_damping),
+            Run_MCU(Environment &env),
+            Run_Motors(uint16_t throttles[4]),
+            Observer(States &mcu),
             Run_sim();
+        uint8_t
+            Read_GPS(States &mcu),
+            Read_Bar(States &mcu),
+            Read_Mag(States &mcu),
+            Read_IMU(States &mcu),
+            Read_LoRa(States &reference);
         Vec
             Differential_equation_momentum(Vec &x_in);
 };
