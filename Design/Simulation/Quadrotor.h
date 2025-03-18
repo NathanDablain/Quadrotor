@@ -5,12 +5,16 @@
 #include <cstdint>
 #include <iostream>
 #include <iomanip>
+#include <fstream>
+#include <iomanip>
 #include "Linear_Algebra.hpp"
 #include "Motor.h"
 #include "Environment.h"
 #include "Coordinate_Frames.h"
 
 using namespace std;
+
+#define LOG(data) (log << setw(20) << data)
 
 #define BAR_SENS 1.0/40.96 // Pa/LSB
 #define BAR_WINDOW_SIZE 16
@@ -20,6 +24,8 @@ using namespace std;
 #define BAR_PB 101325.0 // Standard static pressure at sea level (Pa)
 #define BAR_R 8.31432 // Universal gas constant (J/(mol-K))S
 #define BAR_M 0.0289644 // Molar mass of air (kg/mol)
+
+#define MAG_WINDOW_SIZE 16
 
 float Height_Bar(uint32_t pressure_LSB);
 
@@ -32,6 +38,7 @@ struct States{
     float Position_NED[3];
     int32_t Longitude;
     int32_t Latitude;
+    uint32_t pressure; // Temporary
     float Position_ECEF[3];
 };
 
@@ -96,6 +103,7 @@ class Quadrotor{
             Run_Motors(uint16_t throttles[4]),
             Observer(States &mcu),
             Run_sim(),
+            Log_data(Environment &env),
             Read_GPS(States &mcu, Environment &env),
             Read_Bar(States &mcu, Environment &env),
             Read_Mag(States &mcu, Environment &env),

@@ -15,7 +15,7 @@ Quadrotor::Quadrotor(double Sim_dt, double Sim_tf){
 void Quadrotor::Run_sim(){
     Environment env(-97.06265, 32.79100, 0.0);
 
-    while(sim_t < (sim_tf - sim_dt)){
+    while(sim_t < sim_tf){
         env.Update(Position_NED, q);
 
         Run_MCU(env);
@@ -24,9 +24,37 @@ void Quadrotor::Run_sim(){
         
         Update_drone_states();
 
+        Log_data(env);
+
         sim_t += sim_dt;
     }
     cout << setprecision(8) << "  P0:" << Position_NED.data[0] << "   P1:" << Position_NED.data[1] << "  P2:" << Position_NED.data[2] << endl;
+}
+
+void Quadrotor::Log_data(Environment &env){
+    if (sim_t == 0.0){
+        ofstream log("Sim_log.txt");
+        LOG("Time");
+        LOG("P_n");
+        LOG("P_e");
+        LOG("Height");
+        LOG("Estimated Height");
+        LOG("Pressure");
+        LOG("Estimated Pressure");
+        LOG(endl);
+        log.close();
+    }
+    ofstream log("Sim_log.txt", ios::app);
+    log << setprecision(8);
+    LOG(sim_t);
+    LOG(Position_NED.data[0]);
+    LOG(Position_NED.data[1]);
+    LOG(Position_NED.data[2]);
+    LOG(MCU.pressure_altitude);
+    LOG(env.pressure);
+    LOG(MCU.pressure);
+    LOG(endl);
+    log.close();
 }
 
 void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffness, double ground_damping){
@@ -167,12 +195,12 @@ void Quadrotor::Run_MCU(Environment &env){
         BAR_Read_Flag = 0;
         Read_Bar(MCU, env);
     }
-/*
+
     if (MAG_Read_Flag >= 2){
         MAG_Read_Flag = 0;
         Read_Mag(MCU, env);
     }
-
+/*
     if (IMU_Read_Flag){
         IMU_Read_Flag = 0;
         Read_IMU(MCU, env);
@@ -212,6 +240,7 @@ void Quadrotor::Read_Bar(States &mcu, Environment &env){
 			pressure_oversampled += pressure_window[i];
 		}
 		pressure_oversampled >>= 4;
+        mcu.pressure = pressure_oversampled;
 		mcu.pressure_altitude = Height_Bar(pressure_oversampled);
 		window_counter = 0;
 	}
@@ -225,6 +254,59 @@ float Height_Bar(uint32_t pressure_LSB){
 	float pressure_Pa = ((float)pressure_LSB)*BAR_SENS;
 	float height = c1*(pow(pressure_Pa/BAR_PB,c2)-1.0);
 	return height;
+}
+
+void Quadrotor::Read_Mag(States &mcu, Environment &env){
+    static int16_t 
+        m_xyz_window[3][MAG_WINDOW_SIZE],
+        m_max[3],
+        m_min[3],
+        hard_iron[3];
+    static uint8_t window_counter;
+
+
+    array<int16_t, 3> mag_field = env.Get_magnetic_field();
+
+    for (uint8_t i=0;i<3;i++){
+        m_xyz_window[i][window_counter] = mag_field[i];
+    }
+    window_counter++;
+    if (window_counter >= MAG_WINDOW_SIZE){
+        window_counter = 0;
+        int32_t m_xyz_FIP[3] = {0};
+        for (uint8_t i=0;i<3;i++){
+            for (uint8_t j=0;j<MAG_WINDOW_SIZE;j++){
+                m_xyz_FIP[i] += m_xyz_window[i][j];
+            }
+            m_xyz_FIP[i] >>= 4;
+            if (m_xyz_FIP[i] > m_max[i]){
+                m_max[i] = m_xyz_FIP[i];
+                if (abs(m_max[i])<abs(m_min[i])){
+                    hard_iron[i] = m_min[i]-m_max[i];
+                }
+                else{
+                    hard_iron[i] = m_max[i]-m_min[i];
+                }
+                hard_iron[i] >>= 1;
+            }
+            else if (m_xyz_FIP[i] < m_min[i]){
+                m_min[i] = m_xyz_FIP[i];
+                if (abs(m_max[i])<abs(m_min[i])){
+                    hard_iron[i] = m_min[i]-m_max[i];
+                }
+                else{
+                    hard_iron[i] = m_max[i]-m_min[i];
+                }
+                hard_iron[i] >>= 1;
+            }
+        }
+        if (sim_t > 2.0){
+            mcu.m_vec[0] = ((float)(m_xyz_FIP[1] - hard_iron[1]))/(hard_iron[1]*2.0);
+            mcu.m_vec[1] = -((float)(m_xyz_FIP[0]- hard_iron[0]))/(hard_iron[0]*2.0);
+            mcu.m_vec[2] = ((float)(m_xyz_FIP[2] - hard_iron[2]))/(hard_iron[2]*2.0);
+        }
+    }
+
 }
 
 void Quadrotor::Run_Motors(uint16_t motor_throttles[4]){
