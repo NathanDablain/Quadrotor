@@ -15,6 +15,8 @@ Quadrotor::Quadrotor(double Sim_dt, double Sim_tf){
 void Quadrotor::Run_sim(){
     Environment env(-97.06265, 32.79100, 0.0);
 
+    Calibrate_sensors(env);
+
     while(sim_t < sim_tf){
         env.Update(Position_NED, q);
 
@@ -160,13 +162,13 @@ void Quadrotor::Run_MCU(Environment &env){
     static uint16_t motor_throttles[4] = {0};
 
     // Timing
-    if (sim_t - rtc_timelast > rtc_rate){
+    if (sim_t - rtc_timelast >= rtc_rate){
         ++seconds;
         ++LoRa_Read_Flag;
         rtc_timelast = sim_t;
     }
 
-    if (sim_t - tcb0_timelast > tcb0_rate){
+    if (sim_t - tcb0_timelast >= tcb0_rate){
         ++Motor_Run_Flag;
         ++BAR_Read_Flag;
         ++Attitude_Observer_Run_Flag;
@@ -174,12 +176,12 @@ void Quadrotor::Run_MCU(Environment &env){
         tcb0_timelast = sim_t;
     }
     
-    if (sim_t - tcb1_timelast > tcb1_rate){
+    if (sim_t - tcb1_timelast >= tcb1_rate){
         ++IMU_Read_Flag;
         tcb1_timelast = sim_t;
     }
 
-    if (sim_t - gps_timelast > gps_rate){
+    if (sim_t - gps_timelast >= gps_rate){
         ++GPS_Read_Flag;
         gps_timelast = sim_t;
     }
@@ -307,6 +309,27 @@ void Quadrotor::Read_Mag(States &mcu, Environment &env){
         }
     }
 
+}
+
+void Quadrotor::Calibrate_sensors(Environment &env){
+    // Mat Euler_sequence{3, 8};
+    // Euler_sequence.data = {{0.0,    2.0,  -3.0,  -5.0,  30.0,  60.0, -20.0, 0.0},
+    //                        {0.0,    1.0,  10.0,  30.0, 100.0, -12.0, -45.0, 0.0},
+    //                        {90.0, 120.0, 200.0, 280.0, 170.0,  50.0,  12.0, 0.0}};
+    while(sim_t < cal_t){
+        Run_MCU(env);
+
+        if (sim_t > gyro_cal_t + 0.5){
+            w = {0.5, 0.0, PI};
+        }
+
+        sim_t += sim_dt;
+    }
+
+    Position_NED = {0.0, 0.0, 0.0};
+    w = {0.0, 0.0, 0.0};
+    v = {0.0, 0.0, 0.0};
+    q = {1.0, 0.0, 0.0, 0.0};
 }
 
 void Quadrotor::Run_Motors(uint16_t motor_throttles[4]){

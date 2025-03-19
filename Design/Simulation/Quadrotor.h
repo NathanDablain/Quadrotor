@@ -60,6 +60,10 @@ class Quadrotor{
         double sim_tf;
         // Current time in simulation in (s)
         double sim_t;
+        // Time taken to calibrate drone in (s)
+        double cal_t = 5.0;
+        // Time taken to calibrate gyros in (s)
+        double gyro_cal_t = 2.0;
         // Step time for MCU Real Time Clock in (s)
         double rtc_rate = 1.0;
         // Step time for MCU Timer/Counter B0 in (s)
@@ -103,6 +107,7 @@ class Quadrotor{
             Run_Motors(uint16_t throttles[4]),
             Observer(States &mcu),
             Run_sim(),
+            Calibrate_sensors(Environment &env),
             Log_data(Environment &env),
             Read_GPS(States &mcu, Environment &env),
             Read_Bar(States &mcu, Environment &env),
