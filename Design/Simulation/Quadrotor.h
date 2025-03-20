@@ -27,6 +27,10 @@ using namespace std;
 
 #define MAG_WINDOW_SIZE 16
 
+#define IMU_WINDOW_SIZE 8 // Size of FIR window
+#define GYRO_SENS 500.0/32768.0
+#define ACCEL_SENS 2.0/32768.0
+
 float Height_Bar(uint32_t pressure_LSB);
 
 struct States{

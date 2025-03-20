@@ -39,7 +39,14 @@ uint32_t Environment::Get_pressure(){
 }
 
 array<int16_t, 3> Environment::Get_magnetic_field(){
+    // The magnetometer sensor axis corresponds to the body axis in the following way
+    // -> Body x = Sensor y
+    // -> Body y = -Sensor x
+    // -> Body z = Sensor z
     Vec3 mag_LSB_true = (m_vec_Body + mag_hard_iron)*mag_sens;
+    double temp = mag_LSB_true.data[0];
+    mag_LSB_true.data[0] = mag_LSB_true.data[1];
+    mag_LSB_true.data[1] = -temp;
 
     array<int16_t, 3> mag_noise_LSB;
     for (uint8_t i = 0; i < 3; i++){
@@ -50,4 +57,18 @@ array<int16_t, 3> Environment::Get_magnetic_field(){
     }
 
     return magnetic_field_LSB;
+}
+
+array<int16_t, 3> Environment::Get_angular_rate(){
+    // The gyroscope sensor axis corresponds to the body axis in the following way
+    // -> Body x = -Sensor x
+    // -> Body y = Sensor y
+    // -> Body z = -Sensor z
+}
+
+array<int16_t, 3> Environment::Get_acceleration(){
+    // The accelerometer sensor axis corresponds to the body axis in the following way
+    // -> Body x = Sensor x
+    // -> Body y = -Sensor y
+    // -> Body z = Sensor z
 }

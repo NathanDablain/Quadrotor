@@ -202,7 +202,7 @@ void Quadrotor::Run_MCU(Environment &env){
         MAG_Read_Flag = 0;
         Read_Mag(MCU, env);
     }
-/*
+
     if (IMU_Read_Flag){
         IMU_Read_Flag = 0;
         Read_IMU(MCU, env);
@@ -212,7 +212,7 @@ void Quadrotor::Run_MCU(Environment &env){
         Attitude_Observer_Run_Flag = 0;
         Observer(MCU);
     }
-
+/*
     if (LoRa_Read_Flag){
         LoRa_Read_Flag = 0;
         Read_LoRa(Reference, env);
@@ -311,6 +311,53 @@ void Quadrotor::Read_Mag(States &mcu, Environment &env){
 
 }
 
+void Quadrotor::Read_IMU(States &mcu, Environment &env){
+    static int16_t 
+        a_xyz_window[3][IMU_WINDOW_SIZE],
+        w_xyz_window[3][IMU_WINDOW_SIZE],
+        w_bias[3];
+    static uint8_t window_counter = 0;
+
+    array<int16_t, 3> Data_g = env.Get_acceleration();
+    array<int16_t, 3> Data_w = env.Get_angular_rate();
+
+    for (uint8_t i=0;i<3;i++){
+        a_xyz_window[i][window_counter] = Data_g[i];
+        w_xyz_window[i][window_counter] = Data_w[i];
+    }
+    window_counter++;
+
+    if (window_counter >= IMU_WINDOW_SIZE){
+        window_counter = 0;
+        int32_t a_xyz_FIR[3] = {0};
+        int32_t w_xyz_FIR[3] = {0};
+        for (uint8_t i=0;i<3;i++){
+            for (uint8_t j=0;j<IMU_WINDOW_SIZE;j++){
+                a_xyz_FIR[i] += a_xyz_window[i][j];
+                w_xyz_FIR[i] += w_xyz_window[i][j];
+            }
+            a_xyz_FIR[i] >>= 3;
+            w_xyz_FIR[i] >>= 3;
+        }
+        // Flip positive directions on Gyro x and z axis and Accelerometer y axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
+        if (sim_t < 1.0){
+            w_bias[0] = -w_xyz_FIR[0];
+            w_bias[1] = w_xyz_FIR[1];
+            w_bias[2] = -w_xyz_FIR[2];
+        }
+        int32_t w_diff[3] = {-w_xyz_FIR[0]-w_bias[0],
+                              w_xyz_FIR[1]-w_bias[1], 
+                             -w_xyz_FIR[2]-w_bias[2]};
+        for (uint8_t i=0;i<3;i++){
+            mcu.w[i] = ((float)w_diff[i])*GYRO_SENS*D2R;
+        }
+        mcu.g_vec[0] = ((float)a_xyz_FIR[0])*ACCEL_SENS;
+        mcu.g_vec[1] = ((float)-a_xyz_FIR[1])*ACCEL_SENS;
+        mcu.g_vec[2] = ((float)a_xyz_FIR[2])*ACCEL_SENS;
+    }
+
+}
+
 void Quadrotor::Calibrate_sensors(Environment &env){
     // Mat Euler_sequence{3, 8};
     // Euler_sequence.data = {{0.0,    2.0,  -3.0,  -5.0,  30.0,  60.0, -20.0, 0.0},
@@ -330,6 +377,48 @@ void Quadrotor::Calibrate_sensors(Environment &env){
     w = {0.0, 0.0, 0.0};
     v = {0.0, 0.0, 0.0};
     q = {1.0, 0.0, 0.0, 0.0};
+}
+
+void Quadrotor::Observer(States &mcu){
+    const float 
+		L = 0.05, // Observer gain, increasing the gain increases the trust on the model(gyro),
+	// and decreasing it increases the trust on the measurement (accelerometer and magnetometer)
+		dt = 0.04, // Time between integrations
+		Gimbal_Lock_Check_Angle = 5.0*D2R;
+	// Measure
+	
+	float phi_m = atan2f(mcu.g_vec[1], mcu.g_vec[2]);
+	if (isnan(phi_m)){
+		phi_m = mcu.Euler[0];
+	}
+	float theta_m = atan2f(-mcu.g_vec[0], sqrt(pow(mcu.g_vec[1],2) + pow(mcu.g_vec[2],2)));
+	if (isnan(theta_m)){
+		theta_m = mcu.Euler[1];
+	}
+	float mag_x_NED = cosf(mcu.Euler[1])*mcu.m_vec[0] + sinf(mcu.Euler[0])*sinf(mcu.Euler[1])*mcu.m_vec[1] + cosf(mcu.Euler[0])*sinf(mcu.Euler[1])*mcu.m_vec[2];
+	float mag_y_NED = cosf(mcu.Euler[0])*mcu.m_vec[1] - sinf(mcu.Euler[0])*mcu.m_vec[2];
+	float psi_m = -atan2f(mag_y_NED, mag_x_NED);
+	if (isnan(psi_m)){
+		psi_m = mcu.Euler[2];
+	}
+	if (psi_m <= 0){
+		psi_m += 2.0*PI;
+	}
+	
+	// Predict
+	float phi_hat = mcu.Euler[0];
+	float theta_hat = mcu.Euler[1];
+	float psi_hat = mcu.Euler[2];
+	if (abs(abs(mcu.Euler[1]) - PI_2) > Gimbal_Lock_Check_Angle){
+		phi_hat += (mcu.w[0] + sinf(mcu.Euler[0])*tanf(mcu.Euler[1])*mcu.w[1] + cosf(mcu.Euler[0])*tanf(mcu.Euler[1])*mcu.w[2])*dt;
+		theta_hat += (cosf(mcu.Euler[0])*mcu.w[1] - sinf(mcu.Euler[0])*mcu.w[2])*dt;
+		psi_hat += ((sinf(mcu.Euler[0])/cosf(mcu.Euler[1]))*mcu.w[1] + (cosf(mcu.Euler[0])/cosf(mcu.Euler[1]))*mcu.w[2])*dt;
+	}
+	// Update
+	mcu.Euler[0] = phi_hat + L*(phi_m-phi_hat);
+	mcu.Euler[1] = theta_hat + L*(theta_m-theta_hat);
+	// Prevent yaw angle discontinuity at 2pi - 0 to cause the filter to slowly cycle between them
+	mcu.Euler[2] = (abs(psi_m-psi_hat)>PI)?(psi_m):(psi_hat + L*(psi_m-psi_hat));
 }
 
 void Quadrotor::Run_Motors(uint16_t motor_throttles[4]){

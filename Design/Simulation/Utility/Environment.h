@@ -9,6 +9,7 @@
 using namespace std;
 
 #define PI 3.14159265358979311600
+#define PI_2 PI/2.0
 #define D2R PI/180.0
 class Environment{
     private:
@@ -67,10 +68,10 @@ class Environment{
             ground_stiffness = 1000.0,
             ground_damping = ground_stiffness/10.0;
         // The below are SENSED variables, they are read by the flight controllers sensors
-        uint32_t 
-            pressure_LSB;
-        array<int16_t, 3>
-            magnetic_field_LSB;
+        uint32_t pressure_LSB;
+        array<int16_t, 3> magnetic_field_LSB;
+        array<int16_t, 3> angular_rate_LSB;
+        array<int16_t, 3> acceleration_LSB;
         // Methods
         Environment(double Longitude, double Latitude, double Altitude_MSL);
         void 
@@ -78,5 +79,7 @@ class Environment{
         uint32_t
             Get_pressure();
         array<int16_t, 3> 
-            Get_magnetic_field();
+            Get_magnetic_field(),
+            Get_angular_rate(),
+            Get_acceleration();
 };
