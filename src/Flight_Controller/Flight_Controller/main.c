@@ -1,14 +1,17 @@
 #include "main.h"
 
 // Global variables
-static volatile unsigned char g_Motor_Run_Flag = 0;
-static volatile unsigned char g_MAG_Read_Flag = 0;
-static volatile unsigned char g_BAR_Read_Flag = 0;
-static volatile unsigned char g_Attitude_Observer_Run_Flag = 0;
-static volatile unsigned char g_Print_Flag = 0;
-static volatile unsigned char g_IMU_Read_Flag = 0;
-static volatile unsigned char g_LoRa_Flag = 0;
-volatile unsigned long g_seconds = 0;
+static volatile unsigned char 
+	g_Motor_Run_Flag,
+	g_MAG_Read_Flag,
+	g_BAR_Read_Flag, 
+	g_Attitude_Observer_Run_Flag, 
+	g_Print_Flag,g_IMU_Read_Flag,
+	g_LoRa_Flag;
+volatile unsigned int
+	g_esc_current = 0;
+volatile unsigned long 
+	g_seconds = 0;
 
 int main(){
 	unsigned char Setup_Bitmask = Setup();
@@ -46,9 +49,43 @@ unsigned char Setup(){
 	return Setup_Bitmask;
 }
 
+void Setup_Timers(){
+	//-Setup Real Time Clock for keeping track of total run time-//
+	RTC_CTRLA |= RTC_CORREN_bm | RTC_RTCEN_bm;
+	RTC_INTCTRL |= RTC_CMP_bm;
+	RTC_CMP = 32768;
+	//----------------------------------------------------------//
+	//--------Setup Timer/Counter A0 for output compare---------//
+	// Is triggered every 10 ms, is used by:
+	//  -> Motors
+	TCA0_SINGLE_CTRLA |= TCA_SINGLE_CLKSEL_DIV8_gc;
+	TCA0_SINGLE_INTCTRL |= TCA_SINGLE_CMP0_bm | TCA_SINGLE_CMP1_bm | TCA_SINGLE_CMP2_bm;
+	TCA1_SINGLE_INTCTRL |= TCA_SINGLE_CMP0_bm;
+	//---------------------------------------------------------//
+	//-------Setup Timer/Counter B0 for output compare---------//
+	// Generates an interrupt every 5 ms, is used by:
+	//  -> Motors running at 100 Hz
+	//	-> Magnetometer running at 100 Hz
+	//  -> Barometer running at 75 Hz
+	//	-> Attitude observer running at 25 Hz
+	//	-> Print statements, variable frequency
+	TCB0_CTRLA |= TCB_ENABLE_bm | TCB_CLKSEL_DIV2_gc; // Enables timer, uses main clock with a prescaler of two
+	TCB0_INTCTRL |= TCB_CAPT_bm; // Enables interrupt on capture
+	TCB0_CCMP = 60000; // Value at which timer generates interrupt and resets
+	//--------------------------------------------------------//
+	//-------Setup Timer/Counter B1 for output compare--------//
+	// Generates an interrupt every 4.807 ms, is used by:
+	//	-> IMU running at 208 Hz
+	TCB1_CTRLA |= TCB_ENABLE_bm | TCB_CLKSEL_DIV2_gc;
+	TCB1_INTCTRL |= TCB_CAPT_bm;
+	TCB1_CCMP = 57693;
+	//-------------------------------------------------------//
+}
+
 void Run(unsigned char Setup_Bitmask){
-	static States Drone = {0};
-	static States Reference = {0};
+	static States
+		Drone,
+		Reference;
 	static unsigned int motor_throttles[4] = {0};
 	
 	// NAVIGATION //
@@ -86,12 +123,13 @@ void Run(unsigned char Setup_Bitmask){
 		Observer(&Drone);
 	}
 	
-	if (g_LoRa_Flag){
+	if (g_LoRa_Flag >= 20){
 		g_LoRa_Flag = 0;
-		motor_throttles[0] = Read_LoRa(&Reference);
-		char buffer[5] = {0};
-		unsigned char length_to_print = snprintf(buffer, sizeof(buffer), "%d", motor_throttles[0]);
-		Print_Page(3, buffer, length_to_print);
+		unsigned int motor_throttle = Read_LoRa(&Reference);
+		motor_throttles[3] = motor_throttle;
+		char buffer3[15] = {0};
+		unsigned char length_to_print = snprintf(buffer3, sizeof(buffer3), "%d", motor_throttle);
+		Print_Page(3, buffer3, length_to_print);
 		//Navigation_Bitmask = SET_BIT(Navigation_Bitmask, NAV_LORA_bp, LoRa_status);
 	}
 	
@@ -130,11 +168,12 @@ void Delay(unsigned long long length){
 
 ISR(RTC_CNT_vect){
 	++g_seconds;
-	++g_LoRa_Flag;
+	//++g_LoRa_Flag;
 	RTC_INTFLAGS = RTC_CMP_bm;
 }
 
 ISR(TCB0_INT_vect){
+	++g_LoRa_Flag;
 	++g_Motor_Run_Flag;
 	++g_Print_Flag;
 	++g_BAR_Read_Flag;
