@@ -45,7 +45,6 @@ unsigned char Setup(){
 	Setup_Bitmask |= (GPS_setup_status<<NAV_GPS_bp) | (BAR_setup_status<<NAV_BAR_bp) | (IMU_setup_status<<NAV_IMU_bp) | (MAG_setup_status<<NAV_MAG_bp)
 					 | (LoRa_setup_status<<NAV_LORA_bp) | (SSD_setup_status<<SU_SSD_bp);
 	Setup_Timers();
-	Setup_ADC();
 	sei();
 	return Setup_Bitmask;
 }
@@ -60,7 +59,8 @@ void Setup_Timers(){
 	// Is triggered every 10 ms, is used by:
 	//  -> Motors
 	TCA0_SINGLE_CTRLA |= TCA_SINGLE_CLKSEL_DIV8_gc;
-	TCA0_SINGLE_INTCTRL |= TCA_SINGLE_CMP0_bm;
+	TCA0_SINGLE_INTCTRL |= TCA_SINGLE_CMP0_bm | TCA_SINGLE_CMP1_bm | TCA_SINGLE_CMP2_bm;
+	TCA1_SINGLE_INTCTRL |= TCA_SINGLE_CMP0_bm;
 	//---------------------------------------------------------//
 	//-------Setup Timer/Counter B0 for output compare---------//
 	// Generates an interrupt every 5 ms, is used by:
@@ -80,24 +80,6 @@ void Setup_Timers(){
 	TCB1_INTCTRL |= TCB_CAPT_bm;
 	TCB1_CCMP = 57693;
 	//-------------------------------------------------------//
-}
-
-void Setup_ADC(){
-	// Current sensor is on PD6, AIN6
-	// Set voltage reference
-	VREF_ADC0REF |= VREF_REFSEL_VDD_gc;
-	// Enable ADC
-	ADC0_CTRLA |= ADC_ENABLE_bm;
-	// Connect AIN6 to positive input of ADC
-	ADC0_MUXPOS |= ADC_MUXPOS_AIN6_gc;
-	// Connect ground to negative input of ADC
-	ADC0_MUXNEG |= ADC_MUXNEG_GND_gc;
-	// Enable interrupt on result ready
-	ADC0_INTCTRL |= ADC_RESRDY_bm; 
-}
-
-ISR(ADC0_RESRDY_vect){
-	g_esc_current = ADC0_RES;
 }
 
 void Run(unsigned char Setup_Bitmask){
@@ -141,10 +123,13 @@ void Run(unsigned char Setup_Bitmask){
 		Observer(&Drone);
 	}
 	
-	if (g_LoRa_Flag){
+	if (g_LoRa_Flag >= 20){
 		g_LoRa_Flag = 0;
-		motor_throttles[0] = Read_LoRa(&Reference);
-		ADC0_COMMAND |= ADC_STCONV_bm;
+		unsigned int motor_throttle = Read_LoRa(&Reference);
+		motor_throttles[3] = motor_throttle;
+		char buffer3[15] = {0};
+		unsigned char length_to_print = snprintf(buffer3, sizeof(buffer3), "%d", motor_throttle);
+		Print_Page(3, buffer3, length_to_print);
 		//Navigation_Bitmask = SET_BIT(Navigation_Bitmask, NAV_LORA_bp, LoRa_status);
 	}
 	
@@ -153,15 +138,12 @@ void Run(unsigned char Setup_Bitmask){
 		char buffer0[10] = {0};
 		char buffer1[10] = {0};
 		char buffer2[15] = {0};
-		char buffer3[15] = {0};
 		unsigned char length_to_print = snprintf(buffer0, sizeof(buffer0), "%3.2f", Drone.Euler[0]);
 		Print_Page(0, buffer0, length_to_print);
 		length_to_print = snprintf(buffer1, sizeof(buffer1), "%3.2f", Drone.Euler[1]);
 		Print_Page(1, buffer1, length_to_print);
-		length_to_print = snprintf(buffer2, sizeof(buffer2), "%d", g_esc_current);
+		length_to_print = snprintf(buffer2, sizeof(buffer2), "%3.2f", Drone.Euler[2]);
 		Print_Page(2, buffer2, length_to_print);
-		length_to_print = snprintf(buffer3, sizeof(buffer3), "%d", motor_throttles[0]);
-		Print_Page(3, buffer3, length_to_print);
 	}
 	
 	// GUIDANCE //
@@ -186,11 +168,12 @@ void Delay(unsigned long long length){
 
 ISR(RTC_CNT_vect){
 	++g_seconds;
-	++g_LoRa_Flag;
+	//++g_LoRa_Flag;
 	RTC_INTFLAGS = RTC_CMP_bm;
 }
 
 ISR(TCB0_INT_vect){
+	++g_LoRa_Flag;
 	++g_Motor_Run_Flag;
 	++g_Print_Flag;
 	++g_BAR_Read_Flag;

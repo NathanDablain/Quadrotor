@@ -7,14 +7,17 @@
 #include <iomanip>
 #include <fstream>
 #include <iomanip>
-#include "Linear_Algebra.hpp"
+#include "Linear_Algebra.h"
 #include "Motor.h"
 #include "Environment.h"
 #include "Coordinate_Frames.h"
 
 using namespace std;
 
-#define LOG(data) (log << setw(20) << data)
+#define STANDARD_WIDTH 20
+#define LOG_SIM(data) (log_sim << setw(STANDARD_WIDTH) << data)
+#define LOG_MCU(data) (log_mcu << setw(STANDARD_WIDTH) << data)
+
 
 #define BAR_SENS 1.0/40.96 // Pa/LSB
 #define BAR_WINDOW_SIZE 16
@@ -42,7 +45,7 @@ struct States{
     float Position_NED[3];
     int32_t Longitude;
     int32_t Latitude;
-    uint32_t pressure; // Temporary
+    float pressure; // Temporary
     float Position_ECEF[3];
 };
 
@@ -119,5 +122,5 @@ class Quadrotor{
             Read_IMU(States &mcu, Environment &env),
             Read_LoRa(States &reference, Environment &env);
         Vec
-            Differential_equation_momentum(Vec &x_in);
+            Differential_equation_momentum(Vec x_in);
 };

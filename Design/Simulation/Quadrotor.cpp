@@ -35,28 +35,66 @@ void Quadrotor::Run_sim(){
 
 void Quadrotor::Log_data(Environment &env){
     if (sim_t == 0.0){
-        ofstream log("Sim_log.txt");
-        LOG("Time");
-        LOG("P_n");
-        LOG("P_e");
-        LOG("Height");
-        LOG("Estimated Height");
-        LOG("Pressure");
-        LOG("Estimated Pressure");
-        LOG(endl);
-        log.close();
+        ofstream log_sim("Sim_log.txt");
+        LOG_SIM("Time");
+        LOG_SIM("P_n");
+        LOG_SIM("P_e");
+        LOG_SIM("Height");
+        LOG_SIM("Pressure");
+        LOG_SIM("Roll");
+        LOG_SIM("Pitch");
+        LOG_SIM("Yaw");
+        LOG_SIM("w_x");
+        LOG_SIM("w_y");
+        LOG_SIM("w_z");
+        LOG_SIM(endl);
+        log_sim.close();
+        ofstream log_mcu("MCU_log.txt");
+        LOG_MCU("Time");
+        LOG_MCU("P_n");
+        LOG_MCU("P_e");
+        LOG_MCU("Height");
+        LOG_MCU("Pressure");
+        LOG_MCU("Roll");
+        LOG_MCU("Pitch");
+        LOG_MCU("Yaw");
+        LOG_MCU("w_x");
+        LOG_MCU("w_y");
+        LOG_MCU("w_z");
+        LOG_MCU(endl);
+        log_mcu.close();
     }
-    ofstream log("Sim_log.txt", ios::app);
-    log << setprecision(8);
-    LOG(sim_t);
-    LOG(Position_NED.data[0]);
-    LOG(Position_NED.data[1]);
-    LOG(Position_NED.data[2]);
-    LOG(MCU.pressure_altitude);
-    LOG(env.pressure);
-    LOG(MCU.pressure);
-    LOG(endl);
-    log.close();
+    ofstream log_sim("Sim_log.txt", ios::app);
+    log_sim << setprecision(8);
+    LOG_SIM(sim_t);
+    LOG_SIM(Position_NED.data[0]);
+    LOG_SIM(Position_NED.data[1]);
+    LOG_SIM(Position_NED.data[2]);
+    LOG_SIM(env.pressure);
+    LOG_SIM(Euler.data[0]);
+    LOG_SIM(Euler.data[1]);
+    LOG_SIM(Euler.data[2]);
+    LOG_SIM(w.data[0]);
+    LOG_SIM(w.data[1]);
+    LOG_SIM(w.data[2]);
+    LOG_SIM(endl);
+    log_sim.close();
+    ofstream log_mcu("MCU_log.txt", ios::app);
+    log_mcu << setprecision(8);
+    LOG_MCU(sim_t);
+    LOG_MCU(MCU.Position_NED[0]);
+    LOG_MCU(MCU.Position_NED[1]);
+    LOG_MCU(MCU.Position_NED[2]);
+    LOG_MCU(MCU.pressure);
+    LOG_MCU(MCU.Euler[0]);
+    // LOG_MCU(MCU.Euler[1]);
+    log_mcu << setw(STANDARD_WIDTH) << MCU.Euler[1];
+    LOG_MCU(MCU.Euler[2]);
+    LOG_MCU(w.data[0]);
+    LOG_MCU(w.data[1]);
+    LOG_MCU(w.data[2]);
+    LOG_MCU(endl);
+    log_mcu.close();
 }
 
 void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffness, double ground_damping){
@@ -123,7 +161,7 @@ void Quadrotor::Update_drone_states(){
              atan2( 2.0*(q.data[0]*q.data[3] + q.data[1]*q.data[2]) , 1.0 - 2.0*(pow(q.data[2],2) + pow(q.data[3],2)) )};
 }
 
-Vec Quadrotor::Differential_equation_momentum(Vec &x_in){
+Vec Quadrotor::Differential_equation_momentum(Vec x_in){
     // Rigid body momentum equations in a rotating coordinate frame, feedback
     // incorporated in quaternion equation to maintain magnitude 1
     // v_dot = F/m - w x v
@@ -242,7 +280,7 @@ void Quadrotor::Read_Bar(States &mcu, Environment &env){
 			pressure_oversampled += pressure_window[i];
 		}
 		pressure_oversampled >>= 4;
-        mcu.pressure = pressure_oversampled;
+        mcu.pressure = static_cast<float>(pressure_oversampled)*BAR_SENS;
 		mcu.pressure_altitude = Height_Bar(pressure_oversampled);
 		window_counter = 0;
 	}
@@ -318,8 +356,8 @@ void Quadrotor::Read_IMU(States &mcu, Environment &env){
         w_bias[3];
     static uint8_t window_counter = 0;
 
-    array<int16_t, 3> Data_g = env.Get_acceleration();
-    array<int16_t, 3> Data_w = env.Get_angular_rate();
+    array<int16_t, 3> Data_g = env.Get_acceleration(v, (1.0/208.0), q);
+    array<int16_t, 3> Data_w = env.Get_angular_rate(w);
 
     for (uint8_t i=0;i<3;i++){
         a_xyz_window[i][window_counter] = Data_g[i];
@@ -359,12 +397,19 @@ void Quadrotor::Read_IMU(States &mcu, Environment &env){
 }
 
 void Quadrotor::Calibrate_sensors(Environment &env){
-    // Mat Euler_sequence{3, 8};
-    // Euler_sequence.data = {{0.0,    2.0,  -3.0,  -5.0,  30.0,  60.0, -20.0, 0.0},
-    //                        {0.0,    1.0,  10.0,  30.0, 100.0, -12.0, -45.0, 0.0},
-    //                        {90.0, 120.0, 200.0, 280.0, 170.0,  50.0,  12.0, 0.0}};
+
     while(sim_t < cal_t){
+        Position_NED = {0.0, 0.0, -0.5};
+
+        env.Update(Position_NED, q);
+
         Run_MCU(env);
+
+        Update_drone_forces_moments(env.gravity, env.ground_stiffness, env.ground_damping);
+        
+        Update_drone_states();
+
+        Log_data(env);
 
         if (sim_t > gyro_cal_t + 0.5){
             w = {0.5, 0.0, PI};

@@ -1,11 +1,8 @@
 // Coordinate conversions taken from https://en.wikipedia.org/wiki/Geographic_coordinate_conversion
 
-#include <cstdlib>
-#include <cmath>
-#include "Linear_Algebra.hpp"
 #include "Coordinate_Frames.h"
 
-Vec3 NED2Body(Vec3 &NED_vec, Vec q){
+Vec3 NED2Body(Vec3 NED_vec, Vec q){
     // Rotates a vector from the drone NED frame to the drone's body frame
     // It is assumed that the quaternion, q, rotates from the NED to body frame
     // u = q(2:4);
@@ -17,7 +14,7 @@ Vec3 NED2Body(Vec3 &NED_vec, Vec q){
     return Body_vec;
 }
 
-Vec3 Body2NED(Vec3 &Body_vec, Vec q){
+Vec3 Body2NED(Vec3 Body_vec, Vec q){
     // Rotates a vector from the drone's body frame to the drone NED frame
     // It is assumed that the quaternion, q, rotates from the NED to body frame
     // u = -1*q(2:4);

@@ -59,16 +59,73 @@ array<int16_t, 3> Environment::Get_magnetic_field(){
     return magnetic_field_LSB;
 }
 
-array<int16_t, 3> Environment::Get_angular_rate(){
+array<int16_t, 3> Environment::Get_angular_rate(Vec3 w){
     // The gyroscope sensor axis corresponds to the body axis in the following way
     // -> Body x = -Sensor x
     // -> Body y = Sensor y
     // -> Body z = -Sensor z
+    // 1. add noise
+    Vec3 gyro_noise;
+    for (uint8_t i = 0; i < 3; i++){
+        gyro_noise.data[i] = 2.0*rand()*gyro_max_noise/32767.0;
+        if (gyro_noise.data[i] > gyro_max_noise){
+            gyro_noise.data[i] -= gyro_max_noise;
+        }
+    }
+    // 2. saturate
+    Vec3 gyro_output= {Saturate(w.data[0] + gyro_noise.data[0], -gyro_range, gyro_range),
+                        Saturate(w.data[1] + gyro_noise.data[1], -gyro_range, gyro_range),
+                        Saturate(w.data[2] + gyro_noise.data[2], -gyro_range, gyro_range)};
+    // 3. convert to LSB
+    Vec3 gyro_LSB = gyro_output*(1.0/gyro_sens);
+    array<int16_t, 3> gyro_output_LSB;
+    gyro_output_LSB[0] = static_cast<int16_t>(-gyro_LSB.data[0]);
+    gyro_output_LSB[1] = static_cast<int16_t>(gyro_LSB.data[1]);
+    gyro_output_LSB[2] = static_cast<int16_t>(-gyro_LSB.data[2]);
+
+    return gyro_output_LSB;
 }
 
-array<int16_t, 3> Environment::Get_acceleration(){
+array<int16_t, 3> Environment::Get_acceleration(Vec3 v, double d_t, Vec quaternion){
     // The accelerometer sensor axis corresponds to the body axis in the following way
     // -> Body x = Sensor x
     // -> Body y = -Sensor y
     // -> Body z = Sensor z
+    static Vec3 v_last;
+    static Vec3 v_dot_last;
+    const double c1 = 0.5;
+    const double c2 = 1.0-c1;
+    Vec3 g_vec_NED = {0.0, 0.0, gravity};
+    Vec3 v_dot = v_dot_last*c1 + (((v-(v_last))/d_t) + NED2Body(g_vec_NED, quaternion))*c2;
+    // 1. add noise
+    Vec3 accel_noise;
+    for (uint8_t i = 0; i < 3; i++){
+        accel_noise.data[i] = 2.0*rand()*accel_max_noise/32767.0;
+        if (accel_noise.data[i] > accel_max_noise){
+            accel_noise.data[i] -= accel_max_noise;
+        }
+    }
+    // 2. saturate
+    Vec3 accel_output = {Saturate((v_dot.data[0]/gravity) + accel_noise.data[0], -accel_range, accel_range),
+                         Saturate((v_dot.data[1]/gravity) + accel_noise.data[1], -accel_range, accel_range),
+                         Saturate((v_dot.data[2]/gravity) + accel_noise.data[2], -accel_range, accel_range)};
+    // 3. convert to LSB
+    Vec3 accel_LSB = accel_output*(1.0/accel_sens);
+    array<int16_t, 3> accel_output_LSB;
+    accel_output_LSB[0] = static_cast<int16_t>(accel_LSB.data[0]);
+    accel_output_LSB[1] = static_cast<int16_t>(-accel_LSB.data[1]);
+    accel_output_LSB[2] = static_cast<int16_t>(accel_LSB.data[2]);
+
+    v_last = v;
+    v_dot_last = v_dot;
+
+    return accel_output_LSB;
+}
+
+double Saturate(double value_in, double low_limit, double high_limit){
+    double value_out = (value_in > high_limit)?high_limit:value_in;
+    if (value_out < low_limit){
+        value_out = low_limit;
+    }
+    return value_out;
 }

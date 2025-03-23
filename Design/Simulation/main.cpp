@@ -2,7 +2,7 @@
 
 using namespace std;
 
-int main(int argc, char *argv[]){
+int main(){
     double sim_dt = 0.001;
     double sim_tf = 10.0;
     Quadrotor Drone(sim_dt, sim_tf);

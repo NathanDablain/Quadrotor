@@ -4,11 +4,11 @@
 
 #include <cstdlib>
 #include <cmath>
-#include "Linear_Algebra.hpp"
+#include "Linear_Algebra.h"
 
-Vec3 NED2Body(Vec3 &NED_vec, Vec q);
+Vec3 NED2Body(Vec3 NED_vec, Vec q);
 
-Vec3 Body2NED(Vec3 &Body_vec, Vec q);
+Vec3 Body2NED(Vec3 Body_vec, Vec q);
 
 Vec3 lla2ecef(Vec3 lla);
 
