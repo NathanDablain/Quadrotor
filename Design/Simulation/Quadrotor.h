@@ -100,9 +100,9 @@ class Quadrotor{
         // NED to body quaternion
         Vec q;
         // Current state of the drone according to the MCU, should mirror the performance in src/Flight_Controller
-        States MCU;
+        States MCU = {0};
         // Desired state of the drone, should mirror its counterpart in src/Flight_Controller
-        States Reference;
+        States Reference = {0};
         // Model of BLDC motor and propeller
         Motor Motors[4]; // Back (CW), Left (CCW), Front (CW), Right (CCW)
     public:

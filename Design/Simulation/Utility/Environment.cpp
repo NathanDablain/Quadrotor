@@ -13,7 +13,7 @@ Environment::Environment(double Longitude, double Latitude, double Altitude_MSL)
     m_vec_NED = R_mag*m_vec_true; 
 }
 
-void Environment::Update(Vec3 Position_NED, Vec quaternion){
+void Environment::Update(Vec3 &Position_NED, Vec &quaternion){
     // Update ecef position based off of current NED position and established reference ecef position in constructor
     P_ecef = NED2ecef(Position_NED, P_ref_ecef, lla);
     // Update lla position based off of updated ecef
@@ -59,7 +59,7 @@ array<int16_t, 3> Environment::Get_magnetic_field(){
     return magnetic_field_LSB;
 }
 
-array<int16_t, 3> Environment::Get_angular_rate(Vec3 w){
+array<int16_t, 3> Environment::Get_angular_rate(Vec3 &w){
     // The gyroscope sensor axis corresponds to the body axis in the following way
     // -> Body x = -Sensor x
     // -> Body y = Sensor y
@@ -86,7 +86,7 @@ array<int16_t, 3> Environment::Get_angular_rate(Vec3 w){
     return gyro_output_LSB;
 }
 
-array<int16_t, 3> Environment::Get_acceleration(Vec3 v, double d_t, Vec quaternion){
+array<int16_t, 3> Environment::Get_acceleration(Vec3 &v, double d_t, Vec &quaternion){
     // The accelerometer sensor axis corresponds to the body axis in the following way
     // -> Body x = Sensor x
     // -> Body y = -Sensor y

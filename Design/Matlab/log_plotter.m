@@ -26,4 +26,5 @@ h2 = vector_plot(Sim_t,Sim_Euler,MCU_Euler,{'Roll (rad)', 'Pitch (rad)', 'Yaw (r
 h3 = vector_plot(Sim_t,Sim_w,MCU_w,{'w_x (rad/s)', 'w_y (rad/s)', 'w_z (rad/s)', 'Body Angular Rate Review'},[0 25 600 350],[-500 500].*pi/180);
 figure('position',[900 25 600 350]);
 plot(Sim_t, Sim_pressure, MCU_t, MCU_pressure, 'k--')
+ylim([95000 105000])
 legend('Simulation', 'MCU')

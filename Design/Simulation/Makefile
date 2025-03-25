@@ -1,8 +1,8 @@
 CXX = g++
 INCDIRS = -I Utility #-I MCU -I Environment
-OPT = -O2
+OPT = -O0
 #CPPFLAGS = -g -Wall -Wextra -Werror $(INCDIRS) $(OPT)
-CPPFLAGS = -g $(INCDIRS) $(OPT)
+CPPFLAGS = -g -Wall $(INCDIRS) $(OPT)
 
 CPPFILES = main.cpp Quadrotor.cpp Environment.cpp Motor.cpp Coordinate_Frames.cpp Linear_Algebra.cpp
 OBJECTS := $(CPPFILES:.cpp=.o)

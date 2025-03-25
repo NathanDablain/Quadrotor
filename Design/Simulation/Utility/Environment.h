@@ -98,11 +98,11 @@ class Environment{
         // Methods
         Environment(double Longitude, double Latitude, double Altitude_MSL);
         void 
-            Update(Vec3 Position_NED, Vec quaternion);
+            Update(Vec3 &Position_NED, Vec &quaternion);
         uint32_t
             Get_pressure();
         array<int16_t, 3> 
             Get_magnetic_field(),
-            Get_angular_rate(Vec3 w),
-            Get_acceleration(Vec3 v, double d_t, Vec quaternion);
+            Get_angular_rate(Vec3 &w),
+            Get_acceleration(Vec3 &v, double d_t, Vec &quaternion);
 };

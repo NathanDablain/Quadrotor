@@ -87,8 +87,7 @@ void Quadrotor::Log_data(Environment &env){
     LOG_MCU(MCU.Position_NED[2]);
     LOG_MCU(MCU.pressure);
     LOG_MCU(MCU.Euler[0]);
-    // LOG_MCU(MCU.Euler[1]);
-    log_mcu << setw(STANDARD_WIDTH) << MCU.Euler[1];
+    LOG_MCU(MCU.Euler[1]);
     LOG_MCU(MCU.Euler[2]);
     LOG_MCU(w.data[0]);
     LOG_MCU(w.data[1]);
@@ -109,25 +108,32 @@ void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffn
     Vec3 g_force_Body = NED2Body(g_vec_NED, q)*mass;
     // Motor force and moment
     Vec motor_thrusts;
+    for (uint8_t i = 0; i < 4; i++){
+        //Motors[i].Update_speed();
+    }
     motor_thrusts = {Motors[0].Get_motor_thrust(), Motors[1].Get_motor_thrust(),
                      Motors[2].Get_motor_thrust(), Motors[3].Get_motor_thrust()};
     Vec3 motor_force_Body = {0.0, 0.0, -motor_thrusts.magnitude()};
     // Assume that:
     // -> Back motor (0) produces negative pitching torque and negative yawing torque
     // -> Left motor (1) produces positive rolling torque and positive yawing torque
-    // -> Front motor (2) produces positive pitching torque and negative yawing torque
-    // -> Right motor (3) produces negative rolling torque and positive yawing torque
+    // -> Right motor (2) produces negative rolling torque and positive yawing torque
+    // -> Front motor (3) produces positive pitching torque and negative yawing torque
     Vec3 motor_moment_Body = {
-        length_l_r*(motor_thrusts.data[1] - motor_thrusts.data[3]),
-        length_f_b*(motor_thrusts.data[2] - motor_thrusts.data[0]),
-        length_l_r*(Motors[1].Get_motor_torque() + Motors[3].Get_motor_torque()) - length_f_b*(Motors[0].Get_motor_torque() - Motors[2].Get_motor_torque())};
+        length_l_r*(motor_thrusts.data[1] - motor_thrusts.data[2]),
+        length_f_b*(motor_thrusts.data[3] - motor_thrusts.data[0]),
+        length_l_r*(Motors[1].Get_motor_torque() + Motors[2].Get_motor_torque()) - length_f_b*(Motors[0].Get_motor_torque() - Motors[3].Get_motor_torque())};
     // Ground force
     // Model the ground as a lumped parameter model, it has some stiffness and some damping
+    Vec3 ground_forces_NED;
     Vec3 ground_forces_Body;
+    Vec3 Velocity_NED = Body2NED(v, q);
     if (Position_NED.data[2] >= 0){
-        Vec3 to_rotate = {0.0, 0.0, Position_NED.data[2]};
-        Vec3 Position_Body = NED2Body(to_rotate, q);
-        ground_forces_Body = Position_Body*-ground_stiffness - v*ground_damping;
+        ground_forces_NED = {0.0, 0.0, -Position_NED.data[2]*ground_stiffness + -Velocity_NED.data[2]*ground_damping};
+        ground_forces_Body = NED2Body(ground_forces_NED, q);
+    }
+    else{
+        ground_forces_Body = {0.0, 0.0, 0.0};
     }
     Forces_Body = g_force_Body + motor_force_Body + ground_forces_Body; // + wind_force_Body;
     Moments_Body = motor_moment_Body; // + wind_moment_Body;
@@ -464,11 +470,12 @@ void Quadrotor::Observer(States &mcu){
 	mcu.Euler[1] = theta_hat + L*(theta_m-theta_hat);
 	// Prevent yaw angle discontinuity at 2pi - 0 to cause the filter to slowly cycle between them
 	mcu.Euler[2] = (abs(psi_m-psi_hat)>PI)?(psi_m):(psi_hat + L*(psi_m-psi_hat));
+    cout << sim_t << "   " << mcu.Euler[0] << "   " << mcu.Euler[1] << "   " << mcu.Euler[2] << endl;
 }
 
 void Quadrotor::Run_Motors(uint16_t motor_throttles[4]){
     static uint16_t motor_lookup[1001] = {0};
-	// Build the lookup table if it hasn't been built yet, enable pins for output
+	// Build the lookup table if it hasn't been built yet
 	if (!(motor_lookup[0])){ 
 		for (uint16_t i=0;i<1001;i++){
 			motor_lookup[i] = 3*i + 3000;
@@ -479,11 +486,6 @@ void Quadrotor::Run_Motors(uint16_t motor_throttles[4]){
 	for (uint8_t i=0;i<4;i++){
 		motor_throttles[i] = (motor_throttles[i]>1000)?1000:motor_throttles[i];
 		mapped_throttle_commands[i] = motor_lookup[motor_throttles[i]];
+        Motors[i].Throttle = mapped_throttle_commands[i];
 	}
-	// Set motor throttles
-	Motors[0].Send_throttle_command(mapped_throttle_commands[0]); // Motor 0, back
-	Motors[1].Send_throttle_command(mapped_throttle_commands[1]); // Motor 1, left
-	Motors[2].Send_throttle_command(mapped_throttle_commands[2]); // Motor 2, front
-	Motors[3].Send_throttle_command(mapped_throttle_commands[3]); // Motor 3, right
-
 }
