@@ -3,48 +3,46 @@
 using namespace std;
 
 //--------Vec3 Methods----------------//
-Vec3 Vec3::operator=(Vec3 const& v1){
+void Vec3::operator=(Vec3 const& v1){
     this->data[0] = v1.data[0];
     this->data[1] = v1.data[1];
     this->data[2] = v1.data[2];
-
-    return *this;
 }
 
 Vec3 Vec3::operator+(Vec3 const& v1){
-    //Vec3 v2;
+    Vec3 v2;
     for (uint8_t i = 0; i < 3; i++){
-        this->data[i] += v1.data[i];
+        v2.data[i] = this->data[i] + v1.data[i];
     }
 
-    return *this;
+    return v2;
 }
 
 Vec3 Vec3::operator-(Vec3 const& v1){
-    // Vec3 v2;
+    Vec3 v2;
     for (uint8_t i = 0; i < 3; i++){
-        this->data[i] -= v1.data[i];
+        v2.data[i] = this->data[i] - v1.data[i];
     }
 
-    return *this;
+    return v2;
 }
 
 Vec3 Vec3::operator*(double const& c){
-    // Vec3 v2;
+    Vec3 v2;
     for (uint8_t i = 0; i < 3; i++){
-        this->data[i] *= c;
+        v2.data[i] = this->data[i]*c;
     }
 
-    return *this;
+    return v2;
 }
 
 Vec3 Vec3::operator/(double const& c){
-    // Vec3 v2;
+    Vec3 v2;
     for (uint8_t i = 0; i < 3; i++){
-        this->data[i] /= c;
+        v2.data[i] = this->data[i]/c;
     }
 
-    return *this;
+    return v2;
 }
 
 Vec3 Vec3::cross(Vec3 const& v1){ // CROSS PRODUCT

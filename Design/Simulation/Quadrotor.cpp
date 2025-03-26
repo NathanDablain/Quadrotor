@@ -13,12 +13,12 @@ Quadrotor::Quadrotor(double Sim_dt, double Sim_tf){
 }
 
 void Quadrotor::Run_sim(){
-    Environment env(-97.06265, 32.79100, 0.0);
+    Environment env(-97.06265, 32.79100, 0.0, sim_dt);
 
     Calibrate_sensors(env);
 
     while(sim_t < sim_tf){
-        env.Update(Position_NED, q);
+        env.Update(Position_NED, q, v);
 
         Run_MCU(env);
 
@@ -47,6 +47,9 @@ void Quadrotor::Log_data(Environment &env){
         LOG_SIM("w_x");
         LOG_SIM("w_y");
         LOG_SIM("w_z");
+        LOG_SIM("v_x");
+        LOG_SIM("v_y");
+        LOG_SIM("v_z");
         LOG_SIM(endl);
         log_sim.close();
         ofstream log_mcu("MCU_log.txt");
@@ -61,6 +64,9 @@ void Quadrotor::Log_data(Environment &env){
         LOG_MCU("w_x");
         LOG_MCU("w_y");
         LOG_MCU("w_z");
+        LOG_MCU("v_x");
+        LOG_MCU("v_y");
+        LOG_MCU("v_z");
         LOG_MCU(endl);
         log_mcu.close();
     }
@@ -77,6 +83,9 @@ void Quadrotor::Log_data(Environment &env){
     LOG_SIM(w.data[0]);
     LOG_SIM(w.data[1]);
     LOG_SIM(w.data[2]);
+    LOG_SIM(v.data[0]);
+    LOG_SIM(v.data[1]);
+    LOG_SIM(v.data[2]);
     LOG_SIM(endl);
     log_sim.close();
     ofstream log_mcu("MCU_log.txt", ios::app);
@@ -92,6 +101,9 @@ void Quadrotor::Log_data(Environment &env){
     LOG_MCU(w.data[0]);
     LOG_MCU(w.data[1]);
     LOG_MCU(w.data[2]);
+    LOG_MCU(v.data[0]);
+    LOG_MCU(v.data[1]);
+    LOG_MCU(v.data[2]);
     LOG_MCU(endl);
     log_mcu.close();
 }
@@ -362,7 +374,7 @@ void Quadrotor::Read_IMU(States &mcu, Environment &env){
         w_bias[3];
     static uint8_t window_counter = 0;
 
-    array<int16_t, 3> Data_g = env.Get_acceleration(v, (1.0/208.0), q);
+    array<int16_t, 3> Data_g = env.Get_acceleration(q);
     array<int16_t, 3> Data_w = env.Get_angular_rate(w);
 
     for (uint8_t i=0;i<3;i++){
@@ -407,7 +419,7 @@ void Quadrotor::Calibrate_sensors(Environment &env){
     while(sim_t < cal_t){
         Position_NED = {0.0, 0.0, -0.5};
 
-        env.Update(Position_NED, q);
+        env.Update(Position_NED, q, v);
 
         Run_MCU(env);
 
@@ -470,7 +482,7 @@ void Quadrotor::Observer(States &mcu){
 	mcu.Euler[1] = theta_hat + L*(theta_m-theta_hat);
 	// Prevent yaw angle discontinuity at 2pi - 0 to cause the filter to slowly cycle between them
 	mcu.Euler[2] = (abs(psi_m-psi_hat)>PI)?(psi_m):(psi_hat + L*(psi_m-psi_hat));
-    cout << sim_t << "   " << mcu.Euler[0] << "   " << mcu.Euler[1] << "   " << mcu.Euler[2] << endl;
+    // cout << sim_t << "   " << mcu.Euler[0] << "   " << mcu.Euler[1] << "   " << mcu.Euler[2] << endl;
 }
 
 void Quadrotor::Run_Motors(uint16_t motor_throttles[4]){

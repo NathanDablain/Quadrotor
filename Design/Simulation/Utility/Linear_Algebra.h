@@ -10,7 +10,7 @@ using namespace std;
 struct Vec3{
     array<double, 3> data {0.0};
 
-    Vec3 operator=(Vec3 const& v1);
+    void operator=(Vec3 const& v1);
 
     Vec3 operator+(Vec3 const& v1);
 
