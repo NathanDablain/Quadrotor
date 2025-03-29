@@ -28,9 +28,9 @@ class Motor{
         array<double, 11> Current = {0.0, 0.1, 0.7, 2.0, 4.1, 7.2, 10.9, 15.4, 20.5, 25.9, 31.8};
 
     public:
-        // Motor specific, found emperically, in throttle units of 3000-6000
-        uint16_t deadzone; 
-        // command will range from 3000-6000, corresponding to 0-1000 throttle
+        // Motor specific, found emperically, in throttle units of 0-1000
+        uint16_t deadzone = 0; 
+        // Throttle command will range from 3000-6000, corresponding to 0-1000 throttle
         uint16_t Throttle = 3000;
         void
             Update_speed();

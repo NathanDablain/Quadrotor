@@ -5,6 +5,10 @@ void Motor::Update_speed(){
     // divide by 100 to get  
     // interp to find current based on throttle
     uint16_t Throt = (Throttle-3000)/3;
+    if (Throt < deadzone){
+        w = 0.0;
+        return;
+    }
     double to_interp = static_cast<double>(Throt)/100.0;
     uint8_t lower_index = static_cast<uint8_t>(floor(to_interp));
     uint8_t upper_index = static_cast<uint8_t>(ceil(to_interp));

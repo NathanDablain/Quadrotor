@@ -2,15 +2,16 @@
 
 #include <vector>
 #include <cstdlib>
-#include <cstdint>
 #include <iostream>
 #include <iomanip>
 #include <fstream>
 #include <iomanip>
+#include "Sim_Types.h"
 #include "Linear_Algebra.h"
 #include "Motor.h"
 #include "Environment.h"
 #include "Coordinate_Frames.h"
+#include "Controllers.h"
 
 using namespace std;
 
@@ -35,19 +36,6 @@ using namespace std;
 #define ACCEL_SENS 2.0/32768.0
 
 float Height_Bar(uint32_t pressure_LSB);
-
-struct States{
-    float w[3];
-    float Euler[3];
-    float g_vec[3];
-    float m_vec[3];
-    float pressure_altitude;
-    float Position_NED[3];
-    int32_t Longitude;
-    int32_t Latitude;
-    float pressure; // Temporary
-    float Position_ECEF[3];
-};
 
 class Quadrotor{
     private:
@@ -105,6 +93,8 @@ class Quadrotor{
         States Reference = {0};
         // Model of BLDC motor and propeller
         Motor Motors[4]; // Back (CW), Left (CCW), Front (CW), Right (CCW)
+        // Flag to enable guidance and control functions in MCU after calibration
+        bool MCU_Cal_Flag = false;
     public:
         Quadrotor(double Sim_dt, double Sim_tf);
         void

@@ -10,12 +10,19 @@ Quadrotor::Quadrotor(double Sim_dt, double Sim_tf){
     inertia.data[1][1] = Iyy;
     inertia.data[2][2] = Izz;
     q = {1.0, 0.0, 0.0, 0.0};
+    Motors[0].deadzone = 300;
+    Motors[1].deadzone = 125;
+    Motors[2].deadzone = 130;
+    Motors[3].deadzone = 120;
+
+    Reference.Position_NED[2] = -5.0;
 }
 
 void Quadrotor::Run_sim(){
     Environment env(-97.06265, 32.79100, 0.0, sim_dt);
 
     Calibrate_sensors(env);
+    MCU_Cal_Flag = true;
 
     while(sim_t < sim_tf){
         env.Update(Position_NED, q, v);
@@ -50,6 +57,10 @@ void Quadrotor::Log_data(Environment &env){
         LOG_SIM("v_x");
         LOG_SIM("v_y");
         LOG_SIM("v_z");
+        LOG_SIM("Back Motor Thrust");
+        LOG_SIM("Left Motor Thrust");
+        LOG_SIM("Right Motor Thrust");
+        LOG_SIM("Front Motor Thrust");
         LOG_SIM(endl);
         log_sim.close();
         ofstream log_mcu("MCU_log.txt");
@@ -86,6 +97,10 @@ void Quadrotor::Log_data(Environment &env){
     LOG_SIM(v.data[0]);
     LOG_SIM(v.data[1]);
     LOG_SIM(v.data[2]);
+    LOG_SIM(Motors[0].Get_motor_thrust());
+    LOG_SIM(Motors[1].Get_motor_thrust());
+    LOG_SIM(Motors[2].Get_motor_thrust());
+    LOG_SIM(Motors[3].Get_motor_thrust());
     LOG_SIM(endl);
     log_sim.close();
     ofstream log_mcu("MCU_log.txt", ios::app);
@@ -121,7 +136,7 @@ void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffn
     // Motor force and moment
     Vec motor_thrusts;
     for (uint8_t i = 0; i < 4; i++){
-        //Motors[i].Update_speed();
+        Motors[i].Update_speed();
     }
     motor_thrusts = {Motors[0].Get_motor_thrust(), Motors[1].Get_motor_thrust(),
                      Motors[2].Get_motor_thrust(), Motors[3].Get_motor_thrust()};
@@ -134,7 +149,7 @@ void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffn
     Vec3 motor_moment_Body = {
         length_l_r*(motor_thrusts.data[1] - motor_thrusts.data[2]),
         length_f_b*(motor_thrusts.data[3] - motor_thrusts.data[0]),
-        length_l_r*(Motors[1].Get_motor_torque() + Motors[2].Get_motor_torque()) - length_f_b*(Motors[0].Get_motor_torque() - Motors[3].Get_motor_torque())};
+        length_l_r*(Motors[1].Get_motor_torque() + Motors[2].Get_motor_torque()) - length_f_b*(Motors[0].Get_motor_torque() + Motors[3].Get_motor_torque())};
     // Ground force
     // Model the ground as a lumped parameter model, it has some stiffness and some damping
     Vec3 ground_forces_NED;
@@ -214,7 +229,7 @@ void Quadrotor::Run_MCU(Environment &env){
     // This method models the flight controller source code in src/flight_controller
     static double rtc_timelast, tcb0_timelast, tcb1_timelast, gps_timelast;
     static uint8_t seconds, LoRa_Read_Flag, Motor_Run_Flag, BAR_Read_Flag, Attitude_Observer_Run_Flag,
-         MAG_Read_Flag, IMU_Read_Flag, GPS_Read_Flag;
+         MAG_Read_Flag, IMU_Read_Flag, GPS_Read_Flag, MRAC_Flag;
     static uint16_t motor_throttles[4] = {0};
 
     // Timing
@@ -225,6 +240,7 @@ void Quadrotor::Run_MCU(Environment &env){
     }
 
     if (sim_t - tcb0_timelast >= tcb0_rate){
+        ++MRAC_Flag;
         ++Motor_Run_Flag;
         ++BAR_Read_Flag;
         ++Attitude_Observer_Run_Flag;
@@ -268,19 +284,26 @@ void Quadrotor::Run_MCU(Environment &env){
         Attitude_Observer_Run_Flag = 0;
         Observer(MCU);
     }
-/*
+
     if (LoRa_Read_Flag){
         LoRa_Read_Flag = 0;
         Read_LoRa(Reference, env);
     }
-*/
-    // GUIDANCE //
 
-
-    // CONTROL //
-    if (Motor_Run_Flag >= 2){
-        Motor_Run_Flag = 0;
-        Run_Motors(motor_throttles);
+    if (MCU_Cal_Flag){
+        // GUIDANCE //
+        static float desired_thrust;
+        static float desired_moments[3];
+        if (MRAC_Flag >= 5){
+            MRAC_Flag = 0;
+            desired_thrust = Height_MRAC(MCU, -Reference.Position_NED[2]);
+        }
+        // CONTROL //
+        if (Motor_Run_Flag >= 2){
+            Motor_Run_Flag = 0;
+            Set_throttles(motor_throttles, desired_thrust, desired_moments);
+            Run_Motors(motor_throttles);
+        }
     }
 }
 
@@ -412,6 +435,10 @@ void Quadrotor::Read_IMU(States &mcu, Environment &env){
         mcu.g_vec[2] = ((float)a_xyz_FIR[2])*ACCEL_SENS;
     }
 
+}
+
+void Quadrotor::Read_LoRa(States &reference, Environment &env){
+    reference.Position_NED[2] = sim_t > 10.0 ? 0.0 : -5.0;
 }
 
 void Quadrotor::Calibrate_sensors(Environment &env){

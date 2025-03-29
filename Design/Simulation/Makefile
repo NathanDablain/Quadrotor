@@ -4,7 +4,7 @@ OPT = -O0
 #CPPFLAGS = -g -Wall -Wextra -Werror $(INCDIRS) $(OPT)
 CPPFLAGS = -g -Wall $(INCDIRS) $(OPT)
 
-CPPFILES = main.cpp Quadrotor.cpp Environment.cpp Motor.cpp Coordinate_Frames.cpp Linear_Algebra.cpp
+CPPFILES = main.cpp Quadrotor.cpp Environment.cpp Motor.cpp Coordinate_Frames.cpp Linear_Algebra.cpp Controllers.cpp
 OBJECTS := $(CPPFILES:.cpp=.o)
 
 BINARY = sim
