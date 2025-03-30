@@ -18,8 +18,9 @@ main.d main.o: .././main.c .././main.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\stdlib.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\stdio.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\gcc\avr\5.4.0\include\stdarg.h \
- .././SPI.h .././TWI.h .././IMU.h .././Mag.h .././Bar.h .././Observer.h \
- .././GPS.h .././SSD.h .././LoRa.h .././Motors.h
+ .././SPI.h .././TWI.h .././IMU.h .././FC_Types.h .././Mag.h .././Bar.h \
+ .././Observer.h .././GPS.h .././SSD.h .././LoRa.h .././Motors.h \
+ .././Controllers.h
 
 .././main.h:
 
@@ -67,6 +68,8 @@ c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\
 
 .././IMU.h:
 
+.././FC_Types.h:
+
 .././Mag.h:
 
 .././Bar.h:
@@ -80,3 +83,5 @@ c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\
 .././LoRa.h:
 
 .././Motors.h:
+
+.././Controllers.h:

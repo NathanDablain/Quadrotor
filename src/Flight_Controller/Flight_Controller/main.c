@@ -6,8 +6,10 @@ static volatile unsigned char
 	g_MAG_Read_Flag,
 	g_BAR_Read_Flag, 
 	g_Attitude_Observer_Run_Flag, 
-	g_Print_Flag,g_IMU_Read_Flag,
-	g_LoRa_Flag;
+	g_Print_Flag,
+	g_IMU_Read_Flag,
+	g_LoRa_Flag,
+	g_MRAC_Flag;
 volatile unsigned int
 	g_esc_current = 0;
 volatile unsigned long 
@@ -147,15 +149,25 @@ void Run(unsigned char Setup_Bitmask){
 	}
 	
 	// GUIDANCE //
-	
+	static float desired_thrust;
+	static float desired_moments[3];
 	if (Navigation_Bitmask & NAV_SENSORS_bm){
-		
+		if (g_MRAC_Flag >= 5){
+			g_MRAC_Flag = 0;
+			float Gains[3][6];
+			unsigned int count = rand();
+			if (count > 25) count = 25;
+			Attitude_Gain_Lookup(count, Gains);
+			desired_moments[0] = Gains[0][2] + Gains[1][5] + Gains[2][0];
+			desired_thrust = Height_MRAC(&Drone, -Reference.Position_NED[2]);
+		}
 	}
 	
 	// CONTROL //
 	//if (Navigation_Bitmask & NAV_SENSORS_bm){
 		if (g_Motor_Run_Flag >= 2){
 			g_Motor_Run_Flag = 0;
+			Set_throttles(motor_throttles, desired_thrust, desired_moments);
 			Run_Motors(motor_throttles);
 		}
 	//}

@@ -6,6 +6,8 @@
 // -> Status command - on,off,
 // Messages will mimic NMEA format -> $ND,mmmm.mm,nnn.nn,N,eee.ee,E,hhh.hh,S*CS
 
+#include "FC_Types.h"
+
 #define LORA_REG_OP_MODE 0x01
 #define LORA_REG_F_MSB 0x06
 #define LORA_REG_F_MIDB 0x07

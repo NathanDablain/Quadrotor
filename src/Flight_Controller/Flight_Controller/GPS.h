@@ -1,6 +1,8 @@
 #ifndef GPS_H
 #define GPS_H
 
+#include "FC_Types.h"
+
 #define GPS_WINDOW_SIZE 4
 
 extern volatile unsigned char g_GPS_Read_Flag;

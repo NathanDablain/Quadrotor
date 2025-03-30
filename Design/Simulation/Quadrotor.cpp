@@ -78,6 +78,12 @@ void Quadrotor::Log_data(Environment &env){
         LOG_MCU("v_x");
         LOG_MCU("v_y");
         LOG_MCU("v_z");
+        LOG_MCU("Roll Desired");
+        LOG_MCU("Pitch Desired");
+        LOG_MCU("Yaw Desired");
+        LOG_MCU("w_x Desired");
+        LOG_MCU("w_y Desired");
+        LOG_MCU("w_z Desired");
         LOG_MCU(endl);
         log_mcu.close();
     }
@@ -119,6 +125,12 @@ void Quadrotor::Log_data(Environment &env){
     LOG_MCU(v.data[0]);
     LOG_MCU(v.data[1]);
     LOG_MCU(v.data[2]);
+    LOG_MCU(Reference.Euler[0]);
+    LOG_MCU(Reference.Euler[1]);
+    LOG_MCU(Reference.Euler[2]);
+    LOG_MCU(Reference.w[0]);
+    LOG_MCU(Reference.w[1]);
+    LOG_MCU(Reference.w[2]);
     LOG_MCU(endl);
     log_mcu.close();
 }
@@ -297,10 +309,12 @@ void Quadrotor::Run_MCU(Environment &env){
         if (MRAC_Flag >= 5){
             MRAC_Flag = 0;
             desired_thrust = Height_MRAC(MCU, -Reference.Position_NED[2]);
+            Attitude_LQR(MCU, Reference);
         }
         // CONTROL //
         if (Motor_Run_Flag >= 2){
             Motor_Run_Flag = 0;
+            Angular_Rate_Control(MCU, Reference, desired_moments);
             Set_throttles(motor_throttles, desired_thrust, desired_moments);
             Run_Motors(motor_throttles);
         }

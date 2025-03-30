@@ -1,4 +1,18 @@
-#include "main.h"
+// Includes - generic
+#include <avr/io.h>
+#include <avr/xmega.h>
+#include <avr/interrupt.h>
+#include <math.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include "Bar.h"
+#include "IMU.h"
+#include "Mag.h"
+#include "GPS.h"
+#include "Observer.h"
+#include "FC_Types.h"
+#include "SPI.h"
 // BAROMETER CODE
 // Bar -> 0 is a write, 1 is a read
 

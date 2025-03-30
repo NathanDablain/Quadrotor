@@ -1,7 +1,7 @@
 clear 
 close all
 clc
-%%
+%
 Ixx = 0.00149; % kg-m^2
 Iyy = 0.00262;
 Izz = 0.00149;    
@@ -12,8 +12,8 @@ m = 0.441; % kg
 wn_E = 0.5;
 wn_T = 0.1;
 % Attitude controller gain calcs
-theta = -20:5:20;
-phi = -20:5:20;
+theta = -20:10:20;
+phi = -20:10:20;
 C = eye(3);
 A = [zeros(3,6);-C zeros(3,3)];
 count_map = zeros(length(theta),length(phi));
@@ -63,33 +63,3 @@ figure('position', [900 450 600 350])
 h2 = plot(t, Thrust_real);
 h3 = vector_plot(t,Euler_ref.*180/pi,Euler_real.*180/pi,{'\phi (deg)', '\theta (deg)', '\psi (deg)', 'Euler Angle Review'},[0 25 600 350]);
 h4 = vector_plot(t,w_ref,w_real,{'w_x (rad/s)', 'w_y (rad/s)', 'w_z (rad/s)', 'Body Angular Velocity Review'},[900 25 600 350]);
-%%
-clear
-clc
-syms gamma_x1 gamma_x2 h h_dot e_h e_h_dot h_des P_11 P_12 P_22 phi_x T Mx My Mz wf wr wb wl kf kt lfb lrl real
-B = [0;1];
-gamma_x = [gamma_x1 0; 0 gamma_x2];
-gamma_r = 1;
-gamma_w = 1;
-x = [h;h_dot];
-e = [e_h;e_h_dot];
-r = h_des;
-P = [P_11 P_12; P_12 P_22];
-kx_dot = simplify(gamma_x*x*e'*P*B);
-kr_dot = simplify(gamma_r*r*e'*P*B);
-w_dot = simplify(gamma_w*phi_x*e'*P*B);
-% lfb = lrl;
-eqn = [kf*(wf+wr+wb+wl);...
-        lrl*kf*(wl - wr);...
-        lfb*kf*(wf - wb);...
-        kt*((lrl*(wr + wl)) - (lfb*(wf + wb)))] == [T;Mx;My;Mz];
-S = solve(eqn,[wf;wr;wl;wb])
-%%
-clear
-clc
-T = 5.5418;
-kf = 9.9999e-7;
-kt = 1.1e-8;
-lfb = 0.11699;
-lrl = 0.1205;
-omega_f = T*kt*lfb*lrl/(2*kf*lfb*(kt*lfb + kt*lrl))

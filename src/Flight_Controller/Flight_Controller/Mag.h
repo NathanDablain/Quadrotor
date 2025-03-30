@@ -1,6 +1,8 @@
 #ifndef MAG_H
 #define	MAG_H
 
+#include "FC_Types.h"
+
 // Macros
 #define MAG_WHO_AM_I 0x4F
 #define MAG_CFG_REG_A 0x60
