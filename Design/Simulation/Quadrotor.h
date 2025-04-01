@@ -29,9 +29,10 @@ using namespace std;
 #define BAR_R 8.31432 // Universal gas constant (J/(mol-K))S
 #define BAR_M 0.0289644 // Molar mass of air (kg/mol)
 
-#define MAG_WINDOW_SIZE 16
+#define MAG_WINDOW_SIZE 4
 
 #define IMU_WINDOW_SIZE 8 // Size of FIR window
+#define GYRO_WINDOW_SIZE 2
 #define GYRO_SENS 500.0/32768.0
 #define ACCEL_SENS 2.0/32768.0
 
@@ -95,6 +96,10 @@ class Quadrotor{
         Motor Motors[4]; // Back (CW), Left (CCW), Front (CW), Right (CCW)
         // Flag to enable guidance and control functions in MCU after calibration
         bool MCU_Cal_Flag = false;
+        // Desired thrust by MCU
+        float Desired_Thrust;
+        // Desired moments by MCU
+        float Desired_Moments[3];
     public:
         Quadrotor(double Sim_dt, double Sim_tf);
         void

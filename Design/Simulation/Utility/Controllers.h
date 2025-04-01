@@ -3,7 +3,9 @@
 #include <cmath>
 #include "../Sim_Types.h"
 
-#define MAX_THRUST 30.0
+#define MAX_THRUST 7.0 // N
+#define MAX_MOMENT 2.0 // N-m
+#define MAX_W 2.0 // rad/s
 #define INDEX_NOT_SET 100
 
 float Height_MRAC(States &MCU, float h_ref);
@@ -15,3 +17,5 @@ void Attitude_Gain_Lookup(uint8_t count, float Gains[3][6]);
 void Attitude_LQR(States &MCU, States &Reference);
 
 void Angular_Rate_Control(States &MCU, States &Reference, float desired_moments[3]);
+
+float Saturate(float value_in, float max_value, float min_value);

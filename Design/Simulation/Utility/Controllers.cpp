@@ -46,13 +46,9 @@ float Height_MRAC(States &MCU, float h_ref){
     w += (w_dot*d_t);
 
     // Update Thrust
-    float thrust = k_x[0]*h + k_x[1]*h_dot + k_r*h_ref - w*phi_x;
-    if (thrust > MAX_THRUST){
-        thrust = MAX_THRUST;
-    }
-    else if (thrust < 0.0){
-        thrust = 0.0;
-    }
+    float temp = k_x[0]*h + k_x[1]*h_dot + k_r*h_ref - w*phi_x;
+    float thrust = Saturate(temp, MAX_THRUST, 0.0);
+
     return thrust;
 }
 
@@ -69,18 +65,23 @@ void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desi
     const float length_f_b =  0.117;
     // Distance from left and right motor thrust vectors to drone center of gravity in (m)
     const float length_l_r = 0.1205;
+    const float denom_1 = 4.0*k_f*k_t*length_f_b;
+    const float denom_2 = 4.0*k_f*k_t*length_l_r;
+    const float c1 = k_f*length_f_b;
     const float c2 = k_t*length_f_b;
-    const float c3 = k_t*length_l_r;
-    const float denom_1 = (2.0*k_f*length_f_b*(c2 + c3));
-    const float denom_2 = (2.0*k_f*length_l_r*(c2 + c3));
-    const float c1 = c2*length_l_r;
-    const float c4 = k_f*length_f_b;
-    const float c5 = k_f*length_l_r;
+    const float c3 = 2.0*k_t;
+    const float c4 = k_f*length_l_r;
+    const float c5 = k_t*length_l_r;
 
-    float omega_front = (desired_moments[1]*c2 - desired_moments[2]*c4 + desired_moments[1]*c3 + desired_thrust*c1)/denom_1;
-    float omega_right = -(desired_moments[0]*c2 - desired_moments[2]*c5 + desired_moments[0]*c3 - desired_thrust*c1)/denom_2;
-    float omega_left = (desired_moments[0]*c2 + desired_moments[2]*c5 + desired_moments[0]*c3 + desired_thrust*c1)/denom_2;
-    float omega_back = -(desired_moments[2]*c4 + desired_moments[1]*c2 + desired_moments[1]*c3 - desired_thrust*c1)/denom_1;
+    // w_f: (2*My*kt - Mz*kf*lfb + T*kt*lfb)/(4*kf*kt*lfb)
+    // w_r: (Mz*kf*lrl - 2*Mx*kt + T*kt*lrl)/(4*kf*kt*lrl)
+    // w_l: (2*Mx*kt + Mz*kf*lrl + T*kt*lrl)/(4*kf*kt*lrl)
+    // w_b: -(2*My*kt + Mz*kf*lfb - T*kt*lfb)/(4*kf*kt*lfb)
+
+    float omega_front = ((c3*desired_moments[1]) - (c1*desired_moments[2]) + (c2*desired_thrust))/denom_1;
+    float omega_right = ((c4*desired_moments[2]) - (c3*desired_moments[0]) + (c5*desired_thrust))/denom_2;
+    float omega_left = ((c3*desired_moments[0]) + (c4*desired_moments[2]) + (c5*desired_thrust))/denom_2;
+    float omega_back = -((c3*desired_moments[1]) + (c1*desired_moments[2]) - (c2*desired_thrust))/denom_1;
 
     float w_front = (omega_front > 0)?(sqrt(omega_front)):(0.0);
     float w_right = (omega_right > 0)?(sqrt(omega_right)):(0.0);
@@ -256,22 +257,24 @@ void Attitude_LQR(States &MCU, States &Reference){
     // LQR includes integrator in addition to state feedback
     static float Euler_error_int[3];
     float Euler_error[3];
+    float temp;
     for (uint8_t i = 0; i < 3; i++){
         Euler_error[i] = Reference.Euler[i]-MCU.Euler[i];
         Euler_error_int[i] += (Euler_error[i]*d_t);
     }
     for (uint8_t i = 0; i < 3; i++){
-        Reference.w[i] = -1*(MCU.Euler[0]*K[i][0] + MCU.Euler[1]*K[i][1] + MCU.Euler[2]*K[i][2]
+        temp = -1*(MCU.Euler[0]*K[i][0] + MCU.Euler[1]*K[i][1] + MCU.Euler[2]*K[i][2]
          + Euler_error_int[0]*K[i][3] + Euler_error_int[1]*K[i][4] + Euler_error_int[2]*K[i][5]);
+        Reference.w[i] = Saturate(temp, MAX_W, -MAX_W);
     }
 }
 
 void Angular_Rate_Control(States &MCU, States &Reference, float desired_moments[3]){
     // A PID controller is used to control each body angular rate and set moments
     const float d_t = 0.01;
-    const float K_p = 1.0;
-    const float K_i = 0.3;
-    const float K_d = 0.2;
+    const float K_p = 0.1;
+    const float K_i = 0.02;
+    const float K_d = 0.02;
     static float e_last[3];
     static float e_int[3];
     for (uint8_t i = 0; i < 3; i++){
@@ -279,6 +282,17 @@ void Angular_Rate_Control(States &MCU, States &Reference, float desired_moments[
         float e_d = e - e_last[i];
         e_last[i] = e;
         e_int[i] += (e*d_t);
-        desired_moments[i] = K_p*e + K_i*e_int[i] + K_d*e_d;
+        float temp = K_p*e + K_i*e_int[i] + K_d*e_d;
+        desired_moments[i] = Saturate(temp, MAX_MOMENT, -MAX_MOMENT);
     }
+}
+
+float Saturate(float value_in, float max_value, float min_value){
+    if (value_in > max_value){
+        return max_value;
+    }
+    else if (value_in < min_value){
+        return min_value;
+    }
+    return value_in;
 }
