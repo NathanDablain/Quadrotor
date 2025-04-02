@@ -353,6 +353,7 @@ void Quadrotor::Read_Bar(States &mcu, Environment &env){
 		pressure_oversampled >>= 4;
         mcu.pressure = static_cast<float>(pressure_oversampled)*BAR_SENS;
 		mcu.pressure_altitude = Height_Bar(pressure_oversampled);
+        mcu.Position_NED[2] = -(mcu.pressure_altitude-Reference.pressure_altitude);
 		window_counter = 0;
 	}
 	
@@ -480,6 +481,7 @@ void Quadrotor::Read_IMU(States &mcu, Environment &env){
 
 void Quadrotor::Read_LoRa(States &reference, Environment &env){
     reference.Position_NED[2] = sim_t > 10.0 ? 0.0 : -5.0;
+    reference.pressure_altitude = 50.75;
 }
 
 void Quadrotor::Calibrate_sensors(Environment &env){
@@ -532,9 +534,9 @@ void Quadrotor::Observer(States &mcu){
 	if (isnan(psi_m)){
 		psi_m = mcu.Euler[2];
 	}
-	// if (psi_m <= 0){
-	// 	psi_m += 2.0*PI;
-	// }
+	if (psi_m <= 0){
+		psi_m += 2.0*PI;
+	}
 	
 	// Predict
 	float phi_hat = mcu.Euler[0];

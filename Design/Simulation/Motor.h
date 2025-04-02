@@ -3,12 +3,12 @@
 #include <array>
 #include <cstdint>
 #include <cmath>
+#include "Sim_Types.h"
 
 using namespace std;
 
-#define PI 3.14159265358979311600
-#define RPM2RADS PI/30.0 
-#define RADS2RPM 1.0/RPM2RADS
+#define RPM2RADS (PI/30.0) 
+#define RADS2RPM (1.0/RPM2RADS)
 
 class Motor{
     private:

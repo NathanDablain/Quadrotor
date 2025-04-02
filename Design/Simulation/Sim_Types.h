@@ -3,9 +3,9 @@
 #include <cstdint>
 
 #define PI 3.14159265358979311600
-#define PI_2 PI/2.0
-#define D2R PI/180.0
-#define R2D 1.0/D2R
+#define PI_2 (PI/2.0)
+#define D2R (PI/180.0)
+#define R2D (1.0/D2R)
 
 struct States{
     float w[3];

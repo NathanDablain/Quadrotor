@@ -83,17 +83,61 @@ void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desi
     float omega_left = ((c3*desired_moments[0]) + (c4*desired_moments[2]) + (c5*desired_thrust))/denom_2;
     float omega_back = -((c3*desired_moments[1]) + (c1*desired_moments[2]) - (c2*desired_thrust))/denom_1;
 
-    float w_front = (omega_front > 0)?(sqrt(omega_front)):(0.0);
-    float w_right = (omega_right > 0)?(sqrt(omega_right)):(0.0);
-    float w_left = (omega_left > 0)?(sqrt(omega_left)):(0.0);
-    float w_back = (omega_back > 0)?(sqrt(omega_back)):(0.0);
+    float omega[4] = {omega_back, omega_left, omega_right, omega_front};
+
+    // float w_front = (omega_front > 0)?(sqrt(omega_front)):(0.0);
+    // float w_right = (omega_right > 0)?(sqrt(omega_right)):(0.0);
+    // float w_left = (omega_left > 0)?(sqrt(omega_left)):(0.0);
+    // float w_back = (omega_back > 0)?(sqrt(omega_back)):(0.0);
     // Convert motor speeds in rad/s to throttle commands between 0-1000
     // Gain to convert rad/s to throttle command
-    const float K = 0.2344;
-    motor_throttles[0] = (uint16_t)(w_back*K);
-    motor_throttles[1] = (uint16_t)(w_left*K);
-    motor_throttles[2] = (uint16_t)(w_right*K);
-    motor_throttles[3] = (uint16_t)(w_front*K);
+    // omega = KT*i/k_t -> build mapping of i to throttle
+    // Motor torque constant in N-m/A (1/KV)
+    const float KT = 0.006366198;
+    // Gain to convert (rad/s)^2 to A
+    const float K = KT/k_t;
+    // This array holds the current produced by the motor for each 10% of throttle, starting at 0%
+    const float Current[11] = {0.0, 0.1, 0.7, 2.0, 4.1, 7.2, 10.9, 15.4, 20.5, 25.9, 31.8};
+    uint8_t first;
+    uint8_t last;
+    uint8_t middle;
+    float I;
+    for (uint8_t i = 0; i < 4; i++){
+        first = 0;
+        last = 10;
+        I = omega[i]/K;
+        if (I < 0.0){
+            motor_throttles[i] = 0;
+            continue;
+        }
+        if (I > Current[10]){
+            motor_throttles[i] = 1000;
+            continue;
+        }
+        while(1){
+            middle = (last - first)/2 + first;
+            if (middle == first){
+                break;
+            }
+            if (I < Current[middle]){
+                last = middle;
+                continue;
+            }
+            if (I > Current[middle]){
+                first = middle;
+            }
+        }
+        float temp = ((I - Current[first])/(Current[last]-Current[first]))*100;
+        motor_throttles[i] = first*100 + (uint16_t)temp;
+    }
+
+    
+    
+    // const float K = 0.2344;
+    // motor_throttles[0] = (uint16_t)(w_back*K);
+    // motor_throttles[1] = (uint16_t)(w_left*K);
+    // motor_throttles[2] = (uint16_t)(w_right*K);
+    // motor_throttles[3] = (uint16_t)(w_front*K);
 }
 
 void Attitude_Gain_Lookup(uint8_t index, float Gains[3][6]){
@@ -213,13 +257,15 @@ void Attitude_LQR(States &MCU, States &Reference){
         {16,17,18,19,20},
         {21,22,23,24,25}
     };
-    const float d_t = 0.025;
+    const float d_t = 0.0025;
     float K[3][6];
 
     const int8_t theta[5] = {-20, -10, 0, 10, 20};
     const int8_t phi[5] = {-20, -10, 0, 10, 20};
-    int16_t theta_m = (int16_t)((MCU.Euler[1]*R2D));
-    int16_t phi_m = (int16_t)((MCU.Euler[0]*R2D));
+    float theta_deg = MCU.Euler[1]*R2D;
+    int16_t theta_m = (int16_t)theta_deg;
+    float phi_deg = MCU.Euler[0]*R2D;
+    int16_t phi_m = (int16_t)phi_deg;
 
     uint8_t theta_index = INDEX_NOT_SET;
     uint8_t phi_index = INDEX_NOT_SET;
@@ -263,7 +309,7 @@ void Attitude_LQR(States &MCU, States &Reference){
         Euler_error_int[i] += (Euler_error[i]*d_t);
     }
     for (uint8_t i = 0; i < 3; i++){
-        temp = -1*(MCU.Euler[0]*K[i][0] + MCU.Euler[1]*K[i][1] + MCU.Euler[2]*K[i][2]
+        temp = -(MCU.Euler[0]*K[i][0] + MCU.Euler[1]*K[i][1] + MCU.Euler[2]*K[i][2]
          + Euler_error_int[0]*K[i][3] + Euler_error_int[1]*K[i][4] + Euler_error_int[2]*K[i][5]);
         Reference.w[i] = Saturate(temp, MAX_W, -MAX_W);
     }

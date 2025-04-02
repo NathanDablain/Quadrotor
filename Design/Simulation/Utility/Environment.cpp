@@ -52,7 +52,6 @@ array<int16_t, 3> Environment::Get_magnetic_field(){
     double temp = mag_LSB_true.data[0];
     mag_LSB_true.data[0] = mag_LSB_true.data[1];
     mag_LSB_true.data[1] = -temp;
-    mag_LSB_true.data[2] *= 1;
 
     array<int16_t, 3> mag_noise_LSB;
     for (uint8_t i = 0; i < 3; i++){
@@ -115,7 +114,7 @@ array<int16_t, 3> Environment::Get_acceleration(Vec &quaternion){
     // 3. convert to LSB
     Vec3 accel_LSB = accel_output*(1.0/accel_sens);
     array<int16_t, 3> accel_output_LSB;
-    accel_output_LSB[0] = static_cast<int16_t>(-accel_LSB.data[0]);
+    accel_output_LSB[0] = static_cast<int16_t>(accel_LSB.data[0]);
     accel_output_LSB[1] = static_cast<int16_t>(-accel_LSB.data[1]);
     accel_output_LSB[2] = static_cast<int16_t>(accel_LSB.data[2]);
 
