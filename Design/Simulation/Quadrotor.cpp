@@ -16,6 +16,11 @@ Quadrotor::Quadrotor(double Sim_dt, double Sim_tf){
     Motors[3].deadzone = 120;
 
     Reference.Position_NED[2] = -5.0;
+
+    log_sim.open("Sim_log.txt");
+
+    log_mcu.open("MCU_log.txt");
+
 }
 
 void Quadrotor::Run_sim(){
@@ -37,12 +42,13 @@ void Quadrotor::Run_sim(){
 
         sim_t += sim_dt;
     }
+    log_sim.close();
+    log_mcu.close();
     cout << setprecision(8) << "  P0:" << Position_NED.data[0] << "   P1:" << Position_NED.data[1] << "  P2:" << Position_NED.data[2] << endl;
 }
 
 void Quadrotor::Log_data(Environment &env){
     if (sim_t == 0.0){
-        ofstream log_sim("Sim_log.txt");
         LOG_SIM("Time");
         LOG_SIM("P_n");
         LOG_SIM("P_e");
@@ -65,8 +71,6 @@ void Quadrotor::Log_data(Environment &env){
         LOG_SIM("Moment Y");
         LOG_SIM("Moment Z");
         LOG_SIM(endl);
-        log_sim.close();
-        ofstream log_mcu("MCU_log.txt");
         LOG_MCU("Time");
         LOG_MCU("P_n");
         LOG_MCU("P_e");
@@ -91,9 +95,7 @@ void Quadrotor::Log_data(Environment &env){
         LOG_MCU("M_y Desired");
         LOG_MCU("M_z Desired");
         LOG_MCU(endl);
-        log_mcu.close();
     }
-    ofstream log_sim("Sim_log.txt", ios::app);
     log_sim << setprecision(8);
     LOG_SIM(sim_t);
     LOG_SIM(Position_NED.data[0]);
@@ -117,8 +119,6 @@ void Quadrotor::Log_data(Environment &env){
     LOG_SIM(Moments_Body.data[1]);
     LOG_SIM(Moments_Body.data[2]);
     LOG_SIM(endl);
-    log_sim.close();
-    ofstream log_mcu("MCU_log.txt", ios::app);
     log_mcu << setprecision(8);
     LOG_MCU(sim_t);
     LOG_MCU(MCU.Position_NED[0]);
@@ -144,7 +144,6 @@ void Quadrotor::Log_data(Environment &env){
     LOG_MCU(Desired_Moments[1]);
     LOG_MCU(Desired_Moments[2]);
     LOG_MCU(endl);
-    log_mcu.close();
 }
 
 void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffness, double ground_damping){
@@ -319,7 +318,7 @@ void Quadrotor::Run_MCU(Environment &env){
         // GUIDANCE //
         // static float desired_thrust;
         // static float desired_moments[3];
-        if (MRAC_Flag >= 5){
+        if (MRAC_Flag >= 50){
             MRAC_Flag = 0;
             Desired_Thrust = Height_MRAC(MCU, -Reference.Position_NED[2]);
         }
@@ -339,6 +338,7 @@ void Quadrotor::Run_MCU(Environment &env){
 
 void Quadrotor::Read_Bar(States &mcu, Environment &env){
 	static uint32_t pressure_window[BAR_WINDOW_SIZE];
+    static float height_bias;
 	static uint8_t window_counter;
 
     uint32_t pressure_LSB = env.Get_pressure();
@@ -353,7 +353,10 @@ void Quadrotor::Read_Bar(States &mcu, Environment &env){
 		pressure_oversampled >>= 4;
         mcu.pressure = static_cast<float>(pressure_oversampled)*BAR_SENS;
 		mcu.pressure_altitude = Height_Bar(pressure_oversampled);
-        mcu.Position_NED[2] = -(mcu.pressure_altitude-Reference.pressure_altitude);
+        if (sim_t < 5){
+            height_bias = mcu.pressure_altitude;
+        }
+        mcu.Position_NED[2] = mcu.pressure_altitude - height_bias; //(mcu.pressure_altitude-Reference.pressure_altitude);
 		window_counter = 0;
 	}
 	

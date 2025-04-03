@@ -40,6 +40,8 @@ float Height_Bar(uint32_t pressure_LSB);
 
 class Quadrotor{
     private:
+        ofstream log_sim;
+        ofstream log_mcu;
         // Actual mass of drone in (kg)
         double mass = 0.441;
         // Distance from front and back motor thrust vectors to drone center of gravity in (m)

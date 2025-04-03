@@ -1,8 +1,9 @@
 #include "Controllers.h"
+
 //K_attitude = [1 0.2 0.2]; % P-I-D
 
 float Height_MRAC(States &MCU, float h_ref){
-    const float d_t = 0.025;
+    const float d_t = 0.25;
     // Reference Model
     // h and h_dot
     static float x_ref[2];
@@ -36,7 +37,7 @@ float Height_MRAC(States &MCU, float h_ref){
     float phi_x = cos(MCU.Euler[0])*cos(MCU.Euler[1]);
     k_x_dot[0] = gamma_x[0]*-MCU.Position_NED[2]*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
     k_x_dot[1] = gamma_x[1]*h_dot*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
-    float k_r_dot = h_ref*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
+    float k_r_dot = 0.1*h_ref*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
     float w_dot = phi_x*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
 
     // Integrate controller gains
@@ -142,19 +143,19 @@ void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desi
 
 void Attitude_Gain_Lookup(uint8_t index, float Gains[3][6]){
     const float Gain_table[25][3][6] ={
-    {{4.5308,    0.0000   , 1.1644 ,  -9.8481   ,-0.0000,   -1.7365},
+    {{4.5308,    0.0000   , 1.1644 ,  -9.8481   ,-0.0000,   -1.7365}, // 0
     {0.1402  ,  4.3062   ,-1.5041   ,-0.5939   ,-9.3969  ,  3.3682},
-    {-0.3852  ,  1.5673 ,   4.1325   , 1.6318 ,  -3.4202  , -9.2542}},
+    {-0.3852  ,  1.5673 ,   4.1325   , 1.6318 ,  -3.4202  , -9.2542}}, 
 
-    {{4.5308   , 0.0000  ,  1.1644 ,  -9.8481 ,  -0.0000 ,  -1.7365},
+    {{4.5308   , 0.0000  ,  1.1644 ,  -9.8481 ,  -0.0000 ,  -1.7365}, // 1
     {0.0712  ,  4.5130  , -0.7637   ,-0.3015 ,  -9.8481   , 1.7101},
    {-0.4037   , 0.7958 ,   4.3309 ,   1.7101,   -1.7365  , -9.6985}},
 
-    {{4.5308  ,  0.0000  ,  1.1644 ,  -9.8481 ,  -0.0000,   -1.7365},
+    {{4.5308  ,  0.0000  ,  1.1644 ,  -9.8481 ,  -0.0000,   -1.7365}, // 2
    {-0.0000 ,   4.5826 ,  -0.0000  , -0.0000,  -10.0000 ,   0.0000},
    {-0.4099 ,  -0.0000 ,   4.3978 ,   1.7365 ,   0.0000 ,  -9.8481}},
 
-    {{4.5308 ,  -0.0000 ,   1.1644 ,  -9.8481  ,  0.0000 ,  -1.7365},
+    {{4.5308 ,  -0.0000 ,   1.1644 ,  -9.8481  ,  0.0000 ,  -1.7365}, // 3
    {-0.0712  ,  4.5130  ,  0.7637  ,  0.3015 ,  -9.8481 ,  -1.7101},
    {-0.4037 ,  -0.7958  ,  4.3309  ,  1.7101 ,   1.7365  , -9.6985}},
 
@@ -162,7 +163,7 @@ void Attitude_Gain_Lookup(uint8_t index, float Gains[3][6]){
    {-0.1402 ,   4.3062  ,  1.5041,    0.5939 ,  -9.3969 ,  -3.3682},
    {-0.3852 ,  -1.5673 ,   4.1325 ,   1.6318  ,  3.4202 ,  -9.2542}},
 
-    {{4.5695 ,  -0.0000 ,   0.5883,   -9.9619 ,   0.0000,   -0.8716},
+    {{4.5695 ,  -0.0000 ,   0.5883,   -9.9619 ,   0.0000,   -0.8716}, // 5
     {0.0713  ,  4.3062  , -1.5515  , -0.2981  , -9.3969 ,   3.4072},
    {-0.1958 ,   1.5673 ,   4.2627 ,   0.8190 ,  -3.4202 ,  -9.3612}},
 
@@ -182,7 +183,7 @@ void Attitude_Gain_Lookup(uint8_t index, float Gains[3][6]){
    {-0.0713 ,   4.3062 ,   1.5515 ,   0.2981 ,  -9.3969 ,  -3.4072},
    {-0.1958 ,  -1.5673 ,   4.2627  ,  0.8190 ,   3.4202 ,  -9.3612}},
 
-    {{4.5826 ,  -0.0000  ,  0.0000,  -10.0000  ,  0.0000 ,  -0.0000},
+    {{4.5826 ,  -0.0000  ,  0.0000,  -10.0000  ,  0.0000 ,  -0.0000}, // 10
    {-0.0000 ,   4.3062  , -1.5673 ,   0.0000 ,  -9.3969  ,  3.4202},
     {0.0000  ,  1.5673  ,  4.3062 ,  -0.0000 ,  -3.4202 ,  -9.3969}},
 
@@ -190,11 +191,11 @@ void Attitude_Gain_Lookup(uint8_t index, float Gains[3][6]){
    {-0.0000  ,  4.5130 ,  -0.7958 ,   0.0000,   -9.8481 ,   1.7365},
     {0.0000  ,  0.7958,    4.5130 ,   0.0000,   -1.7365 ,  -9.8481}},
 
-    {{4.5826  ,  0.0000 ,  -0.0000  ,-10.0000  ,  0.0000  ,  0.0000},
+    {{4.5826  ,  0.0000 ,  -0.0000  ,-10.0000  ,  0.0000  ,  0.0000}, // 12
     {0.0000  ,  4.5826 ,   0.0000 ,  -0.0000,  -10.0000 ,   0.0000},
     {0.0000  , -0.0000 ,   4.5826 ,  -0.0000   , 0.0000 , -10.0000}},
 
-   {{4.5826 ,  -0.0000 ,  -0.0000 , -10.0000,    0.0000  ,  0.0000},
+   {{4.5826 ,  -0.0000 ,  -0.0000 , -10.0000,    0.0000  ,  0.0000}, // 13
    {-0.0000 ,   4.5130,    0.7958 ,   0.0000,   -9.8481 ,  -1.7365},
     {0.0000  , -0.7958,    4.5130 ,  -0.0000 ,   1.7365 ,  -9.8481}},
 
@@ -251,11 +252,11 @@ void Attitude_Gain_Lookup(uint8_t index, float Gains[3][6]){
 
 void Attitude_LQR(States &MCU, States &Reference){
     const uint8_t index_map[5][5] = {
-        { 1, 2, 3, 4, 5},
-        { 6, 7, 8, 9,10},
-        {11,12,13,14,15},
-        {16,17,18,19,20},
-        {21,22,23,24,25}
+        { 0, 1, 2, 3, 4},
+        { 5, 6, 7, 8, 9},
+        {10,11,12,13,14},
+        {15,16,17,18,19},
+        {20,21,22,23,24}
     };
     const float d_t = 0.0025;
     float K[3][6];
@@ -305,13 +306,13 @@ void Attitude_LQR(States &MCU, States &Reference){
     float Euler_error[3];
     float temp;
     for (uint8_t i = 0; i < 3; i++){
-        Euler_error[i] = Reference.Euler[i]-MCU.Euler[i];
+        Euler_error[i] = Angle_difference(Reference.Euler[i], MCU.Euler[i]); //Reference.Euler[i]-MCU.Euler[i];
         Euler_error_int[i] += (Euler_error[i]*d_t);
     }
     for (uint8_t i = 0; i < 3; i++){
-        temp = -(MCU.Euler[0]*K[i][0] + MCU.Euler[1]*K[i][1] + MCU.Euler[2]*K[i][2]
+        temp = -(MCU.Euler[0]*K[i][0] + MCU.Euler[1]*K[i][1] + Angle_Discontinuity(MCU.Euler[2])*K[i][2]
          + Euler_error_int[0]*K[i][3] + Euler_error_int[1]*K[i][4] + Euler_error_int[2]*K[i][5]);
-        Reference.w[i] = Saturate(temp, MAX_W, -MAX_W);
+        Reference.w[i] = 0.1*Saturate(temp, MAX_W, -MAX_W);
     }
 }
 
@@ -341,4 +342,19 @@ float Saturate(float value_in, float max_value, float min_value){
         return min_value;
     }
     return value_in;
+}
+
+float Angle_difference(float angle1, float angle2){
+    float diff = angle1 - angle2;
+    if (diff > PI){
+        diff -= 2.0*PI;
+    }
+    else if (diff < -PI){
+        diff += 2.0*PI;
+    }
+    return diff;
+}
+
+float Angle_Discontinuity(float angle){
+    return (angle > PI)?(angle - 2.0*PI):(angle);
 }

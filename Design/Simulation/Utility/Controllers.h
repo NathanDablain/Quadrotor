@@ -3,7 +3,7 @@
 #include <cmath>
 #include "../Sim_Types.h"
 
-#define MAX_THRUST 7.0 // N
+#define MAX_THRUST 10.0 // N
 #define MAX_MOMENT 2.0 // N-m
 #define MAX_W 2.0 // rad/s
 #define INDEX_NOT_SET 100
@@ -19,3 +19,7 @@ void Attitude_LQR(States &MCU, States &Reference);
 void Angular_Rate_Control(States &MCU, States &Reference, float desired_moments[3]);
 
 float Saturate(float value_in, float max_value, float min_value);
+
+float Angle_difference(float angle1, float angle2);
+
+float Angle_Discontinuity(float angle);

@@ -23,7 +23,7 @@ void Environment::Update(Vec3 &Position_NED, Vec &quaternion, Vec3 &v){
     gravity = g_e_c*((1 + k_c*pow(sin(lla_current.data[0]), 2))/sqrt(1 - (pow(e_c , 2)*pow(sin(lla_current.data[0]), 2))));
     // Update pressure based off of altitude
     double p_c1 = (L_m/T_m)*(H_ortho + lla_current.data[2] - h_b);
-    pressure = P_b*pow(1.0 - p_c1, p_c2);
+    pressure = P_b*pow(1.0 + p_c1, p_c2);
     // Update magnetic field based off of quaternion
     m_vec_Body = NED2Body(m_vec_NED, quaternion);
     // Update linear acceleration
@@ -98,7 +98,7 @@ array<int16_t, 3> Environment::Get_acceleration(Vec &quaternion){
     // -> Body z = Sensor z
     Vec3 g_vec_NED = {0.0, 0.0, gravity};
     Vec3 g_vec_Body = NED2Body(g_vec_NED, quaternion);
-    Vec3 v_dot = g_vec_Body;
+    Vec3 v_dot = g_vec_Body + dv_dt;
     // 1. add noise
     Vec3 accel_noise;
     for (uint8_t i = 0; i < 3; i++){

@@ -44,7 +44,7 @@ class Environment{
         const double L_m = 0.0065;
         const double T_m = 288.15;
         const double P_b = 101325.0;
-        const double p_c2 = (g_0*M_0)/(R*L_m);
+        const double p_c2 = -(g_0*M_0)/(R*L_m);
         //---------------------------------------//
         //----LIS2MDL Magnetometer Parameters----//
         // Local magnetic field inclination
@@ -81,7 +81,7 @@ class Environment{
         // Sensitivity is in units of g/LSB
         const double accel_sens = 0.000061;
         // IIR constants for converting linear velocity to linear acceleration
-        const double accel_c1 = 0.95;
+        const double accel_c1 = 0.99;
         const double accel_c2 = 1.0-accel_c1;
         // Vector for holding linear acceleration
         Vec3 dv_dt = {0.0, 0.0, 0.0};
