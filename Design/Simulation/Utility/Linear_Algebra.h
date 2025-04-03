@@ -10,19 +10,19 @@ using namespace std;
 struct Vec3{
     array<double, 3> data {0.0};
 
-    void operator=(Vec3 v1);
+    void operator=(Vec3 const& v1);
 
-    Vec3 operator+(Vec3 v1);
+    Vec3 operator+(Vec3 const& v1);
 
-    Vec3 operator-(Vec3 v1);
+    Vec3 operator-(Vec3 const& v1);
 
-    Vec3 operator*(double c);
+    Vec3 operator*(double const& c);
 
-    Vec3 operator/(double c);
+    Vec3 operator/(double const& c);
     
-    Vec3 cross(Vec3 v1);
+    Vec3 cross(Vec3 const& v1);
 
-    double dot(Vec3 v1);
+    double dot(Vec3 const& v1);
 };
 
 struct Mat3{

@@ -2,15 +2,16 @@
 
 #include <vector>
 #include <cstdlib>
-#include <cstdint>
 #include <iostream>
 #include <iomanip>
 #include <fstream>
 #include <iomanip>
+#include "Sim_Types.h"
 #include "Linear_Algebra.h"
 #include "Motor.h"
 #include "Environment.h"
 #include "Coordinate_Frames.h"
+#include "Controllers.h"
 
 using namespace std;
 
@@ -28,29 +29,19 @@ using namespace std;
 #define BAR_R 8.31432 // Universal gas constant (J/(mol-K))S
 #define BAR_M 0.0289644 // Molar mass of air (kg/mol)
 
-#define MAG_WINDOW_SIZE 16
+#define MAG_WINDOW_SIZE 4
 
 #define IMU_WINDOW_SIZE 8 // Size of FIR window
+#define GYRO_WINDOW_SIZE 2
 #define GYRO_SENS 500.0/32768.0
 #define ACCEL_SENS 2.0/32768.0
 
 float Height_Bar(uint32_t pressure_LSB);
 
-struct States{
-    float w[3];
-    float Euler[3];
-    float g_vec[3];
-    float m_vec[3];
-    float pressure_altitude;
-    float Position_NED[3];
-    int32_t Longitude;
-    int32_t Latitude;
-    float pressure; // Temporary
-    float Position_ECEF[3];
-};
-
 class Quadrotor{
     private:
+        ofstream log_sim;
+        ofstream log_mcu;
         // Actual mass of drone in (kg)
         double mass = 0.441;
         // Distance from front and back motor thrust vectors to drone center of gravity in (m)
@@ -100,11 +91,17 @@ class Quadrotor{
         // NED to body quaternion
         Vec q;
         // Current state of the drone according to the MCU, should mirror the performance in src/Flight_Controller
-        States MCU;
+        States MCU = {0};
         // Desired state of the drone, should mirror its counterpart in src/Flight_Controller
-        States Reference;
+        States Reference = {0};
         // Model of BLDC motor and propeller
         Motor Motors[4]; // Back (CW), Left (CCW), Front (CW), Right (CCW)
+        // Flag to enable guidance and control functions in MCU after calibration
+        bool MCU_Cal_Flag = false;
+        // Desired thrust by MCU
+        float Desired_Thrust;
+        // Desired moments by MCU
+        float Desired_Moments[3];
     public:
         Quadrotor(double Sim_dt, double Sim_tf);
         void

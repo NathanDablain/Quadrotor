@@ -1,6 +1,8 @@
 #ifndef IMU_H
 #define IMU_H
 
+#include "FC_Types.h"
+
 // Macros
 #define IMU_WHO_AM_I 0x0F
 #define IMU_CTRL1_XL 0x10

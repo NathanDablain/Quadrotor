@@ -1,4 +1,4 @@
-Sensors.d Sensors.o: .././Sensors.c .././main.h \
+Sensors.d Sensors.o: .././Sensors.c \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\avr\io.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\avr\sfr_defs.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\inttypes.h \
@@ -18,10 +18,8 @@ Sensors.d Sensors.o: .././Sensors.c .././main.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\stdlib.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\stdio.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\gcc\avr\5.4.0\include\stdarg.h \
- .././SPI.h .././TWI.h .././IMU.h .././Mag.h .././Bar.h .././Observer.h \
- .././GPS.h .././SSD.h .././LoRa.h .././Motors.h
-
-.././main.h:
+ .././Bar.h .././FC_Types.h .././IMU.h .././Mag.h .././GPS.h \
+ .././Observer.h .././SPI.h
 
 c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\avr\io.h:
 
@@ -61,22 +59,16 @@ c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\
 
 c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\gcc\avr\5.4.0\include\stdarg.h:
 
-.././SPI.h:
+.././Bar.h:
 
-.././TWI.h:
+.././FC_Types.h:
 
 .././IMU.h:
 
 .././Mag.h:
 
-.././Bar.h:
+.././GPS.h:
 
 .././Observer.h:
 
-.././GPS.h:
-
-.././SSD.h:
-
-.././LoRa.h:
-
-.././Motors.h:
+.././SPI.h:

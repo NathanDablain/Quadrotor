@@ -146,9 +146,6 @@
     <Compile Include="Controllers.c">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="drone_parameters.h">
-      <SubType>compile</SubType>
-    </Compile>
     <Compile Include="main.c">
       <SubType>compile</SubType>
     </Compile>

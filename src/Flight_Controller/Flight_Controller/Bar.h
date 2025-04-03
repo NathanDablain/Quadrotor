@@ -1,6 +1,8 @@
 #ifndef BAR_H
 #define BAR_H
 
+#include "FC_Types.h"
+
 // Macros
 #define BAR_WHO_AM_I 0x0F
 #define BAR_IF_CTRL 0x0E

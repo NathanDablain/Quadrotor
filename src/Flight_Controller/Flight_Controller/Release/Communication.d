@@ -1,4 +1,4 @@
-Communication.d Communication.o: .././Communication.c .././main.h \
+Communication.d Communication.o: .././Communication.c \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\avr\io.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\avr\sfr_defs.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\inttypes.h \
@@ -18,10 +18,7 @@ Communication.d Communication.o: .././Communication.c .././main.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\stdlib.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\stdio.h \
  c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\gcc\avr\5.4.0\include\stdarg.h \
- .././SPI.h .././TWI.h .././IMU.h .././Mag.h .././Bar.h .././Observer.h \
- .././GPS.h .././SSD.h .././LoRa.h .././Motors.h
-
-.././main.h:
+ .././SPI.h .././TWI.h .././LoRa.h .././FC_Types.h .././SSD.h
 
 c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\avr\io.h:
 
@@ -65,18 +62,8 @@ c:\program\ files\ (x86)\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\
 
 .././TWI.h:
 
-.././IMU.h:
-
-.././Mag.h:
-
-.././Bar.h:
-
-.././Observer.h:
-
-.././GPS.h:
-
-.././SSD.h:
-
 .././LoRa.h:
 
-.././Motors.h:
+.././FC_Types.h:
+
+.././SSD.h:

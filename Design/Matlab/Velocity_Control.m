@@ -1,7 +1,7 @@
 clear 
 close all
 clc
-%%
+%
 Ixx = 0.00149; % kg-m^2
 Iyy = 0.00262;
 Izz = 0.00149;    
@@ -12,8 +12,8 @@ m = 0.441; % kg
 wn_E = 0.5;
 wn_T = 0.1;
 % Attitude controller gain calcs
-theta = -20:5:20;
-phi = -20:5:20;
+theta = -20:10:20;
+phi = -20:10:20;
 C = eye(3);
 A = [zeros(3,6);-C zeros(3,3)];
 count_map = zeros(length(theta),length(phi));

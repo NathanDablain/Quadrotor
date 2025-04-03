@@ -5,16 +5,15 @@
 #include <cmath>
 #include "Linear_Algebra.h"
 #include "Coordinate_Frames.h"
+#include "../Sim_Types.h"
 
 using namespace std;
-
-#define PI 3.14159265358979311600
-#define PI_2 PI/2.0
-#define D2R PI/180.0
 
 double Saturate(double value_in, double low_limit, double high_limit);
 class Environment{
     private:
+        // Simulation time step
+        double d_t;
         // Longitude (rad), Latitude (rad), and altitude (m) of reference (initial) position
         Vec3 lla;
         // lla of current position
@@ -45,7 +44,7 @@ class Environment{
         const double L_m = 0.0065;
         const double T_m = 288.15;
         const double P_b = 101325.0;
-        const double p_c2 = (g_0*M_0)/(R*L_m);
+        const double p_c2 = -(g_0*M_0)/(R*L_m);
         //---------------------------------------//
         //----LIS2MDL Magnetometer Parameters----//
         // Local magnetic field inclination
@@ -81,6 +80,11 @@ class Environment{
         const double accel_max_noise = (sqrt(208.0/2.0)*90.0)/1e6;
         // Sensitivity is in units of g/LSB
         const double accel_sens = 0.000061;
+        // IIR constants for converting linear velocity to linear acceleration
+        const double accel_c1 = 0.99;
+        const double accel_c2 = 1.0-accel_c1;
+        // Vector for holding linear acceleration
+        Vec3 dv_dt = {0.0, 0.0, 0.0};
         //---------------------------------------//
     public:
         // The below are TRUE variables, inaccessible directly by the MCU
@@ -96,13 +100,13 @@ class Environment{
         array<int16_t, 3> angular_rate_LSB;
         array<int16_t, 3> acceleration_LSB;
         // Methods
-        Environment(double Longitude, double Latitude, double Altitude_MSL);
+        Environment(double Longitude, double Latitude, double Altitude_MSL, double D_T);
         void 
-            Update(Vec3 Position_NED, Vec quaternion);
+            Update(Vec3 &Position_NED, Vec &quaternion, Vec3 &v);
         uint32_t
             Get_pressure();
         array<int16_t, 3> 
             Get_magnetic_field(),
-            Get_angular_rate(Vec3 w),
-            Get_acceleration(Vec3 v, double d_t, Vec quaternion);
+            Get_angular_rate(Vec3 &w),
+            Get_acceleration(Vec &quaternion);
 };

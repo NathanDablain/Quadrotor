@@ -1,5 +1,15 @@
-#include "main.h"
-
+#include <avr/io.h>
+#include <avr/xmega.h>
+#include <avr/interrupt.h>
+#include <math.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include "SPI.h"
+#include "TWI.h"
+#include "LoRa.h"
+#include "SSD.h"
+#include "FC_Types.h"
 // SERIAL PERIPHERAL INTERFACE (SPI) CODE
 void Setup_SPI(){
 	// Set SCK, MOSI, and CS pins as outputs and put CS pins high

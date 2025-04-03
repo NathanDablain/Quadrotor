@@ -3,49 +3,49 @@
 using namespace std;
 
 //--------Vec3 Methods----------------//
-void Vec3::operator=(Vec3 v1){
-    data[0] = v1.data[0];
-    data[1] = v1.data[1];
-    data[2] = v1.data[2];
+void Vec3::operator=(Vec3 const& v1){
+    this->data[0] = v1.data[0];
+    this->data[1] = v1.data[1];
+    this->data[2] = v1.data[2];
 }
 
-Vec3 Vec3::operator+(Vec3 v1){
+Vec3 Vec3::operator+(Vec3 const& v1){
     Vec3 v2;
     for (uint8_t i = 0; i < 3; i++){
-        v2.data[i] = data[i] + v1.data[i];
+        v2.data[i] = this->data[i] + v1.data[i];
     }
 
     return v2;
 }
 
-Vec3 Vec3::operator-(Vec3 v1){
+Vec3 Vec3::operator-(Vec3 const& v1){
     Vec3 v2;
     for (uint8_t i = 0; i < 3; i++){
-        v2.data[i] = data[i] - v1.data[i];
+        v2.data[i] = this->data[i] - v1.data[i];
     }
 
     return v2;
 }
 
-Vec3 Vec3::operator*(double c){
+Vec3 Vec3::operator*(double const& c){
     Vec3 v2;
     for (uint8_t i = 0; i < 3; i++){
-        v2.data[i] = data[i] * c;
+        v2.data[i] = this->data[i]*c;
     }
 
     return v2;
 }
 
-Vec3 Vec3::operator/(double c){
+Vec3 Vec3::operator/(double const& c){
     Vec3 v2;
     for (uint8_t i = 0; i < 3; i++){
-        v2.data[i] = data[i] / c;
+        v2.data[i] = this->data[i]/c;
     }
 
     return v2;
 }
 
-Vec3 Vec3::cross(Vec3 v1){ // CROSS PRODUCT
+Vec3 Vec3::cross(Vec3 const& v1){ // CROSS PRODUCT
     Vec3 v2;
     v2.data[0] = data[1]*v1.data[2] - data[2]*v1.data[1];
     v2.data[1] = data[2]*v1.data[0] - data[0]*v1.data[2];
@@ -54,7 +54,7 @@ Vec3 Vec3::cross(Vec3 v1){ // CROSS PRODUCT
     return v2;
 }
 
-double Vec3::dot(Vec3 v1){ // DOT PRODUCT
+double Vec3::dot(Vec3 const& v1){ // DOT PRODUCT
     return data[0]*v1.data[0] + data[1]*v1.data[1] + data[2]*v1.data[2];
 }
 //------------------------------------//

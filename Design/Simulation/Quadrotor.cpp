@@ -10,15 +10,27 @@ Quadrotor::Quadrotor(double Sim_dt, double Sim_tf){
     inertia.data[1][1] = Iyy;
     inertia.data[2][2] = Izz;
     q = {1.0, 0.0, 0.0, 0.0};
+    Motors[0].deadzone = 300;
+    Motors[1].deadzone = 125;
+    Motors[2].deadzone = 130;
+    Motors[3].deadzone = 120;
+
+    Reference.Position_NED[2] = -5.0;
+
+    log_sim.open("Sim_log.txt");
+
+    log_mcu.open("MCU_log.txt");
+
 }
 
 void Quadrotor::Run_sim(){
-    Environment env(-97.06265, 32.79100, 0.0);
+    Environment env(-97.06265, 32.79100, 0.0, sim_dt);
 
     Calibrate_sensors(env);
+    MCU_Cal_Flag = true;
 
     while(sim_t < sim_tf){
-        env.Update(Position_NED, q);
+        env.Update(Position_NED, q, v);
 
         Run_MCU(env);
 
@@ -30,12 +42,13 @@ void Quadrotor::Run_sim(){
 
         sim_t += sim_dt;
     }
+    log_sim.close();
+    log_mcu.close();
     cout << setprecision(8) << "  P0:" << Position_NED.data[0] << "   P1:" << Position_NED.data[1] << "  P2:" << Position_NED.data[2] << endl;
 }
 
 void Quadrotor::Log_data(Environment &env){
     if (sim_t == 0.0){
-        ofstream log_sim("Sim_log.txt");
         LOG_SIM("Time");
         LOG_SIM("P_n");
         LOG_SIM("P_e");
@@ -47,9 +60,17 @@ void Quadrotor::Log_data(Environment &env){
         LOG_SIM("w_x");
         LOG_SIM("w_y");
         LOG_SIM("w_z");
+        LOG_SIM("v_x");
+        LOG_SIM("v_y");
+        LOG_SIM("v_z");
+        LOG_SIM("Back Motor Thrust");
+        LOG_SIM("Left Motor Thrust");
+        LOG_SIM("Right Motor Thrust");
+        LOG_SIM("Front Motor Thrust");
+        LOG_SIM("Moment X");
+        LOG_SIM("Moment Y");
+        LOG_SIM("Moment Z");
         LOG_SIM(endl);
-        log_sim.close();
-        ofstream log_mcu("MCU_log.txt");
         LOG_MCU("Time");
         LOG_MCU("P_n");
         LOG_MCU("P_e");
@@ -61,10 +82,20 @@ void Quadrotor::Log_data(Environment &env){
         LOG_MCU("w_x");
         LOG_MCU("w_y");
         LOG_MCU("w_z");
+        LOG_MCU("v_x");
+        LOG_MCU("v_y");
+        LOG_MCU("v_z");
+        LOG_MCU("Roll Desired");
+        LOG_MCU("Pitch Desired");
+        LOG_MCU("Yaw Desired");
+        LOG_MCU("w_x Desired");
+        LOG_MCU("w_y Desired");
+        LOG_MCU("w_z Desired");
+        LOG_MCU("M_x Desired");
+        LOG_MCU("M_y Desired");
+        LOG_MCU("M_z Desired");
         LOG_MCU(endl);
-        log_mcu.close();
     }
-    ofstream log_sim("Sim_log.txt", ios::app);
     log_sim << setprecision(8);
     LOG_SIM(sim_t);
     LOG_SIM(Position_NED.data[0]);
@@ -77,9 +108,17 @@ void Quadrotor::Log_data(Environment &env){
     LOG_SIM(w.data[0]);
     LOG_SIM(w.data[1]);
     LOG_SIM(w.data[2]);
+    LOG_SIM(v.data[0]);
+    LOG_SIM(v.data[1]);
+    LOG_SIM(v.data[2]);
+    LOG_SIM(Motors[0].Get_motor_thrust());
+    LOG_SIM(Motors[1].Get_motor_thrust());
+    LOG_SIM(Motors[2].Get_motor_thrust());
+    LOG_SIM(Motors[3].Get_motor_thrust());
+    LOG_SIM(Moments_Body.data[0]);
+    LOG_SIM(Moments_Body.data[1]);
+    LOG_SIM(Moments_Body.data[2]);
     LOG_SIM(endl);
-    log_sim.close();
-    ofstream log_mcu("MCU_log.txt", ios::app);
     log_mcu << setprecision(8);
     LOG_MCU(sim_t);
     LOG_MCU(MCU.Position_NED[0]);
@@ -87,14 +126,24 @@ void Quadrotor::Log_data(Environment &env){
     LOG_MCU(MCU.Position_NED[2]);
     LOG_MCU(MCU.pressure);
     LOG_MCU(MCU.Euler[0]);
-    // LOG_MCU(MCU.Euler[1]);
-    log_mcu << setw(STANDARD_WIDTH) << MCU.Euler[1];
+    LOG_MCU(MCU.Euler[1]);
     LOG_MCU(MCU.Euler[2]);
-    LOG_MCU(w.data[0]);
-    LOG_MCU(w.data[1]);
-    LOG_MCU(w.data[2]);
+    LOG_MCU(MCU.w[0]);
+    LOG_MCU(MCU.w[1]);
+    LOG_MCU(MCU.w[2]);
+    LOG_MCU(v.data[0]);
+    LOG_MCU(v.data[1]);
+    LOG_MCU(v.data[2]);
+    LOG_MCU(Reference.Euler[0]);
+    LOG_MCU(Reference.Euler[1]);
+    LOG_MCU(Reference.Euler[2]);
+    LOG_MCU(Reference.w[0]);
+    LOG_MCU(Reference.w[1]);
+    LOG_MCU(Reference.w[2]);
+    LOG_MCU(Desired_Moments[0]);
+    LOG_MCU(Desired_Moments[1]);
+    LOG_MCU(Desired_Moments[2]);
     LOG_MCU(endl);
-    log_mcu.close();
 }
 
 void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffness, double ground_damping){
@@ -109,25 +158,32 @@ void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffn
     Vec3 g_force_Body = NED2Body(g_vec_NED, q)*mass;
     // Motor force and moment
     Vec motor_thrusts;
+    for (uint8_t i = 0; i < 4; i++){
+        Motors[i].Update_speed();
+    }
     motor_thrusts = {Motors[0].Get_motor_thrust(), Motors[1].Get_motor_thrust(),
                      Motors[2].Get_motor_thrust(), Motors[3].Get_motor_thrust()};
     Vec3 motor_force_Body = {0.0, 0.0, -motor_thrusts.magnitude()};
     // Assume that:
     // -> Back motor (0) produces negative pitching torque and negative yawing torque
     // -> Left motor (1) produces positive rolling torque and positive yawing torque
-    // -> Front motor (2) produces positive pitching torque and negative yawing torque
-    // -> Right motor (3) produces negative rolling torque and positive yawing torque
+    // -> Right motor (2) produces negative rolling torque and positive yawing torque
+    // -> Front motor (3) produces positive pitching torque and negative yawing torque
     Vec3 motor_moment_Body = {
-        length_l_r*(motor_thrusts.data[1] - motor_thrusts.data[3]),
-        length_f_b*(motor_thrusts.data[2] - motor_thrusts.data[0]),
-        length_l_r*(Motors[1].Get_motor_torque() + Motors[3].Get_motor_torque()) - length_f_b*(Motors[0].Get_motor_torque() - Motors[2].Get_motor_torque())};
+        length_l_r*(motor_thrusts.data[1] - motor_thrusts.data[2]),
+        length_f_b*(motor_thrusts.data[3] - motor_thrusts.data[0]),
+        Motors[1].Get_motor_torque() + Motors[2].Get_motor_torque() - Motors[0].Get_motor_torque() - Motors[3].Get_motor_torque()};
     // Ground force
     // Model the ground as a lumped parameter model, it has some stiffness and some damping
+    Vec3 ground_forces_NED;
     Vec3 ground_forces_Body;
+    Vec3 Velocity_NED = Body2NED(v, q);
     if (Position_NED.data[2] >= 0){
-        Vec3 to_rotate = {0.0, 0.0, Position_NED.data[2]};
-        Vec3 Position_Body = NED2Body(to_rotate, q);
-        ground_forces_Body = Position_Body*-ground_stiffness - v*ground_damping;
+        ground_forces_NED = {0.0, 0.0, -Position_NED.data[2]*ground_stiffness + -Velocity_NED.data[2]*ground_damping};
+        ground_forces_Body = NED2Body(ground_forces_NED, q);
+    }
+    else{
+        ground_forces_Body = {0.0, 0.0, 0.0};
     }
     Forces_Body = g_force_Body + motor_force_Body + ground_forces_Body; // + wind_force_Body;
     Moments_Body = motor_moment_Body; // + wind_moment_Body;
@@ -196,7 +252,7 @@ void Quadrotor::Run_MCU(Environment &env){
     // This method models the flight controller source code in src/flight_controller
     static double rtc_timelast, tcb0_timelast, tcb1_timelast, gps_timelast;
     static uint8_t seconds, LoRa_Read_Flag, Motor_Run_Flag, BAR_Read_Flag, Attitude_Observer_Run_Flag,
-         MAG_Read_Flag, IMU_Read_Flag, GPS_Read_Flag;
+         MAG_Read_Flag, IMU_Read_Flag, GPS_Read_Flag, MRAC_Flag, LQR_Flag;
     static uint16_t motor_throttles[4] = {0};
 
     // Timing
@@ -207,6 +263,8 @@ void Quadrotor::Run_MCU(Environment &env){
     }
 
     if (sim_t - tcb0_timelast >= tcb0_rate){
+        ++MRAC_Flag;
+        ++LQR_Flag;
         ++Motor_Run_Flag;
         ++BAR_Read_Flag;
         ++Attitude_Observer_Run_Flag;
@@ -250,24 +308,37 @@ void Quadrotor::Run_MCU(Environment &env){
         Attitude_Observer_Run_Flag = 0;
         Observer(MCU);
     }
-/*
+
     if (LoRa_Read_Flag){
         LoRa_Read_Flag = 0;
         Read_LoRa(Reference, env);
     }
-*/
-    // GUIDANCE //
 
-
-    // CONTROL //
-    if (Motor_Run_Flag >= 2){
-        Motor_Run_Flag = 0;
-        Run_Motors(motor_throttles);
+    if (MCU_Cal_Flag && sim_t >= 6.5){
+        // GUIDANCE //
+        // static float desired_thrust;
+        // static float desired_moments[3];
+        if (MRAC_Flag >= 50){
+            MRAC_Flag = 0;
+            Desired_Thrust = Height_MRAC(MCU, -Reference.Position_NED[2]);
+        }
+        if (LQR_Flag >= 8){
+            LQR_Flag = 0;
+            Attitude_LQR(MCU, Reference);
+        }
+        // CONTROL //
+        if (Motor_Run_Flag >= 2){
+            Motor_Run_Flag = 0;
+            Angular_Rate_Control(MCU, Reference, Desired_Moments);
+            Set_throttles(motor_throttles, Desired_Thrust, Desired_Moments);
+            Run_Motors(motor_throttles);
+        }
     }
 }
 
 void Quadrotor::Read_Bar(States &mcu, Environment &env){
 	static uint32_t pressure_window[BAR_WINDOW_SIZE];
+    static float height_bias;
 	static uint8_t window_counter;
 
     uint32_t pressure_LSB = env.Get_pressure();
@@ -282,6 +353,10 @@ void Quadrotor::Read_Bar(States &mcu, Environment &env){
 		pressure_oversampled >>= 4;
         mcu.pressure = static_cast<float>(pressure_oversampled)*BAR_SENS;
 		mcu.pressure_altitude = Height_Bar(pressure_oversampled);
+        if (sim_t < 5){
+            height_bias = mcu.pressure_altitude;
+        }
+        mcu.Position_NED[2] = mcu.pressure_altitude - height_bias; //(mcu.pressure_altitude-Reference.pressure_altitude);
 		window_counter = 0;
 	}
 	
@@ -318,7 +393,7 @@ void Quadrotor::Read_Mag(States &mcu, Environment &env){
             for (uint8_t j=0;j<MAG_WINDOW_SIZE;j++){
                 m_xyz_FIP[i] += m_xyz_window[i][j];
             }
-            m_xyz_FIP[i] >>= 4;
+            m_xyz_FIP[i] >>= 2;
             if (m_xyz_FIP[i] > m_max[i]){
                 m_max[i] = m_xyz_FIP[i];
                 if (abs(m_max[i])<abs(m_min[i])){
@@ -352,32 +427,46 @@ void Quadrotor::Read_Mag(States &mcu, Environment &env){
 void Quadrotor::Read_IMU(States &mcu, Environment &env){
     static int16_t 
         a_xyz_window[3][IMU_WINDOW_SIZE],
-        w_xyz_window[3][IMU_WINDOW_SIZE],
+        w_xyz_window[3][GYRO_WINDOW_SIZE],
         w_bias[3];
-    static uint8_t window_counter = 0;
+    static uint8_t window_counter_a;
+    static uint8_t window_counter_g;
 
-    array<int16_t, 3> Data_g = env.Get_acceleration(v, (1.0/208.0), q);
+    array<int16_t, 3> Data_g = env.Get_acceleration(q);
     array<int16_t, 3> Data_w = env.Get_angular_rate(w);
 
     for (uint8_t i=0;i<3;i++){
-        a_xyz_window[i][window_counter] = Data_g[i];
-        w_xyz_window[i][window_counter] = Data_w[i];
+        a_xyz_window[i][window_counter_a] = Data_g[i];
+        w_xyz_window[i][window_counter_g] = Data_w[i];
     }
-    window_counter++;
+    window_counter_a++;
+    window_counter_g++;
 
-    if (window_counter >= IMU_WINDOW_SIZE){
-        window_counter = 0;
+    if (window_counter_a >= IMU_WINDOW_SIZE){
+        window_counter_a = 0;
         int32_t a_xyz_FIR[3] = {0};
-        int32_t w_xyz_FIR[3] = {0};
         for (uint8_t i=0;i<3;i++){
             for (uint8_t j=0;j<IMU_WINDOW_SIZE;j++){
                 a_xyz_FIR[i] += a_xyz_window[i][j];
-                w_xyz_FIR[i] += w_xyz_window[i][j];
             }
             a_xyz_FIR[i] >>= 3;
-            w_xyz_FIR[i] >>= 3;
         }
-        // Flip positive directions on Gyro x and z axis and Accelerometer y axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
+        // Flip positive directions on Accelerometer y axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
+        mcu.g_vec[0] = ((float)a_xyz_FIR[0])*ACCEL_SENS;
+        mcu.g_vec[1] = ((float)-a_xyz_FIR[1])*ACCEL_SENS;
+        mcu.g_vec[2] = ((float)a_xyz_FIR[2])*ACCEL_SENS;
+    }
+
+    if (window_counter_g >= GYRO_WINDOW_SIZE){
+        window_counter_g = 0;
+        int32_t w_xyz_FIR[3] = {0};
+        for (uint8_t i=0;i<3;i++){
+            for (uint8_t j=0;j<GYRO_WINDOW_SIZE;j++){
+                w_xyz_FIR[i] += w_xyz_window[i][j];
+            }
+            w_xyz_FIR[i] >>= 1;
+        }
+        // Flip positive directions on Gyro x and z axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
         if (sim_t < 1.0){
             w_bias[0] = -w_xyz_FIR[0];
             w_bias[1] = w_xyz_FIR[1];
@@ -389,11 +478,13 @@ void Quadrotor::Read_IMU(States &mcu, Environment &env){
         for (uint8_t i=0;i<3;i++){
             mcu.w[i] = ((float)w_diff[i])*GYRO_SENS*D2R;
         }
-        mcu.g_vec[0] = ((float)a_xyz_FIR[0])*ACCEL_SENS;
-        mcu.g_vec[1] = ((float)-a_xyz_FIR[1])*ACCEL_SENS;
-        mcu.g_vec[2] = ((float)a_xyz_FIR[2])*ACCEL_SENS;
     }
 
+}
+
+void Quadrotor::Read_LoRa(States &reference, Environment &env){
+    reference.Position_NED[2] = sim_t > 10.0 ? 0.0 : -5.0;
+    reference.pressure_altitude = 50.75;
 }
 
 void Quadrotor::Calibrate_sensors(Environment &env){
@@ -401,7 +492,7 @@ void Quadrotor::Calibrate_sensors(Environment &env){
     while(sim_t < cal_t){
         Position_NED = {0.0, 0.0, -0.5};
 
-        env.Update(Position_NED, q);
+        env.Update(Position_NED, q, v);
 
         Run_MCU(env);
 
@@ -456,7 +547,7 @@ void Quadrotor::Observer(States &mcu){
 	float psi_hat = mcu.Euler[2];
 	if (abs(abs(mcu.Euler[1]) - PI_2) > Gimbal_Lock_Check_Angle){
 		phi_hat += (mcu.w[0] + sinf(mcu.Euler[0])*tanf(mcu.Euler[1])*mcu.w[1] + cosf(mcu.Euler[0])*tanf(mcu.Euler[1])*mcu.w[2])*dt;
-		theta_hat += (cosf(mcu.Euler[0])*mcu.w[1] - sinf(mcu.Euler[0])*mcu.w[2])*dt;
+		theta_hat += ((cosf(mcu.Euler[0])*mcu.w[1] - sinf(mcu.Euler[0])*mcu.w[2])*dt);
 		psi_hat += ((sinf(mcu.Euler[0])/cosf(mcu.Euler[1]))*mcu.w[1] + (cosf(mcu.Euler[0])/cosf(mcu.Euler[1]))*mcu.w[2])*dt;
 	}
 	// Update
@@ -464,11 +555,13 @@ void Quadrotor::Observer(States &mcu){
 	mcu.Euler[1] = theta_hat + L*(theta_m-theta_hat);
 	// Prevent yaw angle discontinuity at 2pi - 0 to cause the filter to slowly cycle between them
 	mcu.Euler[2] = (abs(psi_m-psi_hat)>PI)?(psi_m):(psi_hat + L*(psi_m-psi_hat));
+    // cout << sim_t << "   " << theta_m << "   " << theta_hat << "   " << Euler.data[1] <<"   " <<
+    //  phi_m << "   " << phi_hat << "   " << Euler.data[0] << "  " << mcu.Euler[0] << endl;
 }
 
 void Quadrotor::Run_Motors(uint16_t motor_throttles[4]){
     static uint16_t motor_lookup[1001] = {0};
-	// Build the lookup table if it hasn't been built yet, enable pins for output
+	// Build the lookup table if it hasn't been built yet
 	if (!(motor_lookup[0])){ 
 		for (uint16_t i=0;i<1001;i++){
 			motor_lookup[i] = 3*i + 3000;
@@ -479,11 +572,6 @@ void Quadrotor::Run_Motors(uint16_t motor_throttles[4]){
 	for (uint8_t i=0;i<4;i++){
 		motor_throttles[i] = (motor_throttles[i]>1000)?1000:motor_throttles[i];
 		mapped_throttle_commands[i] = motor_lookup[motor_throttles[i]];
+        Motors[i].Throttle = mapped_throttle_commands[i];
 	}
-	// Set motor throttles
-	Motors[0].Send_throttle_command(mapped_throttle_commands[0]); // Motor 0, back
-	Motors[1].Send_throttle_command(mapped_throttle_commands[1]); // Motor 1, left
-	Motors[2].Send_throttle_command(mapped_throttle_commands[2]); // Motor 2, front
-	Motors[3].Send_throttle_command(mapped_throttle_commands[3]); // Motor 3, right
-
 }

@@ -1,30 +1,20 @@
 CXX = g++
-INCDIRS = -I Utility #-I MCU -I Environment
-OPT = -O2
-#CPPFLAGS = -g -Wall -Wextra -Werror $(INCDIRS) $(OPT)
-CPPFLAGS = -g $(INCDIRS) $(OPT)
+CXXFLAGS = -g -Wall -MMD -O0 -I Utility
 
-CPPFILES = main.cpp Quadrotor.cpp Environment.cpp Motor.cpp Coordinate_Frames.cpp Linear_Algebra.cpp
-OBJECTS := $(CPPFILES:.cpp=.o)
+SOURCES = $(wildcard *.cpp) $(wildcard Utility/*.cpp)
+OBJECTS = $(SOURCES:.cpp=.o)
+DEPENDS = $(SOURCES:.cpp=.d)
+-include $(DEPENDS)
 
-BINARY = sim
+sim.exe: $(OBJECTS)
+	$(CXX) $(CSSFLAGS) -o $@ $^
 
-all: $(BINARY)
-
-$(BINARY): $(OBJECTS)
-		$(CXX) -o $@ $^
-
-%.o:%.cpp
-		$(CXX) $(CPPFLAGS) -c -o $@ $^
-
-%.o:Utility/%.cpp
-		$(CXX) $(CPPFLAGS) -c -o $@ $^
-
-# %.o:MCU/%.cpp
-# 		$(CXX) $(CPPFLAGS) -c -o $@ $^
-
-# %.o:Environment/%.cpp
-# 		$(CXX) $(CPPFLAGS) -c -o $@ $^
+.PHONY: clean
 
 clean:
-		rm -rf $(BINARY) $(OBJECTS)
+	rm -f sim.exe $(OBJECTS) 
+
+.PHONY: clean_dep
+
+clean_dep:
+	rm -f $(DEPENDS)
