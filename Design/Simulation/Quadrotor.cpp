@@ -356,7 +356,7 @@ void Quadrotor::Read_Bar(States &mcu, Environment &env){
         if (sim_t < 5){
             height_bias = mcu.pressure_altitude;
         }
-        mcu.Position_NED[2] = mcu.pressure_altitude - height_bias; //(mcu.pressure_altitude-Reference.pressure_altitude);
+        mcu.Position_NED[2] = -(mcu.pressure_altitude - height_bias);
 		window_counter = 0;
 	}
 	

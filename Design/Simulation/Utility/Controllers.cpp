@@ -35,10 +35,10 @@ float Height_MRAC(States &MCU, float h_ref){
     float k_x_dot[2];
 
     float phi_x = cos(MCU.Euler[0])*cos(MCU.Euler[1]);
-    k_x_dot[0] = gamma_x[0]*-MCU.Position_NED[2]*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
-    k_x_dot[1] = gamma_x[1]*h_dot*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
+    k_x_dot[0] = 0.1*gamma_x[0]*-MCU.Position_NED[2]*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
+    k_x_dot[1] = 0.1*gamma_x[1]*h_dot*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
     float k_r_dot = 0.1*h_ref*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
-    float w_dot = phi_x*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
+    float w_dot = 0.1*phi_x*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
 
     // Integrate controller gains
     k_x[0] += (k_x_dot[0]*d_t);
@@ -86,10 +86,6 @@ void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desi
 
     float omega[4] = {omega_back, omega_left, omega_right, omega_front};
 
-    // float w_front = (omega_front > 0)?(sqrt(omega_front)):(0.0);
-    // float w_right = (omega_right > 0)?(sqrt(omega_right)):(0.0);
-    // float w_left = (omega_left > 0)?(sqrt(omega_left)):(0.0);
-    // float w_back = (omega_back > 0)?(sqrt(omega_back)):(0.0);
     // Convert motor speeds in rad/s to throttle commands between 0-1000
     // Gain to convert rad/s to throttle command
     // omega = KT*i/k_t -> build mapping of i to throttle
@@ -131,14 +127,6 @@ void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desi
         float temp = ((I - Current[first])/(Current[last]-Current[first]))*100;
         motor_throttles[i] = first*100 + (uint16_t)temp;
     }
-
-    
-    
-    // const float K = 0.2344;
-    // motor_throttles[0] = (uint16_t)(w_back*K);
-    // motor_throttles[1] = (uint16_t)(w_left*K);
-    // motor_throttles[2] = (uint16_t)(w_right*K);
-    // motor_throttles[3] = (uint16_t)(w_front*K);
 }
 
 void Attitude_Gain_Lookup(uint8_t index, float Gains[3][6]){
@@ -319,9 +307,9 @@ void Attitude_LQR(States &MCU, States &Reference){
 void Angular_Rate_Control(States &MCU, States &Reference, float desired_moments[3]){
     // A PID controller is used to control each body angular rate and set moments
     const float d_t = 0.01;
-    const float K_p = 0.1;
-    const float K_i = 0.02;
-    const float K_d = 0.02;
+    const float K_p = 0.05;
+    const float K_i = 0;
+    const float K_d = 0;
     static float e_last[3];
     static float e_int[3];
     for (uint8_t i = 0; i < 3; i++){

@@ -43,7 +43,7 @@ gamma_r = 1;
 gamma_w = 1;
 %% Simulation
 tstep = 0.001;
-tf = 20;
+tf = 10;
 t = 0:tstep:tf;
 P_des = [0;0;5];
 
@@ -58,8 +58,21 @@ Model = out.Model;
 w_ref = out.w_ref.signals.values;
 Euler_ref = [out.phi_theta_des.signals.values(:,1) out.phi_theta_des.signals.values(:,2) zeros(length(t),1)];
 %%
-h1 = vector_plot(t,[P_des(1:2).*ones(2,length(t)); Model(:,2)']',P_real,{'North (m)', 'East (m)', 'Down (m)', 'NED Position Review'},[0 450 600 350]);
+h1 = vector_plot(t,[P_des(1:2).*ones(2,length(t)); Model(:,2)']',P_real,{'North (m)', 'East (m)', 'Down (m)', 'NED Position Review'},[0 450 600 350],[-10 10]);
 figure('position', [900 450 600 350])
 h2 = plot(t, Thrust_real);
-h3 = vector_plot(t,Euler_ref.*180/pi,Euler_real.*180/pi,{'\phi (deg)', '\theta (deg)', '\psi (deg)', 'Euler Angle Review'},[0 25 600 350]);
-h4 = vector_plot(t,w_ref,w_real,{'w_x (rad/s)', 'w_y (rad/s)', 'w_z (rad/s)', 'Body Angular Velocity Review'},[900 25 600 350]);
+h3 = vector_plot(t,Euler_ref.*180/pi,Euler_real.*180/pi,{'\phi (deg)', '\theta (deg)', '\psi (deg)', 'Euler Angle Review'},[0 25 600 350],[-pi pi]);
+h4 = vector_plot(t,w_ref,w_real,{'w_x (rad/s)', 'w_y (rad/s)', 'w_z (rad/s)', 'Body Angular Velocity Review'},[900 25 600 350],[-5 5]);
+% %%
+% clear
+% clc
+% % // -> Back motor (0) produces negative pitching torque and negative yawing torque
+% % // -> Left motor (1) produces positive rolling torque and positive yawing torque
+% % // -> Right motor (2) produces negative rolling torque and positive yawing torque
+% % // -> Front motor (3) produces positive pitching torque and negative yawing torque
+% syms T Mx My Mz w_b w_l w_r w_f kf kt lrl lfb real
+% eqn = [kf*(w_b + w_l + w_r + w_f);...
+%        kf*lrl*(w_l - w_r);...
+%        kf*lfb*(w_f - w_b);...
+%        kt*(w_l + w_r - w_b - w_f)] == [T;Mx;My;Mz];
+% S = solve(eqn,[w_b;w_l;w_r;w_f])

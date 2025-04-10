@@ -84,9 +84,10 @@ unsigned char Setup_IMU(){
 unsigned char Read_IMU(States *Drone){
 	static signed int 
 		a_xyz_window[3][IMU_WINDOW_SIZE],
-		w_xyz_window[3][IMU_WINDOW_SIZE],
+		w_xyz_window[3][GYRO_WINDOW_SIZE],
 		w_bias[3];
-	static unsigned char window_counter = 0;
+	static unsigned char window_counter_a;
+	static unsigned char window_counter_g;
 	unsigned char Read_status = 0;
 	
 	unsigned char Data[12] = {0};
@@ -94,24 +95,20 @@ unsigned char Read_IMU(States *Drone){
 	if (Read_status != 2){return 0;}
 	
 	for (unsigned char i=0;i<3;i++){
-		a_xyz_window[i][window_counter] = (((signed int)Data[2*i+7])<<8) + Data[2*i+6];
-		w_xyz_window[i][window_counter] = (((signed int)Data[2*i+1])<<8) + Data[2*i];
+		a_xyz_window[i][window_counter_a] = (((signed int)Data[2*i+7])<<8) + Data[2*i+6];
+		w_xyz_window[i][window_counter_g] = (((signed int)Data[2*i+1])<<8) + Data[2*i];
 	}
-	window_counter++;
+	window_counter_a++;
+	window_counter_g++;
 	
-	if (window_counter >= IMU_WINDOW_SIZE){
-		window_counter = 0;
-		volatile signed long a_xyz_FIR[3] = {0};
+	if (window_counter_g >= GYRO_WINDOW_SIZE){
+		window_counter_g = 0;
 		volatile signed long w_xyz_FIR[3] = {0};
 		for (unsigned char i=0;i<3;i++){
-			for (unsigned char j=0;j<IMU_WINDOW_SIZE;j++){
-				a_xyz_FIR[i] += a_xyz_window[i][j];
-				w_xyz_FIR[i] += w_xyz_window[i][j];
-			}
-			a_xyz_FIR[i] >>= 3;
-			w_xyz_FIR[i] >>= 3;
+			w_xyz_FIR[i] = w_xyz_window[i][0] + w_xyz_window[i][1];
+			w_xyz_FIR[i] >>= 1;
 		}
-		// Flip positive directions on Gyro x and z axis and Accelerometer y axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
+		// Flip positive directions on Gyro x and z axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
 		if (g_seconds < 1){
 			w_bias[0] = -w_xyz_FIR[0];
 			w_bias[1] = w_xyz_FIR[1];
@@ -121,6 +118,18 @@ unsigned char Read_IMU(States *Drone){
 		for (unsigned char i=0;i<3;i++){
 			Drone->w[i] = ((float)w_diff[i])*GYRO_SENS*D2R;
 		}
+	}
+	
+	if (window_counter_a >= IMU_WINDOW_SIZE){
+		window_counter_a = 0;
+		volatile signed long a_xyz_FIR[3] = {0};
+		for (unsigned char i=0;i<3;i++){
+			for (unsigned char j=0;j<IMU_WINDOW_SIZE;j++){
+				a_xyz_FIR[i] += a_xyz_window[i][j];
+			}
+			a_xyz_FIR[i] >>= 3;
+		}
+		// Flip positive directions on Accelerometer y axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
 		Drone->g_vec[0] = ((float)a_xyz_FIR[0])*ACCEL_SENS;
 		Drone->g_vec[1] = ((float)-a_xyz_FIR[1])*ACCEL_SENS;
 		Drone->g_vec[2] = ((float)a_xyz_FIR[2])*ACCEL_SENS;
@@ -168,7 +177,7 @@ unsigned char Read_Mag(States *Drone){
 			for (unsigned char j=0;j<MAG_WINDOW_SIZE;j++){
 				m_xyz_FIP[i] += m_xyz_window[i][j];
 			}
-			m_xyz_FIP[i] >>= 4;
+			m_xyz_FIP[i] >>= 2;
 			if (m_xyz_FIP[i] > m_max[i]){
 				m_max[i] = m_xyz_FIP[i];
 				if (abs(m_max[i])<abs(m_min[i])){

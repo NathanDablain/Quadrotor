@@ -4,7 +4,8 @@
 // Global variables
 extern volatile unsigned long g_seconds;
 
-#define D2R M_PI/180.0
+#define D2R (M_PI/180.0)
+#define R2D (180.0/M_PI)
 
 // Structures
 typedef struct{
@@ -20,5 +21,8 @@ typedef struct{
 	float Speed_over_ground;
 	float Course_over_ground;
 } States;
+
+void Delay(unsigned long long length);
+
 
 #endif
