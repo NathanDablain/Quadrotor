@@ -9,7 +9,7 @@
 #define MAG_CFG_REG_B 0x61
 #define MAG_CFG_REG_C 0x62
 #define MAG_DATA_START 0x68
-#define MAG_WINDOW_SIZE 16
+#define MAG_WINDOW_SIZE 4
 
 // Functions
 unsigned char 

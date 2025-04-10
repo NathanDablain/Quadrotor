@@ -9,7 +9,8 @@ static volatile unsigned char
 	g_Print_Flag,
 	g_IMU_Read_Flag,
 	g_LoRa_Flag,
-	g_MRAC_Flag;
+	g_MRAC_Flag,
+	g_LQR_Flag;
 volatile unsigned int
 	g_esc_current = 0;
 volatile unsigned long 
@@ -88,7 +89,9 @@ void Run(unsigned char Setup_Bitmask){
 	static States
 		Drone,
 		Reference;
-	static unsigned int motor_throttles[4] = {0};
+	static unsigned int motor_throttles[4];
+	static float desired_thrust;
+	static float desired_moments[3];
 	
 	// NAVIGATION //
 	static unsigned char Navigation_Bitmask = 0;
@@ -128,49 +131,47 @@ void Run(unsigned char Setup_Bitmask){
 	if (g_LoRa_Flag >= 20){
 		g_LoRa_Flag = 0;
 		unsigned int motor_throttle = Read_LoRa(&Reference);
-		motor_throttles[3] = motor_throttle;
-		char buffer3[15] = {0};
-		unsigned char length_to_print = snprintf(buffer3, sizeof(buffer3), "%d", motor_throttle);
-		Print_Page(3, buffer3, length_to_print);
+		//motor_throttles[3] = motor_throttle;
+		//char buffer3[15] = {0};
+		//unsigned char length_to_print = snprintf(buffer3, sizeof(buffer3), "%d", motor_throttle);
+		//Print_Page(3, buffer3, length_to_print);
 		//Navigation_Bitmask = SET_BIT(Navigation_Bitmask, NAV_LORA_bp, LoRa_status);
 	}
 	
-	if ((g_Print_Flag >= 50)&&(Setup_Bitmask & (1<<SU_SSD_bp))){
+	if (g_Print_Flag&&(Setup_Bitmask & (1<<SU_SSD_bp))){
 		g_Print_Flag = 0;
 		char buffer0[10] = {0};
 		char buffer1[10] = {0};
 		char buffer2[15] = {0};
-		unsigned char length_to_print = snprintf(buffer0, sizeof(buffer0), "%3.2f", Drone.Euler[0]);
+		char buffer3[15] = {0};
+		unsigned char length_to_print = snprintf(buffer0, sizeof(buffer0), "%3.3f , %3.3f", desired_thrust, desired_moments[0]);
 		Print_Page(0, buffer0, length_to_print);
-		length_to_print = snprintf(buffer1, sizeof(buffer1), "%3.2f", Drone.Euler[1]);
+		length_to_print = snprintf(buffer1, sizeof(buffer1), "%3.3f, %3.3f", desired_moments[1], desired_moments[2]);
 		Print_Page(1, buffer1, length_to_print);
-		length_to_print = snprintf(buffer2, sizeof(buffer2), "%3.2f", Drone.Euler[2]);
+		length_to_print = snprintf(buffer2, sizeof(buffer2), "%d , %d", motor_throttles[0], motor_throttles[1]);
 		Print_Page(2, buffer2, length_to_print);
+		length_to_print = snprintf(buffer3, sizeof(buffer3), "%d , %d", motor_throttles[2], motor_throttles[3]);
+		Print_Page(3, buffer3, length_to_print);
 	}
 	
-	// GUIDANCE //
-	static float desired_thrust;
-	static float desired_moments[3];
 	if (Navigation_Bitmask & NAV_SENSORS_bm){
-		if (g_MRAC_Flag >= 5){
+		// GUIDANCE //
+		if (g_MRAC_Flag >= 50){
 			g_MRAC_Flag = 0;
-			float Gains[3][6];
-			unsigned int count = rand();
-			if (count > 25) count = 25;
-			Attitude_Gain_Lookup(count, Gains);
-			desired_moments[0] = Gains[0][2] + Gains[1][5] + Gains[2][0];
-			desired_thrust = Height_MRAC(&Drone, -Reference.Position_NED[2]);
+			desired_thrust = 4.32; //Height_MRAC(&Drone, -Reference.Position_NED[2]);
 		}
-	}
-	
-	// CONTROL //
-	//if (Navigation_Bitmask & NAV_SENSORS_bm){
+		if (g_LQR_Flag >= 8){
+			g_LQR_Flag = 0;
+			Attitude_LQR(&Drone, &Reference);
+		}
+		// CONTROL //
 		if (g_Motor_Run_Flag >= 2){
 			g_Motor_Run_Flag = 0;
+			Angular_Rate_Control(&Drone, &Reference, desired_moments);
 			Set_throttles(motor_throttles, desired_thrust, desired_moments);
 			Run_Motors(motor_throttles);
 		}
-	//}
+	}
 }
 
 void Delay(unsigned long long length){
@@ -180,17 +181,21 @@ void Delay(unsigned long long length){
 
 ISR(RTC_CNT_vect){
 	++g_seconds;
+	++g_Print_Flag;
 	//++g_LoRa_Flag;
+	RTC_CNT = 0;
 	RTC_INTFLAGS = RTC_CMP_bm;
 }
 
 ISR(TCB0_INT_vect){
 	++g_LoRa_Flag;
 	++g_Motor_Run_Flag;
-	++g_Print_Flag;
+	//++g_Print_Flag;
 	++g_BAR_Read_Flag;
 	++g_Attitude_Observer_Run_Flag;
 	++g_MAG_Read_Flag;
+	++g_MRAC_Flag;
+	++g_LQR_Flag;
 	TCB0_INTFLAGS = TCB_CAPT_bm;
 }
 

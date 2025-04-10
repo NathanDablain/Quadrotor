@@ -18,15 +18,14 @@
 #define NAV_MAG_bp 3
 #define NAV_LORA_bp 4
 #define SU_SSD_bp 5
-#define NAV_SENSORS_bm 0x1F
+#define NAV_SENSORS_bm 0x1E //0x1F
 
 // Function Declarations
 unsigned char 
 	Setup();
 void
 	Setup_Timers(),
-	Run(unsigned char Setup_Bitmask),
-	Delay(unsigned long long length);
+	Run(unsigned char Setup_Bitmask);
 
 // Includes - specific
 #include "SPI.h"

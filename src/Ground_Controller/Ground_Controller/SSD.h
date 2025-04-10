@@ -40,13 +40,19 @@
 #define SSD_PAGE6 0xB6
 #define SSD_PAGE7 0xB7
 
-// Functions
-unsigned char
-	Setup_SSD(),
-	Write_Display(unsigned char Data_Byte),
-	Write_Display_Double(unsigned char Address_Byte, unsigned char Data_Byte),
-	Write_Character(char Character_to_write),
-	Clear_Display(),
-	Print_Page(unsigned char page, char *to_print, unsigned char number);
+#define SSD_PAGE_LENGTH 110
+
+// Initializes display
+unsigned char Setup_SSD(unsigned char Display);
+// Writes a single byte to the displays control registers
+unsigned char Write_Display(unsigned char Data_Byte, unsigned char Display);
+// Writes two data bytes to the displays control registers
+unsigned char Write_Display_Double(unsigned char Address_Byte, unsigned char Data_Byte, unsigned char Display);
+// Writes multiple bytes to make a character to the displays RAM
+unsigned char Write_Character(char Character_to_write, unsigned char Display);
+// Clears all of the displays RAM
+unsigned char Clear_Display(unsigned char Display);
+// Call this function to output text on the display, use pages 0-3
+unsigned char Print_Page(unsigned char page, char *to_print, unsigned char length_to_print, unsigned char Display);
 
 #endif
