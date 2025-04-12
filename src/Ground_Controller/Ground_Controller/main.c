@@ -8,82 +8,8 @@ volatile unsigned char g_ADC_Flag = 0;
 volatile unsigned char g_Button0_Flag = 0;
 // Tracks how often to change button status
 volatile unsigned char g_Button_Read_Flag = 0;
-
-int main(void){
-	unsigned char Setup_Bitmask = Setup();
-	Dial D_Height;
-	D_Height.ID = Height_Dial;
-	D_Height.window_left = -170;
-	D_Height.window_right = 170;
-	Dial D_East;
-	D_East.ID = East_Dial; 
-	D_East.window_left = -170;
-	D_East.window_right = 170;
-	Dial D_North;
-	D_North.ID = North_Dial;
-	D_North.window_left = -170;
-	D_North.window_right = 170;
-	Button B0 = {Standby, 1, 'C'};
-    while (1) {
-		// [7]		[6]		[5]		[4]		[3]		[2]		[1]		[0]
-		//								    LoRa	BAR     SSD1    SSD0
-	
-		// Read ADCs
-		if (g_ADC_Flag >= 2){
-			Set_dial_window(&D_Height);
-			Set_dial_window(&D_East);
-			Set_dial_window(&D_North);
-		}
-		// Set LEDs
-	
-		// Interrupts for buttons
-		if (g_Button_Read_Flag >= 5){
-			g_Button_Read_Flag = 0;
-			if (g_Button0_Flag){
-				g_Button0_Flag = 0;
-				switch (B0.Drone_status){
-					case Standby:
-						B0.Drone_status = Calibrating;
-						break;
-					case Calibrating:
-					// Drone can only move out of calibrating status internally
-						break;
-					case Ready:
-						B0.Drone_status = Flying;
-						break;
-					case Flying:
-						B0.Drone_status = Landing;
-						break;
-					case Landing:
-						B0.Drone_status = Ready;
-						break;
-				}
-			}
-		}
-	
-		// Read Barometer
-	
-		// Write Displays
-		if (g_Print_Flag >= 40){
-			g_Print_Flag = 0;
-			char buffer[4][20];
-			
-			// Printing on display 0 (right)
-			unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "HEIGHT: %d, %1.2f", D_Height.reading, D_Height.output);
-			Print_Page(0, buffer[0], length_to_print, 0);
-			length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "EA5T: %d, %1.2f", D_East.reading, D_East.output);
-			Print_Page(1, buffer[1], length_to_print, 0);
-			length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "NORTH: %d, %1.2f", D_North.reading, D_North.output);
-			Print_Page(2, buffer[2], length_to_print, 0);
-			
-			// Printing on display 1 (left)
-			length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "%d, %d", B0.Drone_status, g_Button0_Flag);
-			Print_Page(0, buffer[3], length_to_print, 1);
-		}
-	
-		// Write LoRa
-    }
-}
+// Keeps track of run time, in seconds
+volatile unsigned char g_seconds = 0;
 
 unsigned char Setup(void){
 	// Set clock speed, enable interrupts, Initialize ADC, Setup SPI, Setup TWI, Setup Lora, Setup Barometer, Setup SSD
@@ -91,7 +17,7 @@ unsigned char Setup(void){
 	unsigned char Setup_Bitmask = 0;
 	// [7]		[6]		[5]		[4]		[3]		[2]		[1]		[0]
 	//								    LoRa	BAR     SSD1    SSD0
-		
+	
 	_PROTECTED_WRITE (CLKCTRL_OSCHFCTRLA, CLKCTRL_FRQSEL_24M_gc); // Sets CPU clock to 24 MHz
 	while(!(CLKCTRL_MCLKSTATUS & CLKCTRL_OSCHFS_bm)); // Wait for clock to stabilize
 	Setup_SPI();
@@ -105,8 +31,71 @@ unsigned char Setup(void){
 	Setup_Timers();
 	Setup_Buttons();
 	sei();
-		
+	
 	return Setup_Bitmask;
+}
+
+int main(void){
+	unsigned char Setup_Bitmask = Setup();
+	Dial D_Height = {.ID = Height_Dial, .window_left = -170, .window_right = 170};
+	Dial D_East = {.ID = East_Dial, .window_left = -170, .window_right = 170};
+	Dial D_North = {.ID = North_Dial, .window_left = -170, .window_right = 170};
+	Uplink up_link = {Standby, 0.0, 0.0, 0.0, 0.0};
+	Downlink down_link = {0, 0};
+	Downlink_Reponse_Codes Downlink_Status = No_response;
+	unsigned char ID_index = 0;
+	if (Setup_Bitmask == SETUP_SUCCESS){
+		while (1) {
+			// [7]		[6]		[5]		[4]		[3]		[2]		[1]		[0]
+			//								    LoRa	BAR     SSD1    SSD0
+		
+			// Read ADCs
+			if (g_ADC_Flag >= 2){
+				g_ADC_Flag = 0;
+				Set_dial_window(&D_Height);
+				Set_dial_window(&D_East);
+				Set_dial_window(&D_North);
+			}
+			// Set LEDs
+		
+			// Check if a button has been pressed
+			if (g_Button_Read_Flag >= 5) Set_Status(&up_link);
+		
+			// Read Barometer
+			if (g_BAR_Read_Flag >= 3) Read_Bar(&up_link.Pressure_altitude);	
+			
+			// Write Displays
+			if (g_Print_Flag >= 40){
+				g_Print_Flag = 0;
+				char buffer[5][20];
+				
+				// Printing on display 0 (right)
+				unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "HEIGHT: %1.2f", D_Height.output);
+				Print_Page(0, buffer[0], length_to_print, 0);
+				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "EA5T: %1.2f", D_East.output);
+				Print_Page(1, buffer[1], length_to_print, 0);
+				length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "NORTH: %1.2f", D_North.output);
+				Print_Page(2, buffer[2], length_to_print, 0);
+				
+				// Printing on display 1 (left)
+				length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "%d", up_link.Drone_status);
+				Print_Page(0, buffer[3], length_to_print, 1);
+				length_to_print = snprintf(buffer[4], sizeof(buffer[4]), "HEIGHT: %3.2f", up_link.Pressure_altitude);
+				Print_Page(1, buffer[4], length_to_print, 1);
+			}
+		
+			// Check LoRa
+			if (g_LoRa_Check_Flag){
+				unsigned char data_available = Check_For_Message();
+				if (data_available >= DOWNLINK_SIZE){
+					Downlink_Status = Receive_Downlink(&down_link, ID_index, data_available);
+				}
+			}
+			
+			// Send Uplink via LoRa once a second, update ID to check
+			if (g_LoRa_Uplink_Flag) ID_index = Send_Uplink(&up_link);
+		}
+	}
 }
 
 void Setup_ADC(){
@@ -171,6 +160,10 @@ void Set_dial_window(Dial *dial){
 }
 
 void Setup_Timers(){
+	//-Setup Real Time Clock for keeping track of total run time-//
+	RTC_CTRLA |= RTC_CORREN_bm | RTC_RTCEN_bm;
+	RTC_INTCTRL |= RTC_CMP_bm;
+	RTC_CMP = 32768;
 	//-------Setup Timer/Counter B0 for output compare---------//
 	// Generates an interrupt every 5 ms, is used by:
 	//	-> Print statements, variable frequency
@@ -206,6 +199,30 @@ unsigned int Read_ADC(Dial_ID dial){
 	return ADC_result;
 }
 
+void Set_Status(Uplink *up_link){
+	g_Button_Read_Flag = 0;
+	if (g_Button0_Flag){
+		g_Button0_Flag = 0;
+		switch (up_link->Drone_status){
+			case Standby:
+				up_link->Drone_status = Calibrating;
+				break;
+			case Calibrating:
+			// Drone can only move out of calibrating status internally
+				break;
+			case Ready:
+				up_link->Drone_status = Flying;
+				break;
+			case Flying:
+				up_link->Drone_status = Landing;
+				break;
+			case Landing:
+				up_link->Drone_status = Ready;
+				break;
+		}
+	}
+}
+
 void Delay(unsigned long long length){
 	volatile unsigned long long i = 0;
 	while (++i < length);
@@ -220,5 +237,14 @@ ISR(TCB0_INT_vect){
 	++g_ADC_Flag;
 	++g_Print_Flag;
 	++g_Button_Read_Flag;
+	++g_BAR_Read_Flag;
+	++g_LoRa_Check_Flag;
 	TCB0_INTFLAGS = TCB_CAPT_bm;
+}
+
+ISR(RTC_CNT_vect){
+	++g_seconds;
+	++g_LoRa_Uplink_Flag;
+	RTC_CNT = 0;
+	RTC_INTFLAGS = RTC_CMP_bm;
 }

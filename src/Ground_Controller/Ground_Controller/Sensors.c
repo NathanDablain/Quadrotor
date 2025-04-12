@@ -1,7 +1,11 @@
 #include "Ground_Controller.h"
+#include "SPI.h"
+#include "Bar.h"
+#include "math.h"
 
 // Barometer (BAR) //
-// -> 0 is a write, 1 is a read
+
+volatile unsigned char g_BAR_Read_Flag = 0;
 
 unsigned char Setup_Bar(){
 	unsigned char BAR_ID = 0;
@@ -19,6 +23,9 @@ unsigned char Setup_Bar(){
 unsigned char Read_Bar(float *pressure_altitude){
 	static unsigned long pressure_window[BAR_WINDOW_SIZE];
 	static unsigned char window_counter = 0;
+	
+	g_BAR_Read_Flag = 0;
+	
 	unsigned char Read_status = 0;
 	unsigned char Data[3] = {0};
 	Read_status = Read_SPI(PORT_BAR, CS_BAR, (BAR_DATA_START|0x80), Data, sizeof(Data));
