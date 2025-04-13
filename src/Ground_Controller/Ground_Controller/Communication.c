@@ -3,10 +3,12 @@
 #include <string.h>
 #include <math.h>
 #include <avr/io.h>
+#include "Ground_Controller.h"
 #include "SSD.h"
 #include "../../Common/LoRa.h"
 #include "TWI.h"
 #include "SPI.h"
+
 // Two Wire Interface (TWI) //
 void Setup_TWI(){
 	// TWI 0 //
@@ -294,22 +296,29 @@ unsigned char Send_Uplink(Uplink *outbound){
 	sprintf(buffer[2], "%06.2f", fabs(outbound->Desired_altitude));
 	sprintf(buffer[3], "%06.2f", fabs(outbound->Pressure_altitude));
 	// Build up link message
-	char message[35] = {'$', 'N', 'D', ID[ID_index][0], ID[ID_index][1],
+	char message[] = {'$', 'N', 'D', ID[ID_index][0], ID[ID_index][1],
 		 buffer[0][0], buffer[0][1], buffer[0][2], buffer[0][3], buffer[0][4], buffer[0][5], north_south,
 		 buffer[1][0], buffer[1][1], buffer[1][2], buffer[1][3], buffer[1][4], buffer[1][5], east_west,
 		 buffer[2][0], buffer[2][1], buffer[2][2], buffer[2][3], buffer[2][4], buffer[2][5],
 		 buffer[3][0], buffer[3][1], buffer[3][2], buffer[3][3], buffer[3][4], buffer[3][5], outbound->Drone_status};
-	(void)Write_SPI_Stream(PORT_LORA, CS_LORA, (LORA_REG_TX_ADR|0x80), message, sizeof(message));
+	// Set FIFO pointer to TX base address, and write message
+	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),LORA_REG_TX_ADR);
+	(void)Write_SPI_Stream(PORT_LORA, CS_LORA, (LORA_REG_FIFO|0x80), message, sizeof(message));
 	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_TX);
 	unsigned char LoRa_TX_Status = 0;
 	while(1){
 		Read_SPI(PORT_LORA, CS_LORA, LORA_REG_IRQ_FLAGS, &LoRa_TX_Status, 1);
-		if (LoRa_TX_Status) break;
+		if (LoRa_TX_Status == LORA_IRQ_TX_DONE){
+			Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_IRQ_FLAGS|0x80), LORA_IRQ_TX_DONE);
+			break;
+		}
+		Delay(1000);
 	}
 	// Transmission complete, put LoRa back into receive continuous mode
+	Delay(100000);
 	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_RXCONTINUOUS);
-	
-	return ID_index;
+	unsigned char output = ID_index;
+	return output;
 }
 
 // SOLOMON SYSTECH DRIVER (SSD) 1306 CODE
@@ -373,6 +382,7 @@ inline unsigned char Write_Display_Double(unsigned char Address_Byte, unsigned c
 }
 
 unsigned char Write_Character(char Character_to_write, unsigned char Display){
+	// Always leave bottom bit blank, bits order from bottom (7) to top (0)
 	const unsigned char SSD_space[3] = {0x00, 0x00, 0x00};
 	const unsigned char SSD_dot[3] = {0x00, 0b01000000, 0x00};
 	const unsigned char SSD_dash[3] = {0b00001000, 0b00001000, 0b00001000};
@@ -390,20 +400,33 @@ unsigned char Write_Character(char Character_to_write, unsigned char Display){
 	const unsigned char SSD_7[6] = {0b01000001, 0b00100001, 0b00010001, 0b00001001, 0b00000101, 0b00000011};
 	const unsigned char SSD_8[5] = {0b00010100, 0b00101010, 0b01001001, 0b00101010, 0b00010100};
 	const unsigned char SSD_9[5] = {0b01000110, 0b00101010, 0b00011001, 0b00001010, 0b00000100};
-	const unsigned char SSD_G[5] = {0b00011100, 0b00100010, 0b01010001, 0b01010001, 0b01110010};
-	const unsigned char SSD_N[7] = {0b01111111, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000, 0b01111111};
-	const unsigned char SSD_M[5] = {0b01111111, 0b00000010, 0b00000100, 0b00000010, 0b01111111};
-	const unsigned char SSD_h[4] = {0b01111111, 0b00001000, 0b00001000, 0b01111111};
-	const unsigned char SSD_E[4] = {0b01111111, 0b01001001, 0b01001001, 0b01001001};
-	const unsigned char SSD_L[4] = {0b01111111, 0b01000000, 0b01000000, 0b01000000};
-	const unsigned char SSD_O[4] = {0b00111110, 0b01000001, 0b01000001, 0b00111110};
-	const unsigned char SSD_R[5] = {0b01111111, 0b00001001, 0b00011001, 0b00100110, 0b01000000};
 	const unsigned char SSD_A[11] = {0b01000000, 0b00100000, 0b00010000, 0b00011000, 0b00010100, 0b00010010, 0b00010100, 0b00011000, 0b00010000, 0b00100000, 0b01000000};
+	const unsigned char SSD_B[5] = {0b01111111, 0b01001001, 0b01001001, 0b01011101, 0b00100010};
 	const unsigned char SSD_C[4] = {0b00011100, 0b00100010, 0b01000001, 0b00100010};
-	const unsigned char SSD_F[4] = {0b01111111, 0b00010001, 0b00010001, 0b00000001};
 	const unsigned char SSD_D[4] = {0b01111111, 0b01000001, 0b00100010, 0b00011100};
+	const unsigned char SSD_E[4] = {0b01111111, 0b01001001, 0b01001001, 0b01001001};
+	const unsigned char SSD_F[4] = {0b01111111, 0b00010001, 0b00010001, 0b00000001};
+	const unsigned char SSD_G[5] = {0b00011100, 0b00100010, 0b01010001, 0b01010001, 0b01110010};
+	// SSD_H refers to the header file
+	const unsigned char SSD_h[5] = {0b01111111, 0b00001000, 0b00001000, 0b00001000, 0b01111111};
 	const unsigned char SSD_I[5] = {0b01000001, 0b01000001, 0b01111111, 0b01000001, 0b01000001};
+	const unsigned char SSD_J[5] = {0b00100001, 0b01000001, 0b00100001, 0b00011111, 0b00000001};
+	const unsigned char SSD_K[5] = {0b01111111, 0b00001000, 0b00010100, 0b00100010, 0b01000001};
+	const unsigned char SSD_L[4] = {0b01111111, 0b01000000, 0b01000000, 0b01000000};
+	const unsigned char SSD_M[5] = {0b01111111, 0b00000010, 0b00000100, 0b00000010, 0b01111111};
+	const unsigned char SSD_N[7] = {0b01111111, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000, 0b01111111};
+	const unsigned char SSD_O[4] = {0b00111110, 0b01000001, 0b01000001, 0b00111110};
+	const unsigned char SSD_P[4] = {0b01111111, 0b00001001, 0b00001001, 0b00000110};
+	const unsigned char SSD_Q[6] = {0b00011100, 0b00100010, 0b01000001, 0b01000101, 0b00100010, 0b00011101};
+	const unsigned char SSD_R[5] = {0b01111111, 0b00001001, 0b00011001, 0b00100110, 0b01000000};
+	// S copies from 5
 	const unsigned char SSD_T[5] = {0b00000001, 0b00000001, 0b01111111, 0b00000001, 0b00000001};
+	const unsigned char SSD_U[5] = {0b00011111, 0b00100000, 0b01000000, 0b00100000, 0b00011111};
+	const unsigned char SSD_V[11] = {0b00000001, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000, 0b00010000, 0b00001000, 0b00000100, 0b00000010, 0b00000001};
+	//const unsigned char SSD_W[];
+	//const unsigned char SSD_X[];
+	const unsigned char SSD_Y[5] = {0b00000001, 0b00000010, 0b01111100, 0b00000010, 0b00000001};
+	//const unsigned char SSD_Z[];
 	
 	const unsigned char *output;
 	unsigned char output_size;
@@ -448,65 +471,97 @@ unsigned char Write_Character(char Character_to_write, unsigned char Display){
 		output = SSD_9;
 		output_size = sizeof(SSD_9);
 		break;
-		case '.':
-		output = SSD_dot;
-		output_size = sizeof(SSD_dot);
-		break;
-		case 'G':
-		output = SSD_G;
-		output_size = sizeof(SSD_G);
-		break;
-		case 'N':
-		output = SSD_N;
-		output_size = sizeof(SSD_N);
-		break;
-		case 'M':
-		output = SSD_M;
-		output_size = sizeof(SSD_M);
-		break;
-		case 'H':
-		output = SSD_h;
-		output_size = sizeof(SSD_h);
-		break;
-		case 'E':
-		output = SSD_E;
-		output_size = sizeof(SSD_E);
-		break;
-		case 'L':
-		output = SSD_L;
-		output_size = sizeof(SSD_L);
-		break;
-		case 'O':
-		output = SSD_O;
-		output_size = sizeof(SSD_O);
-		break;
-		case 'R':
-		output = SSD_R;
-		output_size = sizeof(SSD_R);
-		break;
 		case 'A':
 		output = SSD_A;
 		output_size = sizeof(SSD_A);
+		break;
+		case 'B':
+		output = SSD_B;
+		output_size = sizeof(SSD_B);
 		break;
 		case 'C':
 		output = SSD_C;
 		output_size = sizeof(SSD_C);
 		break;
+		case 'D':
+		output = SSD_D;
+		output_size = sizeof(SSD_D);
+		break;
+		case 'E':
+		output = SSD_E;
+		output_size = sizeof(SSD_E);
+		break;
 		case 'F':
 		output = SSD_F;
 		output_size = sizeof(SSD_F);
 		break;
-		case 'D':
-		output = SSD_D;
-		output_size = sizeof(SSD_D);
+		case 'G':
+		output = SSD_G;
+		output_size = sizeof(SSD_G);
+		break;
+		case 'H':
+		output = SSD_h;
+		output_size = sizeof(SSD_h);
+		break;
+		case 'I':
+		output = SSD_I;
+		output_size = sizeof(SSD_I);
+		break;
+		case 'J':
+		output = SSD_J;
+		output_size = sizeof(SSD_J);
+		break;
+		case 'K':
+		output = SSD_K;
+		output_size = sizeof(SSD_K);
+		break;
+		case 'L':
+		output = SSD_L;
+		output_size = sizeof(SSD_L);
+		break;
+		case 'M':
+		output = SSD_M;
+		output_size = sizeof(SSD_M);
+		break;
+		case 'N':
+		output = SSD_N;
+		output_size = sizeof(SSD_N);
+		break;
+		case 'O':
+		output = SSD_O;
+		output_size = sizeof(SSD_O);
+		break;
+		case 'P':
+		output = SSD_P;
+		output_size = sizeof(SSD_P);
+		break;
+		case 'Q':
+		output = SSD_Q;
+		output_size = sizeof(SSD_Q);
+		break;
+		case 'R':
+		output = SSD_R;
+		output_size = sizeof(SSD_R);
+		break;
+		case 'S':
+		output = SSD_5;
+		output_size = sizeof(SSD_5);
 		break;
 		case 'T':
 		output = SSD_T;
 		output_size = sizeof(SSD_T);
 		break;
-		case 'I':
-		output = SSD_I;
-		output_size = sizeof(SSD_I);
+		case 'U':
+		output = SSD_U;
+		output_size = sizeof(SSD_U);
+		break;
+		case 'V':
+		output = SSD_V;
+		output_size = sizeof(SSD_V);
+		break;
+		case 'Y':
+		output = SSD_Y;
+		output_size = sizeof(SSD_Y);
 		break;
 		case '-':
 		output = SSD_dash;
@@ -527,6 +582,10 @@ unsigned char Write_Character(char Character_to_write, unsigned char Display){
 		case ':':
 		output = SSD_colon;
 		output_size = sizeof(SSD_colon);
+		break;
+		case '.':
+		output = SSD_dot;
+		output_size = sizeof(SSD_dot);
 		break;
 		default:
 		output = SSD_space;

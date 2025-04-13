@@ -65,32 +65,16 @@ int main(void){
 			if (g_BAR_Read_Flag >= 3) Read_Bar(&up_link.Pressure_altitude);	
 			
 			// Write Displays
-			if (g_Print_Flag >= 40){
-				g_Print_Flag = 0;
-				char buffer[5][20];
-				
-				// Printing on display 0 (right)
-				unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "HEIGHT: %1.2f", D_Height.output);
-				Print_Page(0, buffer[0], length_to_print, 0);
-				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "EA5T: %1.2f", D_East.output);
-				Print_Page(1, buffer[1], length_to_print, 0);
-				length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "NORTH: %1.2f", D_North.output);
-				Print_Page(2, buffer[2], length_to_print, 0);
-				
-				// Printing on display 1 (left)
-				length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "%d", up_link.Drone_status);
-				Print_Page(0, buffer[3], length_to_print, 1);
-				length_to_print = snprintf(buffer[4], sizeof(buffer[4]), "HEIGHT: %3.2f", up_link.Pressure_altitude);
-				Print_Page(1, buffer[4], length_to_print, 1);
-			}
+			if (g_Print_Flag >= 40)	Print_Displays(&D_Height, &D_North, &D_East, &up_link, Downlink_Status);
 		
-			// Check LoRa
+			// Check LoRa, downlink drone calibration and tracking status
 			if (g_LoRa_Check_Flag){
 				unsigned char data_available = Check_For_Message();
 				if (data_available >= DOWNLINK_SIZE){
 					Downlink_Status = Receive_Downlink(&down_link, ID_index, data_available);
 				}
 			}
+			// TODO: Create connection between downlink drone status and uplink drone status
 			
 			// Send Uplink via LoRa once a second, update ID to check
 			if (g_LoRa_Uplink_Flag) ID_index = Send_Uplink(&up_link);
@@ -182,10 +166,10 @@ unsigned int Read_ADC(Dial_ID dial){
 		case Height_Dial:
 			ADC0_MUXPOS |= ADC_MUXPOS_AIN0_gc;
 			break;
-		case North_Dial:
+		case East_Dial:
 			ADC0_MUXPOS |= ADC_MUXPOS_AIN1_gc;
 			break;
-		case East_Dial:
+		case North_Dial:
 			ADC0_MUXPOS |= ADC_MUXPOS_AIN2_gc;
 			break;
 	}
@@ -226,6 +210,25 @@ void Set_Status(Uplink *up_link){
 void Delay(unsigned long long length){
 	volatile unsigned long long i = 0;
 	while (++i < length);
+}
+
+void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink_Reponse_Codes Downlink_Status){
+	char *Dl_S_renums[5] = {"NO RESPONSE","INCOMPLETE RESPONSE","BAD ID","BAD CHECKSUM","GOOD RESPONSE"};
+	char *Dr_S_renums[5] = {"STANDBY","CALIBRATING","READY","FLYING","LANDING"};
+	char buffer[3][20];
+	g_Print_Flag = 0;
+					
+	// Printing on display 0 (right)
+	unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "HEIGHT: %1.2f", D_h->output);
+	Print_Page(0, buffer[0], length_to_print, 0);
+	length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "EA5T: %1.2f", D_e->output);
+	Print_Page(1, buffer[1], length_to_print, 0);
+	length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "NORTH: %1.2f", D_n->output);
+	Print_Page(2, buffer[2], length_to_print, 0);
+					
+	// Printing on display 1 (left)
+	Print_Page(0, Dr_S_renums[up_link->Drone_status], strlen(Dr_S_renums[up_link->Drone_status]), 1);
+	Print_Page(1, Dl_S_renums[Downlink_Status], strlen(Dl_S_renums[Downlink_Status]), 1);
 }
 
 ISR(PORTC_PORT_vect){

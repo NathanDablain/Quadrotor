@@ -5,6 +5,7 @@
 #include <avr/interrupt.h>
 #include <avr/xmega.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "Bar.h"
 #include "SSD.h"
@@ -37,5 +38,7 @@ unsigned int Read_ADC(Dial_ID dial);
 void Set_Status(Uplink *up_link);
 // Delays the MCU for the given length of clock cycles
 void Delay(unsigned long long length);
+// Prints to SSD displays
+void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink_Reponse_Codes Downlink_Status);
 
 #endif
