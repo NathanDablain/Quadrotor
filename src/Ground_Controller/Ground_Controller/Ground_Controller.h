@@ -10,7 +10,8 @@
 #include "Bar.h"
 #include "SSD.h"
 #include "SPI.h"
-#include "../../Common/LoRa.h"
+#include "LoRa.h"
+#include "Utilities.h"
 #include "GC_Types.h"
 
 // Tracks when to sample barometer
@@ -36,8 +37,6 @@ void Set_dial_window(Dial *dial);
 unsigned int Read_ADC(Dial_ID dial);
 // Sets the Flight Controller (FC) status given current status
 void Set_Status(Uplink *up_link);
-// Delays the MCU for the given length of clock cycles
-void Delay(unsigned long long length);
 // Prints to SSD displays
 void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink_Reponse_Codes Downlink_Status);
 

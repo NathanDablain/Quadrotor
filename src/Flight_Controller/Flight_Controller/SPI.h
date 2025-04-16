@@ -16,8 +16,10 @@
 #define SCK 2 // PC2
 
 // Functions
-void
-	Setup_SPI();
+void Setup_SPI();
+
+void Read_SPI_c(char Port, unsigned char Pin, unsigned char Register, char *Data, unsigned char Data_Length);
+
 unsigned char
 	Read_SPI(char Port, unsigned char Pin, unsigned char Register, unsigned char *Data, unsigned char Data_Length),
 	Write_SPI(char Port, unsigned char Pin, unsigned char Register, unsigned char Data),

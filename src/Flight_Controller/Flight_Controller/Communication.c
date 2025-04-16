@@ -8,8 +8,10 @@
 #include "SPI.h"
 #include "TWI.h"
 #include "LoRa.h"
+#include "Utilities.h"
 #include "SSD.h"
 #include "FC_Types.h"
+
 // SERIAL PERIPHERAL INTERFACE (SPI) CODE
 void Setup_SPI(){
 	// Set SCK, MOSI, and CS pins as outputs and put CS pins high
@@ -53,6 +55,34 @@ unsigned char Read_SPI(char Port, unsigned char Pin, unsigned char Register, uns
 	}
 	
 	return 2;
+}
+
+void Read_SPI_c(char Port, unsigned char Pin, unsigned char Register, char *Data, unsigned char Data_Length){
+	unsigned char i = 0;
+	
+	if (Port == 'A'){
+		PORTA_OUT &= ~(1<<Pin);
+	}
+	else if (Port == 'B'){
+		PORTB_OUT &= ~(1<<Pin);
+	}
+	else {return;}
+	SPI1_DATA = Register;
+	while (!(SPI1_INTFLAGS & SPI_IF_bm));
+	SPI1_INTFLAGS &= ~SPI_IF_bm;
+	
+	while (i++<Data_Length){
+		SPI1_DATA = 0;
+		while (!(SPI1_INTFLAGS & SPI_IF_bm));
+		*Data++ = SPI1_DATA;
+	}
+	
+	if (Port == 'A'){
+		PORTA_OUT |= (1<<Pin);
+	}
+	else {
+		PORTB_OUT |= (1<<Pin);
+	}
 }
 
 unsigned char Write_SPI(char Port, unsigned char Pin, unsigned char Register, unsigned char Data){
@@ -163,81 +193,115 @@ unsigned char Write_TWI(unsigned char Slave_Address, unsigned char Address_Byte,
 }
 
 // LONG RANGE (LORA) CODE
+volatile unsigned char g_LoRa_Check_Flag = 0;
+
 unsigned char Setup_LoRa(){
-	unsigned char 
-		LoRa_Address = 0,
-		LoRa_status = 2;
-	LoRa_status &= Read_SPI(PORT_LORA,CS_LORA,0x42,&LoRa_Address,1);
-	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_OP_MODE|0x80),0b10000000); // Set LoRa mode, still in standby
-	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_MSB|0x80),0b11100100); // Set frequency to 915 MHz
-	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_MIDB|0x80),0b11000000);
-	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_LSB|0x80),0b00000000);
-	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_OP_MODE|0x80),0b00000101); // Set LoRa mode into RXCONTINUOUS
-	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PA_CONFIG|0x80),0b00010001); // more..MORE...MORE!!!
+	unsigned char LoRa_status = 2;
+	
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_OP_MODE|0x80),LORA_MODE_SLEEP); // Set LoRa mode, still in sleep
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_MSB|0x80),LORA_FREQ_915_HB); // Set frequency to 915 MHz
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_MIDB|0x80),LORA_FREQ_915_MB);
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_LSB|0x80),LORA_FREQ_915_LB);
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_OP_MODE|0x80),LORA_MODE_RXCONTINUOUS); // Set to continuously receive
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PA_CONFIG|0x80),LORA_PA_14dBm); // Set power to 14 dBm
 	
 	return (LoRa_status == 2) ? 1 : 0;
 }
 
-unsigned int Read_LoRa(States *Reference){
+unsigned char Check_For_Message(){
+	// Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C*CS
+	// Underscores are for readability, not part of actual message
+	g_LoRa_Check_Flag = 0;
 	unsigned char data_available = 0;
 	Read_SPI(PORT_LORA,CS_LORA,LORA_REG_RX_N_BYTES,&data_available,1);
-	unsigned char *buffer = malloc(data_available);
-	if (data_available >= 5){
-		unsigned char RX_Adrs = 0;
-		(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_RX_ADR,&RX_Adrs,1);
-		(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),RX_Adrs); // Set FIFO ptr to current FIFO RX address
-		(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_FIFO,buffer,data_available);
-		if (((char)buffer[0] == '5')&&((char)buffer[1] == '2')){
-			char temp[4] = {(char)buffer[2], (char)buffer[3], (char)buffer[4], 0};
-			unsigned int message = atoi(temp);
-			free(buffer);
-			return message;
+	return data_available;
+}
+
+void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Controller_Status, unsigned char data_available){
+	// Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C*CS
+	// Underscores are for readability, not part of actual message
+	unsigned char uplink_status = 1;
+	unsigned char buffer[100] = {0};
+	unsigned char RX_Adrs = 0;
+	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_RX_ADR,&RX_Adrs,1);
+	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),RX_Adrs); // Set FIFO ptr to current FIFO RX address
+	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_FIFO,buffer,data_available);
+	
+	char print_buffer[100];
+	unsigned char length_to_print = snprintf(print_buffer, sizeof(print_buffer), "%d, %d, %d, %d, %d", buffer[0], buffer[1], buffer[2], buffer[3], buffer[4]);
+	Print_Page(0, print_buffer, length_to_print);
+
+	// Keeps track of index in buffer
+	unsigned char i = 0;
+	// Index in buffer where '$' is, signifies start of message
+	signed char start_index = -1;
+	// Index in buffer where '*' is, signifies end of data section of message, beginning of checksum
+	signed char end_index = -1;
+	// Populate with uplink message checksum characters
+	char Check_Sum[2] = {0};
+
+	while(i != data_available){
+		if (buffer[i] == '$'){
+			start_index = i;
 		}
-	/*
-		unsigned char i = 0;
-		unsigned char j = 0;
-		signed char start_index = -1;
-		signed char end_index = -1;
-		signed char comma_indices[7] = {-1,-1,-1,-1,-1,-1,-1};
-		char LoRa_Data[50] = {0};
-		char Check_Sum[2] = {0};
-		
-		while(i != data_available){
-			if ((char)buffer[i] == 36){start_index = i;}
-			else if (((char)buffer[i] == 42)&&(start_index != -1)){
-				end_index = i;
-				Check_Sum[0] = (char)buffer[++i];
-				Check_Sum[1] = (char)buffer[++i];
-				break;
-			}
-			else if (((char)buffer[i] == 44)&&(start_index != -1)){comma_indices[j++] = i;}
-			if (start_index != -1){LoRa_Data[i] = (char)buffer[i];}
-			i++;
+		if ((start_index != -1)&&(buffer[i] == '*')){
+			end_index = i;
+			Check_Sum[0] = buffer[++i];
+			Check_Sum[1] = buffer[++i];
+			break;
 		}
-		
-		if ((start_index == -1)||(end_index == -1)){return 0;}
-		
-		signed char checksum = LoRa_Data[start_index+1];
-		for (unsigned char k=start_index+2;k<=end_index;k++){
-			checksum ^= LoRa_Data[k];
-		}
-		char checksum_hex[3] = {0};
-		unsigned char converted_length = snprintf(checksum_hex, sizeof(checksum_hex), "%X", checksum);
-		if (converted_length == 1){ // Won't add the 0 in automatically if the number is less than 8
-			checksum_hex[1] = checksum_hex[0];
-			checksum_hex[0] = 48;
-		}
-		if ((checksum_hex[0] == Check_Sum[0])&&(checksum_hex[1] == Check_Sum[1])){
-			
-			return 1;
-		}
-	*/
+		i++;
 	}
-	free(buffer);
-	return 0;
+
+	if ((start_index == -1)||(end_index == -1)) uplink_status = 0;
+	// Compare checksum in message to calculated checksum
+	char checksum_hex[3] = {0};
+	Xor_Checksum(buffer, (end_index-start_index), start_index, checksum_hex);
+	// If checksum passes, read uplink
+	if ((checksum_hex[0] == Check_Sum[0])&&(checksum_hex[1] == Check_Sum[1])&&uplink_status){
+		char inbound_ID[3] = {buffer[start_index+2], buffer[start_index+3], 0};
+		// Get desired north/south position
+		char inbound_Desired_North[7] = {buffer[start_index+4],buffer[start_index+5],buffer[start_index+6],buffer[start_index+7],buffer[start_index+8],buffer[start_index+9],0};
+		signed char sign = (buffer[start_index+10]=='N')?(1):(-1);
+		inbound->Desired_north = sign*atof(inbound_Desired_North);
+		// Get desired east/west position
+		char inbound_Desired_East[7] = {buffer[start_index+11],buffer[start_index+12],buffer[start_index+13],buffer[start_index+14],buffer[start_index+15],buffer[start_index+16],0};
+		sign = (buffer[start_index+17]=='E')?(1):(-1);
+		inbound->Desired_east = sign*atof(inbound_Desired_East);
+		// Get desired altitude
+		char inbound_Desired_Altitude[7] = {buffer[start_index+18],buffer[start_index+19],buffer[start_index+20],buffer[start_index+21],buffer[start_index+22],buffer[start_index+23],0};
+		inbound->Desired_altitude = atof(inbound_Desired_Altitude);
+		// Get base altitude
+		char inbound_Base_Altitude[7] = {buffer[start_index+24],buffer[start_index+25],buffer[start_index+26],buffer[start_index+27],buffer[start_index+28],buffer[start_index+29],0};
+		inbound->Base_altitude = atof(inbound_Base_Altitude);
+		// Get requested drone status
+		char Requested_Drone_Status_c[2] = {buffer[start_index+30], 0};
+		FC_Status Requested_Drone_Status = atoi(Requested_Drone_Status_c);
+		switch (Requested_Drone_Status){
+			case Standby:
+				if (*Flight_Controller_Status == Flying) *Flight_Controller_Status = Landing;
+				break;
+			case Calibrating:
+				if (*Flight_Controller_Status == Flying) *Flight_Controller_Status = Landing;
+				if (*Flight_Controller_Status == Standby) *Flight_Controller_Status = Calibrating;
+				break;
+			case Ready:
+				break;
+			case Flying:
+				if (*Flight_Controller_Status == Ready) *Flight_Controller_Status = Flying;
+				break;
+			case Landing:
+				if (*Flight_Controller_Status == Flying) *Flight_Controller_Status = Landing;
+				break;
+		}
+
+	}
 }
 
 // SOLOMON SYSTECH DRIVER (SSD) 1306 CODE
+
+volatile unsigned char g_Print_Flag = 0;
+
 unsigned char Setup_SSD(){
 	unsigned char Setup_status = 1;
 	// From data sheet - order of software tasks to initialize display
@@ -286,35 +350,51 @@ inline unsigned char Write_Display_Double(unsigned char Address_Byte, unsigned c
 }
 
 unsigned char Write_Character(char Character_to_write){
-	const unsigned char 
-		SSD_space[3] = {0x00, 0x00, 0x00},
-		SSD_dot[3] = {0x00, 0b01000000, 0x00},
-		SSD_dash[3] = {0b00001000, 0b00001000, 0b00001000},
-		SSD_comma[3] = {0b00100000, 0b01100000, 0b00000000},
-		SSD_asterisk[3] = {0b00000010, 0b00000111, 0b00000010},
-		SSD_dollar[5] = {0b01001111, 0b01001001, 0b011111111, 0b01001001, 0b01111001},
-		SSD_0[4] = {0b00111110, 0b01000001, 0b01000001, 0b00111110},
-		SSD_1[3] = {0b01000010, 0b01111111, 0b01000000},
-		SSD_2[4] = {0b01111001, 0b01001001, 0b01001001, 0b01001111},
-		SSD_3[5] = {0b01000001, 0b01001001, 0b01001001, 0b01010101, 0b00110110},
-		SSD_4[5] = {0b00010000, 0b00011000, 0b00010100, 0b00010010, 0b01111111},
-		SSD_5[4] = {0b01001111, 0b01001001, 0b01001001, 0b01111001},
-		SSD_6[5] = {0b00011100, 0b00101010, 0b01001001, 0b00101001, 0b00010000},
-		SSD_7[6] = {0b01000001, 0b00100001, 0b00010001, 0b00001001, 0b00000101, 0b00000011},
-		SSD_8[5] = {0b00010100, 0b00101010, 0b01001001, 0b00101010, 0b00010100},
-		SSD_9[5] = {0b01000110, 0b00101010, 0b00011001, 0b00001010, 0b00000100},
-		SSD_G[5] = {0b00011100, 0b00100010, 0b01010001, 0b01010001, 0b01110010},
-		SSD_N[7] = {0b01111111, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000, 0b01111111},
-		SSD_M[5] = {0b01111111, 0b00000010, 0b00000100, 0b00000010, 0b01111111},
-		SSD_h[4] = {0b01111111, 0b00001000, 0b00001000, 0b01111111},
-		SSD_E[4] = {0b01111111, 0b01001001, 0b01001001, 0b01001001},
-		SSD_L[4] = {0b01111111, 0b01000000, 0b01000000, 0b01000000},
-		SSD_O[4] = {0b00111110, 0b01000001, 0b01000001, 0b00111110},
-		SSD_R[5] = {0b01111111, 0b00001001, 0b00011001, 0b00100110, 0b01000000},
-		SSD_A[7] = {0b01000000, 0b00010000, 0b00010100, 0b00000010, 0b00010100, 0b00010000, 0b01000000},
-		SSD_C[4] = {0b00011100, 0b00100010, 0b01000001, 0b00100010},
-		SSD_F[4] = {0b01111111, 0b00010001, 0b00010001, 0b00000001},
-		SSD_D[4] = {0b01111111, 0b01000001, 0b00100010, 0b00011100};
+	// Always leave bottom bit blank, bits order from bottom (7) to top (0)
+	const unsigned char SSD_space[3] = {0x00, 0x00, 0x00};
+	const unsigned char SSD_dot[3] = {0x00, 0b01000000, 0x00};
+	const unsigned char SSD_dash[3] = {0b00001000, 0b00001000, 0b00001000};
+	const unsigned char SSD_comma[3] = {0b00100000, 0b01100000, 0b00000000};
+	const unsigned char SSD_asterisk[3] = {0b00000010, 0b00000111, 0b00000010};
+	const unsigned char SSD_dollar[5] = {0b01001111, 0b01001001, 0b011111111, 0b01001001, 0b01111001};
+	const unsigned char SSD_colon[2] = {0b00100100, 0b00100100};
+	const unsigned char SSD_0[4] = {0b00111110, 0b01000001, 0b01000001, 0b00111110};
+	const unsigned char SSD_1[3] = {0b01000010, 0b01111111, 0b01000000};
+	const unsigned char SSD_2[4] = {0b01111001, 0b01001001, 0b01001001, 0b01001111};
+	const unsigned char SSD_3[5] = {0b01000001, 0b01001001, 0b01001001, 0b01010101, 0b00110110};
+	const unsigned char SSD_4[5] = {0b00010000, 0b00011000, 0b00010100, 0b00010010, 0b01111111};
+	const unsigned char SSD_5[4] = {0b01001111, 0b01001001, 0b01001001, 0b01111001};
+	const unsigned char SSD_6[5] = {0b00011100, 0b00101010, 0b01001001, 0b00101001, 0b00010000};
+	const unsigned char SSD_7[6] = {0b01000001, 0b00100001, 0b00010001, 0b00001001, 0b00000101, 0b00000011};
+	const unsigned char SSD_8[5] = {0b00010100, 0b00101010, 0b01001001, 0b00101010, 0b00010100};
+	const unsigned char SSD_9[5] = {0b01000110, 0b00101010, 0b00011001, 0b00001010, 0b00000100};
+	const unsigned char SSD_A[5] = {0b01111100, 0b00001010, 0b00001001, 0b00001010, 0b01111100};
+	const unsigned char SSD_B[5] = {0b01111111, 0b01001001, 0b01001001, 0b01011101, 0b00100010};
+	const unsigned char SSD_C[4] = {0b00011100, 0b00100010, 0b01000001, 0b00100010};
+	const unsigned char SSD_D[4] = {0b01111111, 0b01000001, 0b00100010, 0b00011100};
+	const unsigned char SSD_E[4] = {0b01111111, 0b01001001, 0b01001001, 0b01001001};
+	const unsigned char SSD_F[4] = {0b01111111, 0b00010001, 0b00010001, 0b00000001};
+	const unsigned char SSD_G[5] = {0b00011100, 0b00100010, 0b01010001, 0b01010001, 0b01110010};
+	// SSD_H refers to the header file
+	const unsigned char SSD_h[5] = {0b01111111, 0b00001000, 0b00001000, 0b00001000, 0b01111111};
+	const unsigned char SSD_I[5] = {0b01000001, 0b01000001, 0b01111111, 0b01000001, 0b01000001};
+	const unsigned char SSD_J[5] = {0b00100001, 0b01000001, 0b00100001, 0b00011111, 0b00000001};
+	const unsigned char SSD_K[5] = {0b01111111, 0b00001000, 0b00010100, 0b00100010, 0b01000001};
+	const unsigned char SSD_L[4] = {0b01111111, 0b01000000, 0b01000000, 0b01000000};
+	const unsigned char SSD_M[5] = {0b01111111, 0b00000010, 0b00000100, 0b00000010, 0b01111111};
+	const unsigned char SSD_N[7] = {0b01111111, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000, 0b01111111};
+	const unsigned char SSD_O[4] = {0b00111110, 0b01000001, 0b01000001, 0b00111110};
+	const unsigned char SSD_P[4] = {0b01111111, 0b00001001, 0b00001001, 0b00000110};
+	const unsigned char SSD_Q[6] = {0b00011100, 0b00100010, 0b01000001, 0b01000101, 0b00100010, 0b00011101};
+	const unsigned char SSD_R[5] = {0b01111111, 0b00001001, 0b00011001, 0b00100110, 0b01000000};
+	// S copies from 5
+	const unsigned char SSD_T[5] = {0b00000001, 0b00000001, 0b01111111, 0b00000001, 0b00000001};
+	const unsigned char SSD_U[5] = {0b00011111, 0b00100000, 0b01000000, 0b00100000, 0b00011111};
+	const unsigned char SSD_V[11] = {0b00000001, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000, 0b00010000, 0b00001000, 0b00000100, 0b00000010, 0b00000001};
+	//const unsigned char SSD_W[];
+	//const unsigned char SSD_X[];
+	const unsigned char SSD_Y[5] = {0b00000001, 0b00000010, 0b01111100, 0b00000010, 0b00000001};
+	//const unsigned char SSD_Z[];
 	
 	const unsigned char *output;
 	unsigned char output_size;
@@ -359,57 +439,97 @@ unsigned char Write_Character(char Character_to_write){
 		output = SSD_9;
 		output_size = sizeof(SSD_9);
 		break;
-		case '.':
-		output = SSD_dot;
-		output_size = sizeof(SSD_dot);
-		break;
-		case 'G':
-		output = SSD_G;
-		output_size = sizeof(SSD_G);
-		break;
-		case 'N':
-		output = SSD_N;
-		output_size = sizeof(SSD_N);
-		break;
-		case 'M':
-		output = SSD_M;
-		output_size = sizeof(SSD_M);
-		break;
-		case 'H':
-		output = SSD_h;
-		output_size = sizeof(SSD_h);
-		break;
-		case 'E':
-		output = SSD_E;
-		output_size = sizeof(SSD_E);
-		break;
-		case 'L':
-		output = SSD_L;
-		output_size = sizeof(SSD_L);
-		break;
-		case 'O':
-		output = SSD_O;
-		output_size = sizeof(SSD_O);
-		break;
-		case 'R':
-		output = SSD_R;
-		output_size = sizeof(SSD_R);
-		break;
 		case 'A':
 		output = SSD_A;
 		output_size = sizeof(SSD_A);
+		break;
+		case 'B':
+		output = SSD_B;
+		output_size = sizeof(SSD_B);
 		break;
 		case 'C':
 		output = SSD_C;
 		output_size = sizeof(SSD_C);
 		break;
+		case 'D':
+		output = SSD_D;
+		output_size = sizeof(SSD_D);
+		break;
+		case 'E':
+		output = SSD_E;
+		output_size = sizeof(SSD_E);
+		break;
 		case 'F':
 		output = SSD_F;
 		output_size = sizeof(SSD_F);
 		break;
-		case 'D':
-		output = SSD_D;
-		output_size = sizeof(SSD_D);
+		case 'G':
+		output = SSD_G;
+		output_size = sizeof(SSD_G);
+		break;
+		case 'H':
+		output = SSD_h;
+		output_size = sizeof(SSD_h);
+		break;
+		case 'I':
+		output = SSD_I;
+		output_size = sizeof(SSD_I);
+		break;
+		case 'J':
+		output = SSD_J;
+		output_size = sizeof(SSD_J);
+		break;
+		case 'K':
+		output = SSD_K;
+		output_size = sizeof(SSD_K);
+		break;
+		case 'L':
+		output = SSD_L;
+		output_size = sizeof(SSD_L);
+		break;
+		case 'M':
+		output = SSD_M;
+		output_size = sizeof(SSD_M);
+		break;
+		case 'N':
+		output = SSD_N;
+		output_size = sizeof(SSD_N);
+		break;
+		case 'O':
+		output = SSD_O;
+		output_size = sizeof(SSD_O);
+		break;
+		case 'P':
+		output = SSD_P;
+		output_size = sizeof(SSD_P);
+		break;
+		case 'Q':
+		output = SSD_Q;
+		output_size = sizeof(SSD_Q);
+		break;
+		case 'R':
+		output = SSD_R;
+		output_size = sizeof(SSD_R);
+		break;
+		case 'S':
+		output = SSD_5;
+		output_size = sizeof(SSD_5);
+		break;
+		case 'T':
+		output = SSD_T;
+		output_size = sizeof(SSD_T);
+		break;
+		case 'U':
+		output = SSD_U;
+		output_size = sizeof(SSD_U);
+		break;
+		case 'V':
+		output = SSD_V;
+		output_size = sizeof(SSD_V);
+		break;
+		case 'Y':
+		output = SSD_Y;
+		output_size = sizeof(SSD_Y);
 		break;
 		case '-':
 		output = SSD_dash;
@@ -427,11 +547,20 @@ unsigned char Write_Character(char Character_to_write){
 		output = SSD_asterisk;
 		output_size = sizeof(SSD_asterisk);
 		break;
+		case ':':
+		output = SSD_colon;
+		output_size = sizeof(SSD_colon);
+		break;
+		case '.':
+		output = SSD_dot;
+		output_size = sizeof(SSD_dot);
+		break;
 		default:
 		output = SSD_space;
 		output_size = sizeof(SSD_space);
 		break;
 	}
+	
 	unsigned char TWI_status = Write_TWI(SSD_ADR, 0x40, (unsigned char *)output, output_size);
 	
 	return (TWI_status == 4) ? 1 : 0;
@@ -523,4 +652,17 @@ unsigned char Print_Page(unsigned char page, char *to_print, unsigned char lengt
 		counter++;
 	}
 	return Print_status;
+}
+
+void Print_Output(float *Desired_Thrust, float Desired_Moments[3], unsigned int Motor_Throttles[4]){
+	g_Print_Flag = 0;
+	char buffer[4][15] = {0};
+	unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%3.3f , %3.3f", *Desired_Thrust, Desired_Moments[0]);
+	Print_Page(0, buffer[0], length_to_print);
+	length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%3.3f, %3.3f", Desired_Moments[1], Desired_Moments[2]);
+	Print_Page(1, buffer[1], length_to_print);
+	length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%d , %d", Motor_Throttles[0], Motor_Throttles[1]);
+	Print_Page(2, buffer[2], length_to_print);
+	length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "%d , %d", Motor_Throttles[2], Motor_Throttles[3]);
+	Print_Page(3, buffer[3], length_to_print);
 }

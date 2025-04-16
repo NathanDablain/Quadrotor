@@ -44,4 +44,6 @@ unsigned char
 	Clear_Display(),
 	Print_Page(unsigned char page, char *to_print, unsigned char number);
 
+void Print_Output(float *Desired_Thrust, float Desired_Moments[3], unsigned int Motor_Throttles[4]);
+
 #endif

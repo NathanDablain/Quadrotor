@@ -5,7 +5,8 @@
 #include <avr/io.h>
 #include "Ground_Controller.h"
 #include "SSD.h"
-#include "../../Common/LoRa.h"
+#include "LoRa.h"
+#include "Utilities.h"
 #include "TWI.h"
 #include "SPI.h"
 
@@ -244,16 +245,18 @@ Downlink_Reponse_Codes Receive_Downlink(Downlink *inbound, unsigned char ID_inde
 
 	if ((start_index == -1)||(end_index == -1)) return Incomplete_response;
 	// Compare checksum in message to calculated checksum
-	signed char checksum = buffer[start_index+1];
-	for (unsigned char k=start_index+2;k<=end_index;k++){
-		checksum ^= buffer[k];
-	}
+	//signed char checksum = buffer[start_index+1];
+	//for (unsigned char k=start_index+2;k<=end_index;k++){
+		//checksum ^= buffer[k];
+	//}
+	//char checksum_hex[3] = {0};
+	//unsigned char converted_length = snprintf(checksum_hex, sizeof(checksum_hex), "%X", checksum);
+	//if (converted_length == 1){ // Won't add the 0 in automatically if the number is less than 8
+		//checksum_hex[1] = checksum_hex[0];
+		//checksum_hex[0] = 48;
+	//}
 	char checksum_hex[3] = {0};
-	unsigned char converted_length = snprintf(checksum_hex, sizeof(checksum_hex), "%X", checksum);
-	if (converted_length == 1){ // Won't add the 0 in automatically if the number is less than 8
-		checksum_hex[1] = checksum_hex[0];
-		checksum_hex[0] = 48;
-	}
+	Xor_Checksum((char *)buffer, (end_index-start_index), start_index, checksum_hex);
 	// If checksum passes, read downlink
 	if ((checksum_hex[0] == Check_Sum[0])&&(checksum_hex[1] == Check_Sum[1])){
 		char inbound_ID[3] = {buffer[3], buffer[4], 0};
@@ -288,28 +291,40 @@ unsigned char Send_Uplink(Uplink *outbound){
 	// TX data must be written to LoRa while it is in standby
 	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_STDBY);
 	// Convert desired positions and current base altitude to characters for transmission
-	char buffer[4][7];
+	char buffer[5][7];
 	sprintf(buffer[0], "%06.2f", fabs(outbound->Desired_north));
 	char north_south = (outbound->Desired_north >= 0)?('N'):('S');
 	sprintf(buffer[1], "%06.2f", fabs(outbound->Desired_east));
 	char east_west = (outbound->Desired_east >= 0)?('E'):('W');
 	sprintf(buffer[2], "%06.2f", fabs(outbound->Desired_altitude));
 	sprintf(buffer[3], "%06.2f", fabs(outbound->Pressure_altitude));
+	sprintf(buffer[4], "%d", outbound->Drone_status);
 	// Build up link message
 	char message[] = {'$', 'N', 'D', ID[ID_index][0], ID[ID_index][1],
 		 buffer[0][0], buffer[0][1], buffer[0][2], buffer[0][3], buffer[0][4], buffer[0][5], north_south,
 		 buffer[1][0], buffer[1][1], buffer[1][2], buffer[1][3], buffer[1][4], buffer[1][5], east_west,
 		 buffer[2][0], buffer[2][1], buffer[2][2], buffer[2][3], buffer[2][4], buffer[2][5],
-		 buffer[3][0], buffer[3][1], buffer[3][2], buffer[3][3], buffer[3][4], buffer[3][5], outbound->Drone_status};
+		 buffer[3][0], buffer[3][1], buffer[3][2], buffer[3][3], buffer[3][4], buffer[3][5], buffer[4][0],
+		 '*', 0, 0, 0};
+	// Build checksum
+	char checksum_hex[3] = {0};
+	Xor_Checksum(message, (sizeof(message)-5), 1, checksum_hex);
+	message[sizeof(message)-2] = checksum_hex[1];
+	message[sizeof(message)-3] = checksum_hex[0];
 	// Set FIFO pointer to TX base address, and write message
-	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),LORA_REG_TX_ADR);
-	(void)Write_SPI_Stream(PORT_LORA, CS_LORA, (LORA_REG_FIFO|0x80), message, sizeof(message));
+	unsigned char TX_base_adr;
+	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_TX_ADR,&TX_base_adr,1);
+	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),TX_base_adr);
+	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PAYLOAD_LENGTH|0x80),sizeof(message)-1);
+	//for (unsigned char i = 0; i < sizeof(message2); i++){
+		//Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO|0x80),message2[i]);
+	//}
+	(void)Write_SPI_Stream(PORT_LORA, CS_LORA, (LORA_REG_FIFO|0x80), message, sizeof(message)-1);
 	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_TX);
 	unsigned char LoRa_TX_Status = 0;
 	while(1){
 		Read_SPI(PORT_LORA, CS_LORA, LORA_REG_IRQ_FLAGS, &LoRa_TX_Status, 1);
 		if (LoRa_TX_Status == LORA_IRQ_TX_DONE){
-			Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_IRQ_FLAGS|0x80), LORA_IRQ_TX_DONE);
 			break;
 		}
 		Delay(1000);
@@ -400,7 +415,7 @@ unsigned char Write_Character(char Character_to_write, unsigned char Display){
 	const unsigned char SSD_7[6] = {0b01000001, 0b00100001, 0b00010001, 0b00001001, 0b00000101, 0b00000011};
 	const unsigned char SSD_8[5] = {0b00010100, 0b00101010, 0b01001001, 0b00101010, 0b00010100};
 	const unsigned char SSD_9[5] = {0b01000110, 0b00101010, 0b00011001, 0b00001010, 0b00000100};
-	const unsigned char SSD_A[11] = {0b01000000, 0b00100000, 0b00010000, 0b00011000, 0b00010100, 0b00010010, 0b00010100, 0b00011000, 0b00010000, 0b00100000, 0b01000000};
+	const unsigned char SSD_A[5] = {0b01111100, 0b00001010, 0b00001001, 0b00001010, 0b01111100};
 	const unsigned char SSD_B[5] = {0b01111111, 0b01001001, 0b01001001, 0b01011101, 0b00100010};
 	const unsigned char SSD_C[4] = {0b00011100, 0b00100010, 0b01000001, 0b00100010};
 	const unsigned char SSD_D[4] = {0b01111111, 0b01000001, 0b00100010, 0b00011100};

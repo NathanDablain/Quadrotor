@@ -1,34 +1,15 @@
-#include "main.h"
+#include "Flight_Controller.h"
 
-// Global variables
 static volatile unsigned char 
 	g_Motor_Run_Flag,
 	g_MAG_Read_Flag,
 	g_BAR_Read_Flag, 
 	g_Attitude_Observer_Run_Flag, 
-	g_Print_Flag,
 	g_IMU_Read_Flag,
-	g_LoRa_Flag,
 	g_MRAC_Flag,
 	g_LQR_Flag;
-volatile unsigned int
-	g_esc_current = 0;
-volatile unsigned long 
-	g_seconds = 0;
-
-int main(){
-	unsigned char Setup_Bitmask = Setup();
-	if ((Setup_Bitmask & NAV_SENSORS_bm) == NAV_SENSORS_bm){
-		while(1){
-			Run(Setup_Bitmask);
-		}
-	}
+volatile unsigned long g_seconds = 0;
 	
-	return 0;
-}
-
-// Function Definitions
-
 unsigned char Setup(){
 	if (RSTCTRL_RSTFR & RSTCTRL_PORF_bm){Delay(100000);} // Necessary to stabilize IC's on a cold start
 	unsigned char Setup_Bitmask = 0;
@@ -46,7 +27,7 @@ unsigned char Setup(){
 	unsigned char BAR_setup_status = Setup_Bar();
 	unsigned char SSD_setup_status = Setup_SSD();
 	Setup_Bitmask |= (GPS_setup_status<<NAV_GPS_bp) | (BAR_setup_status<<NAV_BAR_bp) | (IMU_setup_status<<NAV_IMU_bp) | (MAG_setup_status<<NAV_MAG_bp)
-					 | (LoRa_setup_status<<NAV_LORA_bp) | (SSD_setup_status<<SU_SSD_bp);
+	| (LoRa_setup_status<<NAV_LORA_bp) | (SSD_setup_status<<SU_SSD_bp);
 	Setup_Timers();
 	sei();
 	return Setup_Bitmask;
@@ -85,98 +66,119 @@ void Setup_Timers(){
 	//-------------------------------------------------------//
 }
 
-void Run(unsigned char Setup_Bitmask){
-	static States
-		Drone,
-		Reference;
-	static unsigned int motor_throttles[4];
-	static float desired_thrust;
-	static float desired_moments[3];
-	
-	// NAVIGATION //
-	static unsigned char Navigation_Bitmask = 0;
-	// This section handles all sensor timing and reading, will populate a bit mask of the sensor statuses for guidance and control functions
-	// [7]		[6]		[5]		[4]		[3]		[2]		[1]		[0]
-	//				           LoRa	    MAG		IMU		BAR		GPS
+int main(){
+	unsigned char Setup_Bitmask = Setup();
+	// If the sensors we need for navigation initialized sucessfully, enter main loop
+	if ((Setup_Bitmask & NAV_SENSORS_bm) == NAV_SENSORS_bm){
+		// Initialize data structures
+		// Drone-> tracks the current drone states
+		States Drone;
+		// Reference-> tracks the desired drone states used by guidance and control functions
+		States Reference;
+		// up_link-> contains the last information sent to the drone via LoRa uplink
+		Uplink up_link;
+		// down_link-> contains the flight controller calibration status and how well the drone is tracking references
+		Downlink down_link = {0};
+		// Flight_Controller_Status-> Controls the mode of operation the drone is in, changed by uplinks from the ground controller
+		FC_Status Flight_Controller_Status = Standby;
+		// Motor_Throttles-> Values from 0-1000 with 1000 being max throttle, motor order is: back, left, right, front
+		unsigned int Motor_Throttles[4];
+		// Desired_Thrust-> Controlled by a Model Reference Adaptive Controller (MRAC), in units of N
+		float Desired_Thrust;
+		// Desired_Moments-> Controlled by 3 PIDs, moment order is: body x, body y, body z, in units of N-m
+		float Desired_Moments[3];
+		// Bits track when a sensor has finished calibrating
+		unsigned char Calibration_Bitmask = 0;
+		unsigned char Calibration_Loop_Exit_Flag = 0;
+		// Calibration loop
+		while(1){
+			if (g_LoRa_Check_Flag){
+				unsigned char data_available = Check_For_Message();
+				if (data_available >= UPLINK_SIZE){
+					Receive_Uplink(&up_link, &down_link, &Flight_Controller_Status, data_available);
+					if (Calibration_Loop_Exit_Flag) break;
+				}
+			}
+			if (Flight_Controller_Status == Calibrating){
+				//if (g_BAR_Read_Flag >= 3)
 
-	if (g_GPS_Read_Flag){
-		g_GPS_Read_Flag = 0;
-		unsigned char GPS_status = Read_GPS(&Drone);
-		Navigation_Bitmask = SET_BIT(Navigation_Bitmask, NAV_GPS_bp, GPS_status);
-	}
-	
-	if (g_BAR_Read_Flag >= 3){
-		g_BAR_Read_Flag = 0;
-		unsigned char BAR_status = Read_Bar(&Drone);
-		Navigation_Bitmask = SET_BIT(Navigation_Bitmask, NAV_BAR_bp, BAR_status);
-	}
-	
-	if (g_MAG_Read_Flag >= 2){
-		g_MAG_Read_Flag = 0;
-		unsigned char MAG_status = Read_Mag(&Drone);
-		Navigation_Bitmask = SET_BIT(Navigation_Bitmask, NAV_MAG_bp, MAG_status);
-	}
-	
-	if (g_IMU_Read_Flag){
-		g_IMU_Read_Flag = 0;
-		unsigned char IMU_status = Read_IMU(&Drone);
-		Navigation_Bitmask = SET_BIT(Navigation_Bitmask, NAV_IMU_bp, IMU_status);
-	}
-	
-	if (g_Attitude_Observer_Run_Flag >= 8){
-		g_Attitude_Observer_Run_Flag = 0;
-		Observer(&Drone);
-	}
-	
-	if (g_LoRa_Flag >= 20){
-		g_LoRa_Flag = 0;
-		unsigned int motor_throttle = Read_LoRa(&Reference);
-		//motor_throttles[3] = motor_throttle;
-		//char buffer3[15] = {0};
-		//unsigned char length_to_print = snprintf(buffer3, sizeof(buffer3), "%d", motor_throttle);
-		//Print_Page(3, buffer3, length_to_print);
-		//Navigation_Bitmask = SET_BIT(Navigation_Bitmask, NAV_LORA_bp, LoRa_status);
-	}
-	
-	if (g_Print_Flag&&(Setup_Bitmask & (1<<SU_SSD_bp))){
-		g_Print_Flag = 0;
-		char buffer0[10] = {0};
-		char buffer1[10] = {0};
-		char buffer2[15] = {0};
-		char buffer3[15] = {0};
-		unsigned char length_to_print = snprintf(buffer0, sizeof(buffer0), "%3.3f , %3.3f", desired_thrust, desired_moments[0]);
-		Print_Page(0, buffer0, length_to_print);
-		length_to_print = snprintf(buffer1, sizeof(buffer1), "%3.3f, %3.3f", desired_moments[1], desired_moments[2]);
-		Print_Page(1, buffer1, length_to_print);
-		length_to_print = snprintf(buffer2, sizeof(buffer2), "%d , %d", motor_throttles[0], motor_throttles[1]);
-		Print_Page(2, buffer2, length_to_print);
-		length_to_print = snprintf(buffer3, sizeof(buffer3), "%d , %d", motor_throttles[2], motor_throttles[3]);
-		Print_Page(3, buffer3, length_to_print);
-	}
-	
-	if (Navigation_Bitmask & NAV_SENSORS_bm){
-		// GUIDANCE //
-		if (g_MRAC_Flag >= 50){
-			g_MRAC_Flag = 0;
-			desired_thrust = 4.32; //Height_MRAC(&Drone, -Reference.Position_NED[2]);
+				if (!(Calibration_Bitmask & ~CALIBRATION_COMPLETE)){
+					// Respond to ground controller on next uplink that calibration is complete and the drone is ready to fly
+					Flight_Controller_Status = Ready;
+					down_link.Calibration_Status = 1;
+					Calibration_Loop_Exit_Flag = 1;
+				} 
+			}
 		}
-		if (g_LQR_Flag >= 8){
-			g_LQR_Flag = 0;
-			Attitude_LQR(&Drone, &Reference);
-		}
-		// CONTROL //
-		if (g_Motor_Run_Flag >= 2){
-			g_Motor_Run_Flag = 0;
-			Angular_Rate_Control(&Drone, &Reference, desired_moments);
-			Set_throttles(motor_throttles, desired_thrust, desired_moments);
-			Run_Motors(motor_throttles);
-		}
-	}
-}
+		// Ready, Flying, and Landing loop
+		unsigned char Navigation_Bitmask = 0;
+		while(1){
+			// NAVIGATION //
+			// This section handles all sensor timing and reading, will populate a bit mask of the sensor statuses to indicate when calibration is complete
+			// [7]		[6]		[5]		[4]		[3]		[2]		[1]		[0]
+			//				           LoRa	    MAG		IMU		BAR		GPS
 
-void Delay(unsigned long long length){
-	volatile unsigned long long i = 0;
-	while (++i<length);
+			if (g_GPS_Read_Flag){
+				g_GPS_Read_Flag = 0;
+				unsigned char GPS_status = Read_GPS(&Drone);
+				Navigation_Bitmask = SET_BIT(Navigation_Bitmask, NAV_GPS_bp, GPS_status);
+			}
+
+			if (g_BAR_Read_Flag >= 3){
+				g_BAR_Read_Flag = 0;
+				unsigned char BAR_status = Read_Bar(&Drone);
+				Navigation_Bitmask = SET_BIT(Navigation_Bitmask, NAV_BAR_bp, BAR_status);
+			}
+
+			if (g_MAG_Read_Flag >= 2){
+				g_MAG_Read_Flag = 0;
+				unsigned char MAG_status = Read_Mag(&Drone);
+				Navigation_Bitmask = SET_BIT(Navigation_Bitmask, NAV_MAG_bp, MAG_status);
+			}
+
+			if (g_IMU_Read_Flag){
+				g_IMU_Read_Flag = 0;
+				unsigned char IMU_status = Read_IMU(&Drone);
+				Navigation_Bitmask = SET_BIT(Navigation_Bitmask, NAV_IMU_bp, IMU_status);
+			}
+
+			if (g_Attitude_Observer_Run_Flag >= 8){
+				g_Attitude_Observer_Run_Flag = 0;
+				Observer(&Drone);
+			}
+
+			if (g_LoRa_Check_Flag){
+				unsigned char data_available = Check_For_Message();
+				if (data_available >= UPLINK_SIZE){
+					//Uplink up_link;
+					//unsigned char uplink_status = Receive_Uplink(&up_link);
+				}
+			}
+
+			if (g_Print_Flag&&(Setup_Bitmask & (1<<SU_SSD_bp))) Print_Output(&Desired_Thrust, Desired_Moments, Motor_Throttles);
+
+			if (Navigation_Bitmask & NAV_SENSORS_bm){
+				// GUIDANCE //
+				if (g_MRAC_Flag >= 50){
+					g_MRAC_Flag = 0;
+					Desired_Thrust = 4.32; //Height_MRAC(&Drone, -Reference.Position_NED[2]);
+				}
+				if (g_LQR_Flag >= 8){
+					g_LQR_Flag = 0;
+					Attitude_LQR(&Drone, &Reference);
+				}
+				// CONTROL //
+				if (g_Motor_Run_Flag >= 2){
+					g_Motor_Run_Flag = 0;
+					Angular_Rate_Control(&Drone, &Reference, Desired_Moments);
+					Set_throttles(Motor_Throttles, Desired_Thrust, Desired_Moments);
+					Run_Motors(Motor_Throttles);
+				}
+			}
+		}
+	}
+	
+	return 0;
 }
 
 ISR(RTC_CNT_vect){
@@ -188,7 +190,7 @@ ISR(RTC_CNT_vect){
 }
 
 ISR(TCB0_INT_vect){
-	++g_LoRa_Flag;
+	++g_LoRa_Check_Flag;
 	++g_Motor_Run_Flag;
 	//++g_Print_Flag;
 	++g_BAR_Read_Flag;

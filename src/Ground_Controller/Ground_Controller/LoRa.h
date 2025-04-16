@@ -43,6 +43,7 @@
 #define LORA_IRQ_TX_DONE 0b00001000
 
 #define DOWNLINK_SIZE 10
+#define UPLINK_SIZE 35
 
 typedef enum {
 	// Drone systems initialized, awaiting calibration
@@ -88,10 +89,6 @@ typedef struct {
 unsigned char Setup_LoRa();
 
 unsigned char Send_Uplink(Uplink *outbound);
-
-unsigned char Receive_Uplink(Uplink *inbound);
-
-unsigned char Send_Downlink(Downlink *outbound);
 
 Downlink_Reponse_Codes Receive_Downlink(Downlink *inbound, unsigned char ID_index, unsigned char data_available);
 

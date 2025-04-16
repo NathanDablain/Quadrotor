@@ -9,7 +9,7 @@ volatile unsigned char g_Button0_Flag = 0;
 // Tracks how often to change button status
 volatile unsigned char g_Button_Read_Flag = 0;
 // Keeps track of run time, in seconds
-volatile unsigned char g_seconds = 0;
+volatile unsigned long g_seconds = 0;
 
 unsigned char Setup(void){
 	// Set clock speed, enable interrupts, Initialize ADC, Setup SPI, Setup TWI, Setup Lora, Setup Barometer, Setup SSD
@@ -37,6 +37,7 @@ unsigned char Setup(void){
 
 int main(void){
 	unsigned char Setup_Bitmask = Setup();
+	
 	Dial D_Height = {.ID = Height_Dial, .window_left = -170, .window_right = 170};
 	Dial D_East = {.ID = East_Dial, .window_left = -170, .window_right = 170};
 	Dial D_North = {.ID = North_Dial, .window_left = -170, .window_right = 170};
@@ -44,6 +45,7 @@ int main(void){
 	Downlink down_link = {0, 0};
 	Downlink_Reponse_Codes Downlink_Status = No_response;
 	unsigned char ID_index = 0;
+	
 	if (Setup_Bitmask == SETUP_SUCCESS){
 		while (1) {
 			// [7]		[6]		[5]		[4]		[3]		[2]		[1]		[0]
@@ -68,14 +70,15 @@ int main(void){
 			if (g_Print_Flag >= 40)	Print_Displays(&D_Height, &D_North, &D_East, &up_link, Downlink_Status);
 		
 			// Check LoRa, downlink drone calibration and tracking status
+			
 			if (g_LoRa_Check_Flag){
 				unsigned char data_available = Check_For_Message();
 				if (data_available >= DOWNLINK_SIZE){
 					Downlink_Status = Receive_Downlink(&down_link, ID_index, data_available);
+					if ((up_link.Drone_status == Calibrating)&&(down_link.Calibration_Status == 1)) up_link.Drone_status = Ready;
 				}
 			}
-			// TODO: Create connection between downlink drone status and uplink drone status
-			
+	
 			// Send Uplink via LoRa once a second, update ID to check
 			if (g_LoRa_Uplink_Flag) ID_index = Send_Uplink(&up_link);
 		}
@@ -207,11 +210,6 @@ void Set_Status(Uplink *up_link){
 	}
 }
 
-void Delay(unsigned long long length){
-	volatile unsigned long long i = 0;
-	while (++i < length);
-}
-
 void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink_Reponse_Codes Downlink_Status){
 	char *Dl_S_renums[5] = {"NO RESPONSE","INCOMPLETE RESPONSE","BAD ID","BAD CHECKSUM","GOOD RESPONSE"};
 	char *Dr_S_renums[5] = {"STANDBY","CALIBRATING","READY","FLYING","LANDING"};
@@ -221,7 +219,7 @@ void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink_R
 	// Printing on display 0 (right)
 	unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "HEIGHT: %1.2f", D_h->output);
 	Print_Page(0, buffer[0], length_to_print, 0);
-	length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "EA5T: %1.2f", D_e->output);
+	length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "EAST: %1.2f", D_e->output);
 	Print_Page(1, buffer[1], length_to_print, 0);
 	length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "NORTH: %1.2f", D_n->output);
 	Print_Page(2, buffer[2], length_to_print, 0);
