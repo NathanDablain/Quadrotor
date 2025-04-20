@@ -20,12 +20,16 @@
 #define LORA_REG_RX_N_BYTES 0x13
 #define LORA_REG_FIFO_ADR_PTR 0x0D
 #define LORA_REG_RX_ADR 0x10
-#define LORA_REG_TX_ADR 0x0E
+#define LORA_REG_TX_BASE_ADR 0x0E
+#define LORA_REG_RX_BASE_ADR 0x0F
 #define LORA_REG_FIFO 0x00
 #define LORA_REG_PAYLOAD_LENGTH 0x22
 #define LORA_REG_PA_CONFIG 0x09
 #define LORA_REG_IRQ_FLAGS_MASK 0x11
 #define LORA_REG_IRQ_FLAGS 0x12
+#define LORA_REG_OCP 0x0B
+#define LORA_REG_PA_RAMP 0x0A
+#define LORA_REG_RX_PACKET_CNT 0x17
 
 #define LORA_MODE_SLEEP 0b10000000
 #define LORA_MODE_STDBY 0b10000001
@@ -62,7 +66,7 @@ typedef enum {
 	// No message available
 	No_response,
 	// Start or end index of message are missing
-	Incomplete_response,
+	Bad_format,
 	// ID mismatch
 	Bad_ID,
 	// Bad checksum
@@ -88,10 +92,12 @@ typedef struct {
 
 unsigned char Setup_LoRa();
 
-unsigned char Send_Uplink(Uplink *outbound);
+unsigned char Send_Uplink(Uplink *outbound, Downlink_Reponse_Codes *Downlink_Status);
 
 Downlink_Reponse_Codes Receive_Downlink(Downlink *inbound, unsigned char ID_index, unsigned char data_available);
 
 unsigned char Check_For_Message();
+
+void Set_Status(Uplink *up_link);
 
 #endif

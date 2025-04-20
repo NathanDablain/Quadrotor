@@ -112,6 +112,34 @@ unsigned char Read_SPI(char Port, unsigned char Pin, unsigned char Register, uns
 	return 2;
 }
 
+void Read_SPI_c(char Port, unsigned char Pin, unsigned char Register, char *Data, unsigned char Data_Length){
+	unsigned char i = 0;
+	
+	if (Port == 'A'){
+		PORTA_OUT &= ~(1<<Pin);
+	}
+	else if (Port == 'C'){
+		PORTC_OUT &= ~(1<<Pin);
+	}
+	else return;
+	SPI0_DATA = Register;
+	while (!(SPI0_INTFLAGS & SPI_IF_bm));
+	SPI0_INTFLAGS &= ~SPI_IF_bm;
+	
+	while (i++<Data_Length){
+		SPI0_DATA = 0;
+		while (!(SPI0_INTFLAGS & SPI_IF_bm));
+		*Data++ = SPI0_DATA;
+	}
+	
+	if (Port == 'A'){
+		PORTA_OUT |= (1<<Pin);
+	}
+	else {
+		PORTC_OUT |= (1<<Pin);
+	}
+}
+
 unsigned char Write_SPI(char Port, unsigned char Pin, unsigned char Register, unsigned char Data){
 	// Returns 2 if successful, 0 if port assignment not valid, and 1 if a timeout occurs while waiting for data
 	unsigned long timeout = 0;
@@ -182,7 +210,9 @@ unsigned char Setup_LoRa(){
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_LSB|0x80),LORA_FREQ_915_LB);
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_IRQ_FLAGS_MASK|0x80),LORA_MASK_TX); // Masks all interrupt flags except TX complete
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_OP_MODE|0x80),LORA_MODE_RXCONTINUOUS); // Set LoRa mode into continuous receive
-	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PA_CONFIG|0x80),LORA_PA_14dBm); // Set output gain
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PA_CONFIG|0x80),LORA_PA_20dBm); // Set output gain
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_OCP|0x80),0b00100001); // Set maximum current to 50 mA
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PA_RAMP|0x80),0b00000010); // Set PA ramp time to 1ms
 	
 	if (LoRa_status != 2){return 0;}
 	
@@ -192,7 +222,6 @@ unsigned char Setup_LoRa(){
 unsigned char Check_For_Message(){
 	// Downlink message format -> $ND_ID_C_T*CS
 	// Underscores are for readability, not part of actual message
-	g_LoRa_Check_Flag = 0;
 	unsigned char data_available = 0;
 	Read_SPI(PORT_LORA,CS_LORA,LORA_REG_RX_N_BYTES,&data_available,1);
 	return data_available;
@@ -215,11 +244,13 @@ Downlink_Reponse_Codes Receive_Downlink(Downlink *inbound, unsigned char ID_inde
 	};
 	// Downlink message format -> $ND_ID_C_T*CS
 	// Underscores are for readability, not part of actual message
-	unsigned char buffer[20];
+	g_LoRa_Check_Flag = 0;
+	char buffer[20] = {0};
 	unsigned char RX_Adrs = 0;
 	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_RX_ADR,&RX_Adrs,1);
 	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),RX_Adrs); // Set FIFO ptr to current FIFO RX address
-	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_FIFO,buffer,data_available);
+	(void)Read_SPI_c(PORT_LORA,CS_LORA,LORA_REG_FIFO,buffer,data_available);
+	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),0x00); // Set FIFO ptr to base RX address
 
 	// Keeps track of index in buffer
 	unsigned char i = 0;
@@ -231,44 +262,38 @@ Downlink_Reponse_Codes Receive_Downlink(Downlink *inbound, unsigned char ID_inde
 	char Check_Sum[2] = {0};
 
 	while(i != data_available){
-		if ((char)buffer[i] == '$'){
+		if (buffer[i] == '$'){
 			start_index = i;
 		}
-		if ((start_index != -1)&&((char)buffer[i] == '*')){
+		if ((start_index != -1)&&(buffer[i] == '*')){
 			end_index = i;
-			Check_Sum[0] = (char)buffer[++i];
-			Check_Sum[1] = (char)buffer[++i];
+			Check_Sum[0] = buffer[++i];
+			Check_Sum[1] = buffer[++i];
 			break;
 		}
 		i++;
 	}
 
-	if ((start_index == -1)||(end_index == -1)) return Incomplete_response;
+	if ((start_index == -1)||(end_index == -1)) return Bad_format;
 	// Compare checksum in message to calculated checksum
-	//signed char checksum = buffer[start_index+1];
-	//for (unsigned char k=start_index+2;k<=end_index;k++){
-		//checksum ^= buffer[k];
-	//}
-	//char checksum_hex[3] = {0};
-	//unsigned char converted_length = snprintf(checksum_hex, sizeof(checksum_hex), "%X", checksum);
-	//if (converted_length == 1){ // Won't add the 0 in automatically if the number is less than 8
-		//checksum_hex[1] = checksum_hex[0];
-		//checksum_hex[0] = 48;
-	//}
 	char checksum_hex[3] = {0};
-	Xor_Checksum((char *)buffer, (end_index-start_index), start_index, checksum_hex);
+	Xor_Checksum(buffer, 6, start_index+1, checksum_hex);
 	// If checksum passes, read downlink
 	if ((checksum_hex[0] == Check_Sum[0])&&(checksum_hex[1] == Check_Sum[1])){
 		char inbound_ID[3] = {buffer[3], buffer[4], 0};
 		if (strcmp(inbound_ID, ID[ID_index]) == 0){
-			
+			char Cal_status[2] = {buffer[5], 0};
+			char Track_status[2] = {buffer[6], 0};
+			inbound->Calibration_Status = atoi(Cal_status);
+			inbound->Tracking_Status = atoi(Track_status);
+			return Good_response;
 		}
 		return Bad_ID;
 	}
 	return Bad_checksum;
 }
 
-unsigned char Send_Uplink(Uplink *outbound){
+unsigned char Send_Uplink(Uplink *outbound, Downlink_Reponse_Codes *Downlink_Status){
 	// Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C*CS
 	const char ID[12][2] = {
 		{'I','e'},
@@ -285,11 +310,13 @@ unsigned char Send_Uplink(Uplink *outbound){
 		{'e','.'},
 	};
 	static unsigned char ID_index;
+	// If the check flag wasn't cleared, than we never got a response
+	if (g_LoRa_Check_Flag == 1) *Downlink_Status = No_response;
 	// Cycle message ID
 	ID_index = (ID_index<11)?(ID_index+1):(0);
 	g_LoRa_Uplink_Flag = 0;
 	// TX data must be written to LoRa while it is in standby
-	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_STDBY);
+	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_SLEEP);
 	// Convert desired positions and current base altitude to characters for transmission
 	char buffer[5][7];
 	sprintf(buffer[0], "%06.2f", fabs(outbound->Desired_north));
@@ -313,12 +340,9 @@ unsigned char Send_Uplink(Uplink *outbound){
 	message[sizeof(message)-3] = checksum_hex[0];
 	// Set FIFO pointer to TX base address, and write message
 	unsigned char TX_base_adr;
-	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_TX_ADR,&TX_base_adr,1);
+	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_TX_BASE_ADR,&TX_base_adr,1);
 	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),TX_base_adr);
 	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PAYLOAD_LENGTH|0x80),sizeof(message)-1);
-	//for (unsigned char i = 0; i < sizeof(message2); i++){
-		//Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO|0x80),message2[i]);
-	//}
 	(void)Write_SPI_Stream(PORT_LORA, CS_LORA, (LORA_REG_FIFO|0x80), message, sizeof(message)-1);
 	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_TX);
 	unsigned char LoRa_TX_Status = 0;
@@ -330,13 +354,46 @@ unsigned char Send_Uplink(Uplink *outbound){
 		Delay(1000);
 	}
 	// Transmission complete, put LoRa back into receive continuous mode
-	Delay(100000);
+	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_STDBY);
+	Delay(1000);
 	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_RXCONTINUOUS);
 	unsigned char output = ID_index;
+	
+	g_LoRa_Check_Flag = 1;
+	
 	return output;
 }
 
+void Set_Status(Uplink *up_link){
+	g_Button_Read_Flag = 0;
+	if (g_Button0_Flag){
+		g_Button0_Flag = 0;
+		switch (up_link->Drone_status){
+			case Standby:
+				up_link->Drone_status = Calibrating;
+				break;
+			case Calibrating:
+			// Drone can only move out of calibrating status internally
+				up_link->Drone_status = Standby;
+				break;
+			case Ready:
+				up_link->Drone_status = Flying;
+				break;
+			case Flying:
+				up_link->Drone_status = Landing;
+				break;
+			case Landing:
+			// Drone can only move out of landing status to ready internally
+				up_link->Drone_status = Flying;
+				break;
+		}
+	}
+}
+
 // SOLOMON SYSTECH DRIVER (SSD) 1306 CODE
+
+volatile unsigned char g_Print_Flag = 0;
+
 unsigned char Setup_SSD(unsigned char Display){
 	unsigned char Setup_status = 1;
 	// From data sheet - order of software tasks to initialize display
@@ -711,4 +768,23 @@ unsigned char Print_Page(unsigned char page, char *to_print, unsigned char lengt
 		Print_status &= Write_Character(' ', Display);
 	}
 	return Print_status;
+}
+
+void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink_Reponse_Codes Downlink_Status){
+	char *Dl_S_renums[5] = {"NO RESPONSE","BAD FORMAT","BAD ID","BAD CHECKSUM","GOOD RESPONSE"};
+	char *Dr_S_renums[5] = {"STANDBY","CALIBRATING","READY","FLYING","LANDING"};
+	char buffer[3][20];
+	g_Print_Flag = 0;
+	
+	// Printing on display 0 (right)
+	unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "HEIGHT: %1.2f", D_h->output);
+	Print_Page(0, buffer[0], length_to_print, 0);
+	length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "EAST: %1.2f", D_e->output);
+	Print_Page(1, buffer[1], length_to_print, 0);
+	length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "NORTH: %1.2f", D_n->output);
+	Print_Page(2, buffer[2], length_to_print, 0);
+	
+	// Printing on display 1 (left)
+	Print_Page(0, Dr_S_renums[up_link->Drone_status], strlen(Dr_S_renums[up_link->Drone_status]), 1);
+	Print_Page(1, Dl_S_renums[Downlink_Status], strlen(Dl_S_renums[Downlink_Status]), 1);
 }

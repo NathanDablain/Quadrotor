@@ -25,9 +25,24 @@
 
 // Tracks when to check LoRa for uplink, incremented at 200 Hz
 extern volatile unsigned char g_LoRa_Check_Flag;
-// Tracks when to print ouput to SSD display
+// Tracks when to print output to SSD display
 extern volatile unsigned char g_Print_Flag;
-
+// Tracks when to sample magnetometer
+extern volatile unsigned char g_MAG_Read_Flag;
+// Tracks when to sample imu
+extern volatile unsigned char g_IMU_Read_Flag;
+// Tracks when to sample barometer
+extern volatile unsigned char g_BAR_Read_Flag;
+// Tracks when to run attitude observer
+extern volatile unsigned char g_Attitude_Observer_Run_Flag;
+// Tracks how often to send PPM signal to ESC, driving motor throttles
+extern volatile unsigned char g_Motor_Run_Flag;
+// Tracks how often to run altitude MRAC, drives desired thrust
+extern volatile unsigned char g_MRAC_Flag;
+// Tracks how often to run attitude LQR, drives desired angular rates and moments
+extern volatile unsigned char g_LQR_Flag;
+// Tracks when to send downlink
+extern volatile unsigned char g_LoRa_Send_Flag;
 
 // Either sets or clears a bit within a bitmask depending on the input
 #define SET_BIT(current_val, position, val) ((val < 1) ? current_val&(~(val<<position)) : current_val|(val<<position))

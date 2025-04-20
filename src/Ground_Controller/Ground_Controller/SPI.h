@@ -22,4 +22,6 @@ unsigned char Write_SPI(char Port, unsigned char Pin, unsigned char Register, un
 // Writes a stream of character bytes to a given address
 unsigned char Write_SPI_Stream(char Port, unsigned char Pin, unsigned char Register, char *Data, unsigned char Data_Length);
 
+void Read_SPI_c(char Port, unsigned char Pin, unsigned char Register, char *Data, unsigned char Data_Length);
+
 #endif

@@ -3,7 +3,6 @@
 
 #include "FC_Types.h"
 
-// Macros
 #define IMU_WHO_AM_I 0x0F
 #define IMU_CTRL1_XL 0x10
 #define IMU_CTRL2_G 0x11
@@ -14,9 +13,12 @@
 #define GYRO_SENS 500.0/32768.0
 #define ACCEL_SENS 2.0/32768.0
 
-// Functions
-unsigned char 
-	Setup_IMU(),
-	Read_IMU(States *Drone);
+#define W_CAL_LIMIT 50
+
+unsigned char Setup_IMU();
+
+void Read_IMU(States *Drone, Calibration_Data *cal_data);
+
+void Calibrate_IMU(States *Drone, Calibration_Data *cal_data);
 
 #endif

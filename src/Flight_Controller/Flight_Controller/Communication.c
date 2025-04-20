@@ -112,6 +112,37 @@ unsigned char Write_SPI(char Port, unsigned char Pin, unsigned char Register, un
 	return 2;
 }
 
+unsigned char Write_SPI_Stream(char Port, unsigned char Pin, unsigned char Register, char *Data, unsigned char Data_Length){
+	// Returns 2 if successful, 0 if port assignment not valid, and 1 if a timeout occurs while waiting for data
+	unsigned char i = 0;
+	unsigned long timeout = 0;
+	
+	if (Port == 'A'){
+		PORTA_OUT &= ~(1<<Pin);
+	}
+	else if (Port == 'B'){
+		PORTB_OUT &= ~(1<<Pin);
+	}
+	else {return 0;}
+	SPI1_DATA = Register;
+	while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
+	SPI1_INTFLAGS &= ~SPI_IF_bm;
+	
+	while (i++<Data_Length){
+		SPI1_DATA = *Data++;
+		while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
+	}
+	
+	if (Port == 'A'){
+		PORTA_OUT |= (1<<Pin);
+	}
+	else {
+		PORTB_OUT |= (1<<Pin);
+	}
+	
+	return 2;
+}
+
 unsigned char Write_DGW(float Data, char option){
 	// Writes a floating point number to the Digital Gateway, returns 2 if successful, 1 if a timeout occurs
 	unsigned long timeout = 0;
@@ -194,6 +225,7 @@ unsigned char Write_TWI(unsigned char Slave_Address, unsigned char Address_Byte,
 
 // LONG RANGE (LORA) CODE
 volatile unsigned char g_LoRa_Check_Flag = 0;
+volatile unsigned char g_LoRa_Send_Flag = 0;
 
 unsigned char Setup_LoRa(){
 	unsigned char LoRa_status = 2;
@@ -202,8 +234,11 @@ unsigned char Setup_LoRa(){
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_MSB|0x80),LORA_FREQ_915_HB); // Set frequency to 915 MHz
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_MIDB|0x80),LORA_FREQ_915_MB);
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_LSB|0x80),LORA_FREQ_915_LB);
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_IRQ_FLAGS_MASK|0x80),LORA_MASK_TX); // Masks all interrupt flags except TX complete
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_OP_MODE|0x80),LORA_MODE_RXCONTINUOUS); // Set to continuously receive
-	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PA_CONFIG|0x80),LORA_PA_14dBm); // Set power to 14 dBm
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PA_CONFIG|0x80),LORA_PA_20dBm); // Set power to 20 dBm
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_OCP|0x80),0b00100001); // Set maximum current to 50 mA
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PA_RAMP|0x80),0b00000010); // Set PA ramp time to 1ms
 	
 	return (LoRa_status == 2) ? 1 : 0;
 }
@@ -211,25 +246,29 @@ unsigned char Setup_LoRa(){
 unsigned char Check_For_Message(){
 	// Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C*CS
 	// Underscores are for readability, not part of actual message
-	g_LoRa_Check_Flag = 0;
 	unsigned char data_available = 0;
 	Read_SPI(PORT_LORA,CS_LORA,LORA_REG_RX_N_BYTES,&data_available,1);
 	return data_available;
 }
 
-void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Controller_Status, unsigned char data_available){
+void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Controller_Status){
 	// Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C*CS
 	// Underscores are for readability, not part of actual message
+	g_LoRa_Check_Flag = 0;
+	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_RXCONTINUOUS);
+
+	unsigned char data_available = Check_For_Message();
+	if (data_available < UPLINK_SIZE) return;
+	
 	unsigned char uplink_status = 1;
-	unsigned char buffer[100] = {0};
+	char buffer[100] = {0};
 	unsigned char RX_Adrs = 0;
 	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_RX_ADR,&RX_Adrs,1);
 	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),RX_Adrs); // Set FIFO ptr to current FIFO RX address
-	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_FIFO,buffer,data_available);
+	(void)Read_SPI_c(PORT_LORA,CS_LORA,LORA_REG_FIFO,buffer,data_available);
 	
-	char print_buffer[100];
-	unsigned char length_to_print = snprintf(print_buffer, sizeof(print_buffer), "%d, %d, %d, %d, %d", buffer[0], buffer[1], buffer[2], buffer[3], buffer[4]);
-	Print_Page(0, print_buffer, length_to_print);
+	Print_Page(0, buffer, data_available/2);
+	Print_Page(1, (buffer+(data_available/2)), (data_available-(data_available/2)));
 
 	// Keeps track of index in buffer
 	unsigned char i = 0;
@@ -256,45 +295,150 @@ void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Contr
 	if ((start_index == -1)||(end_index == -1)) uplink_status = 0;
 	// Compare checksum in message to calculated checksum
 	char checksum_hex[3] = {0};
-	Xor_Checksum(buffer, (end_index-start_index), start_index, checksum_hex);
+	Xor_Checksum(buffer, (end_index-start_index), start_index+1, checksum_hex);
 	// If checksum passes, read uplink
 	if ((checksum_hex[0] == Check_Sum[0])&&(checksum_hex[1] == Check_Sum[1])&&uplink_status){
-		char inbound_ID[3] = {buffer[start_index+2], buffer[start_index+3], 0};
+		outbound->ID[0] = buffer[start_index+3];
+		outbound->ID[1] = buffer[start_index+4];
 		// Get desired north/south position
-		char inbound_Desired_North[7] = {buffer[start_index+4],buffer[start_index+5],buffer[start_index+6],buffer[start_index+7],buffer[start_index+8],buffer[start_index+9],0};
-		signed char sign = (buffer[start_index+10]=='N')?(1):(-1);
+		char inbound_Desired_North[7] = {buffer[start_index+5],buffer[start_index+6],buffer[start_index+7],buffer[start_index+8],buffer[start_index+9],buffer[start_index+10],0};
+		float sign = (buffer[start_index+11]=='N')?(1.0):(-1.0);
 		inbound->Desired_north = sign*atof(inbound_Desired_North);
 		// Get desired east/west position
-		char inbound_Desired_East[7] = {buffer[start_index+11],buffer[start_index+12],buffer[start_index+13],buffer[start_index+14],buffer[start_index+15],buffer[start_index+16],0};
-		sign = (buffer[start_index+17]=='E')?(1):(-1);
+		char inbound_Desired_East[7] = {buffer[start_index+12],buffer[start_index+13],buffer[start_index+14],buffer[start_index+15],buffer[start_index+16],buffer[start_index+17],0};
+		sign = (buffer[start_index+18]=='E')?(1.0):(-1.0);
 		inbound->Desired_east = sign*atof(inbound_Desired_East);
 		// Get desired altitude
-		char inbound_Desired_Altitude[7] = {buffer[start_index+18],buffer[start_index+19],buffer[start_index+20],buffer[start_index+21],buffer[start_index+22],buffer[start_index+23],0};
+		char inbound_Desired_Altitude[7] = {buffer[start_index+19],buffer[start_index+20],buffer[start_index+21],buffer[start_index+22],buffer[start_index+23],buffer[start_index+24],0};
 		inbound->Desired_altitude = atof(inbound_Desired_Altitude);
 		// Get base altitude
-		char inbound_Base_Altitude[7] = {buffer[start_index+24],buffer[start_index+25],buffer[start_index+26],buffer[start_index+27],buffer[start_index+28],buffer[start_index+29],0};
+		char inbound_Base_Altitude[7] = {buffer[start_index+25],buffer[start_index+26],buffer[start_index+27],buffer[start_index+28],buffer[start_index+29],buffer[start_index+30],0};
 		inbound->Base_altitude = atof(inbound_Base_Altitude);
 		// Get requested drone status
-		char Requested_Drone_Status_c[2] = {buffer[start_index+30], 0};
-		FC_Status Requested_Drone_Status = atoi(Requested_Drone_Status_c);
-		switch (Requested_Drone_Status){
-			case Standby:
-				if (*Flight_Controller_Status == Flying) *Flight_Controller_Status = Landing;
-				break;
-			case Calibrating:
-				if (*Flight_Controller_Status == Flying) *Flight_Controller_Status = Landing;
-				if (*Flight_Controller_Status == Standby) *Flight_Controller_Status = Calibrating;
-				break;
-			case Ready:
-				break;
-			case Flying:
-				if (*Flight_Controller_Status == Ready) *Flight_Controller_Status = Flying;
-				break;
-			case Landing:
-				if (*Flight_Controller_Status == Flying) *Flight_Controller_Status = Landing;
-				break;
-		}
+		char Requested_Drone_Status_c[2] = {buffer[start_index+31], 0};
+		inbound->Drone_status = atoi(Requested_Drone_Status_c);
+		*Flight_Controller_Status = Manage_FC_Status(inbound->Drone_status, *Flight_Controller_Status);
+		outbound->Calibration_Status = (*Flight_Controller_Status>=2)?(1):(0);
+		
+		g_LoRa_Send_Flag = 1;
+	}
+}
 
+void Send_Downlink(Downlink *outbound){
+	// Downlink message format -> $ND_MM_C_T*CS
+	g_LoRa_Send_Flag = 0;
+	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_SLEEP);
+
+	// Build downlink message
+	char message[] = {'$', 'N', 'D', outbound->ID[0], outbound->ID[1], outbound->Calibration_Status, outbound->Tracking_Status,	'*', 0, 0, 0};
+	// Build checksum
+	char checksum_hex[3] = {0};
+	Xor_Checksum(message, (sizeof(message)-5), 1, checksum_hex);
+	message[sizeof(message)-2] = checksum_hex[1];
+	message[sizeof(message)-3] = checksum_hex[0];
+	
+	// Set FIFO pointer to TX base address, and write message
+	unsigned char TX_base_adr;
+	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_TX_ADR,&TX_base_adr,1);
+	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),TX_base_adr);
+	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PAYLOAD_LENGTH|0x80),sizeof(message)-1);
+	(void)Write_SPI_Stream(PORT_LORA, CS_LORA, (LORA_REG_FIFO|0x80), message, sizeof(message)-1);
+	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_TX);
+	unsigned char LoRa_TX_Status = 0;
+	while(1){
+		Read_SPI(PORT_LORA, CS_LORA, LORA_REG_IRQ_FLAGS, &LoRa_TX_Status, 1);
+		if (LoRa_TX_Status == LORA_IRQ_TX_DONE){
+			break;
+		}
+		Delay(1000);
+	}
+	
+}
+
+FC_Status Manage_FC_Status(FC_Status Desired, FC_Status Current){
+	switch (Desired){
+		case Standby:
+			switch (Current){
+				case Standby:
+					return Current;
+				case Calibrating:
+					return Current;
+				case Ready:
+					return Desired;
+				case Flying:
+					return Landing;
+				case Landing:
+					return Current;
+				default:
+					return Current;
+			}
+			break;
+		case Calibrating:
+			switch (Current){
+				case Standby:
+					return Desired;
+				case Calibrating:
+					return Current;
+				case Ready:
+					return Desired;
+				case Flying:
+					return Landing;
+				case Landing:
+					return Current;
+				default:
+					return Current;
+			}
+			break;
+		case Ready:
+			switch (Current){
+				case Standby:
+					return Current;
+				case Calibrating:
+					return Current;
+				case Ready:
+					return Current;
+				case Flying:
+					return Landing;
+				case Landing:
+					return Current;
+				default:
+					return Current;
+			}
+			break;
+		case Flying:
+			switch (Current){
+				case Standby:
+					return Current;
+				case Calibrating:
+					return Current;
+				case Ready:
+					return Desired;
+				case Flying:
+					return Current;
+				case Landing:
+					return Desired;
+				default:
+					return Current;
+			}
+			break;
+		case Landing:
+			switch (Current){
+				case Standby:
+					return Current;
+				case Calibrating:
+					return Current;
+				case Ready:
+					return Current;
+				case Flying:
+					return Desired;
+				case Landing:
+					return Current;
+				default:
+					return Current;
+			}
+			break;	
+		default: 
+			return Current;
 	}
 }
 

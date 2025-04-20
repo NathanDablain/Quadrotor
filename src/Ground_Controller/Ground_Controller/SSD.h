@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "TWI.h"
+#include "GC_Types.h"
+#include "LoRa.h"
 
 // Macros
 // Thanks to https://robotcantalk.blogspot.com/2015/03/interfacing-arduino-with-ssd1306-driven.html
@@ -54,5 +56,8 @@ unsigned char Write_Character(char Character_to_write, unsigned char Display);
 unsigned char Clear_Display(unsigned char Display);
 // Call this function to output text on the display, use pages 0-3
 unsigned char Print_Page(unsigned char page, char *to_print, unsigned char length_to_print, unsigned char Display);
+// Calls print page, converts values in call to characters for printing
+void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink_Reponse_Codes Downlink_Status);
+
 
 #endif

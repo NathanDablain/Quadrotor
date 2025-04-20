@@ -26,6 +26,8 @@
 #define LORA_REG_PA_CONFIG 0x09
 #define LORA_REG_IRQ_FLAGS_MASK 0x11
 #define LORA_REG_IRQ_FLAGS 0x12
+#define LORA_REG_OCP 0x0B
+#define LORA_REG_PA_RAMP 0x0A
 
 #define LORA_MODE_SLEEP 0b10000000
 #define LORA_MODE_STDBY 0b10000001
@@ -43,7 +45,7 @@
 #define LORA_IRQ_TX_DONE 0b00001000
 
 #define DOWNLINK_SIZE 10
-#define UPLINK_SIZE 5
+#define UPLINK_SIZE 35
 
 typedef enum {
 	// Drone systems initialized, awaiting calibration
@@ -58,19 +60,6 @@ typedef enum {
 	Landing
 } FC_Status;
 
-typedef enum {
-	// No message available
-	No_response,
-	// Start or end index of message are missing
-	Incomplete_response,
-	// ID mismatch
-	Bad_ID,
-	// Bad checksum
-	Bad_checksum,
-	// ID and checksum match, good response
-	Good_response
-} Downlink_Reponse_Codes;
-
 typedef struct {
 	FC_Status Drone_status;
 	float Desired_north;
@@ -84,16 +73,18 @@ typedef struct {
 	unsigned char Calibration_Status;
 	// Are we tracking the reference well
 	unsigned char Tracking_Status;
+	char ID[3];
 } Downlink;
 
+// Set radio frequency, antenna power, and interrupt flag bit mask
 unsigned char Setup_LoRa();
-
-unsigned char Send_Uplink(Uplink *outbound);
-
-void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Controller_Status, unsigned char data_available);
-
-Downlink_Reponse_Codes Receive_Downlink(Downlink *inbound, unsigned char ID_index, unsigned char data_available);
-
+// Receive and parse uplink
+void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Controller_Status);
+// Respond to uplink with downlink
+void Send_Downlink(Downlink *outbound);
+// State machine to transition drone state
+FC_Status Manage_FC_Status(FC_Status Desired, FC_Status Current);
+// Get payload length in LoRa FIFO
 unsigned char Check_For_Message();
 
 #endif

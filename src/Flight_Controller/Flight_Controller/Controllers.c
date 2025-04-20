@@ -1,9 +1,12 @@
 #include "Controllers.h"
 
+volatile unsigned char g_MRAC_Flag = 0;
+
 float Height_MRAC(States *Drone, float h_ref){
 // Altitude Controller - Adaptive Direct MRAC
 // Inputs - Desired NED drone positions
 // Outputs - Desired thrust
+	g_MRAC_Flag = 0;
     const float d_t = 0.25;
     // Reference Model
     // h and h_dot
@@ -58,6 +61,8 @@ float Height_MRAC(States *Drone, float h_ref){
     return thrust;
 }
 
+volatile unsigned char g_LQR_Flag = 0;
+
 void Attitude_LQR(States *Drone, States *Reference){
 // Attitude Controller - Linearized LQR w/integrator
 // Inputs - Desired Euler angles
@@ -71,6 +76,7 @@ void Attitude_LQR(States *Drone, States *Reference){
 	};
 	const float d_t = 0.0025;
 	float K[3][6];
+	g_LQR_Flag = 0;
 
 	const signed char theta[5] = {-20, -10, 0, 10, 20};
 	const signed char phi[5] = {-20, -10, 0, 10, 20};
@@ -226,26 +232,29 @@ void Attitude_Gain_Lookup(unsigned char index, float Gains[3][6]){
     }
 }
 
+volatile unsigned char g_Motor_Run_Flag = 0;
+
 void Angular_Rate_Control(States *Drone, States *Reference, float desired_moments[3]){
 // Orientation Controller - PID
 // Inputs - Desired body angular rates
 // Outputs - Desired body torques
- // A PID controller is used to control each body angular rate and set moments
- //const float d_t = 0.01;
- const float K_p = 0.05;
- //const float K_i = 0.02;
- //const float K_d = 0.02;
- //static float e_last[3];
- //static float e_int[3];
- for (unsigned char i = 0; i < 3; i++){
-	 float e = Reference->w[i] - Drone->w[i];
-	 //float e_d = e - e_last[i];
-	 //e_last[i] = e;
-	 //e_int[i] += (e*d_t);
-	 //float temp = K_p*e + K_i*e_int[i] + K_d*e_d;
-	 float temp = K_p*e;
-	 desired_moments[i] = Saturate(temp, MAX_MOMENT, -MAX_MOMENT);
- }	
+	 // A PID controller is used to control each body angular rate and set moments
+	 //const float d_t = 0.01;
+	 const float K_p = 0.05;
+	 //const float K_i = 0.02;
+	 //const float K_d = 0.02;
+	 //static float e_last[3];
+	 //static float e_int[3];
+	 g_Motor_Run_Flag = 0;
+	 for (unsigned char i = 0; i < 3; i++){
+		 float e = Reference->w[i] - Drone->w[i];
+		 //float e_d = e - e_last[i];
+		 //e_last[i] = e;
+		 //e_int[i] += (e*d_t);
+		 //float temp = K_p*e + K_i*e_int[i] + K_d*e_d;
+		 float temp = K_p*e;
+		 desired_moments[i] = Saturate(temp, MAX_MOMENT, -MAX_MOMENT);
+	 }	
 }
 
 void Set_throttles(unsigned int motor_throttles[4], float desired_thrust, float desired_moments[3]){

@@ -25,5 +25,8 @@ unsigned char
 	Write_SPI(char Port, unsigned char Pin, unsigned char Register, unsigned char Data),
 	Write_DGW(float Data, char option),
 	Write_char_DGW(char *Data, unsigned char length);
+	
+// Writes a stream of character bytes to a given address
+unsigned char Write_SPI_Stream(char Port, unsigned char Pin, unsigned char Register, char *Data, unsigned char Data_Length);
 
 #endif
