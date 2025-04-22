@@ -50,11 +50,18 @@ void Setup_Timers(){
 	TCB0_CCMP = 60000; // Value at which timer generates interrupt and resets
 	//--------------------------------------------------------//
 	//-------Setup Timer/Counter B1 for output compare--------//
-	// Generates an interrupt every 4.807 ms, is used by:
-	//	-> IMU running at 208 Hz
-	TCB1_CTRLA |= TCB_ENABLE_bm | TCB_CLKSEL_DIV2_gc;
+	// Generates an interrupt every 2.4 ms, is used by:
+	//	-> Accel and Observer running at 416 Hz
+	TCB1_CTRLA |= TCB_ENABLE_bm | TCB_CLKSEL_DIV1_gc;
 	TCB1_INTCTRL |= TCB_CAPT_bm;
-	TCB1_CCMP = 57693;
+	TCB1_CCMP = 57600;
+	//-------------------------------------------------------//
+	//-------Setup Timer/Counter B2 for output compare--------//
+	// Generates an interrupt every 0.6002 ms, is used by:
+	//	-> Gyro running at 1666 Hz
+	TCB2_CTRLA |= TCB_ENABLE_bm | TCB_CLKSEL_DIV1_gc;
+	TCB2_INTCTRL |= TCB_CAPT_bm;
+	TCB2_CCMP = 14405;
 	//-------------------------------------------------------//
 }
 
@@ -75,52 +82,73 @@ int main(){
 		FC_Status Flight_Controller_Status = Standby;
 		// Holds sensor calibration data 
 		Calibration_Data cal_data = {0};
+		const Calibration_Data reset_cal_data = {0};
 		// Motor_Throttles-> Values from 0-1000 with 1000 being max throttle, motor order is: back, left, right, front
 		unsigned int Motor_Throttles[4];
 		// Desired_Thrust-> Controlled by a Model Reference Adaptive Controller (MRAC), in units of N
 		float Desired_Thrust;
 		// Desired_Moments-> Controlled by 3 PIDs, moment order is: body x, body y, body z, in units of N-m
 		float Desired_Moments[3];
-		
+		unsigned int throughput_counter[7] = {0};
+		volatile unsigned long unused_time_counter = 0;
+		unsigned int seconds_last = g_seconds;
+		unsigned char reset = 0;
 		while(1){
 			//--------------Common code--------------//
 			// LoRa
 			if (g_LoRa_Check_Flag>=2){
 				if (g_LoRa_Send_Flag) Send_Downlink(&down_link);
 				 Receive_Uplink(&up_link, &down_link, &Flight_Controller_Status);
+				 ++throughput_counter[0];
 			}
 			// Printing
-			//if (g_Print_Flag&&(Setup_Bitmask & (1<<SU_SSD_bp))) Print_Output(&Desired_Thrust, Desired_Moments, Motor_Throttles);
+			//if (g_Print_Flag&&(Setup_Bitmask & (1<<SU_SSD_bp))) Print_Output(&Drone, &cal_data, &up_link);
+			if ((g_seconds - seconds_last) >= 1){
+				seconds_last = g_seconds;
+				char buffer[3][20] = {0};
+				unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "B:%d,M:%d,A:%d", throughput_counter[1], throughput_counter[2], throughput_counter[3]);
+				Print_Page(0, buffer[0], length_to_print);
+				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "G:%d,O1:%d,O2:%d",throughput_counter[4], throughput_counter[5], throughput_counter[6]);
+				Print_Page(1, buffer[1], length_to_print);
+				length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%ld", unused_time_counter);
+				Print_Page(2, buffer[2], length_to_print);
+				for (unsigned char i = 0; i < 7; i++){throughput_counter[i] = 0;}
+				unused_time_counter = 0;
+			}
 
 			//// GPS
 			//if (g_GPS_Read_Flag) Read_GPS(&Drone, &cal_data);
 //
-			//// Barometer
-			//if (g_BAR_Read_Flag >= 3) Read_Bar(&Drone, &cal_data);
-//
-			//// Magnetometer
-			//if (g_MAG_Read_Flag >= 2) Read_Mag(&Drone, &cal_data);
-			//
-			//// IMU
-			//if (g_IMU_Read_Flag) Read_IMU(&Drone, &cal_data);
-//
-			//// Observer
-			//if (g_Attitude_Observer_Run_Flag >= 8) Observer(&Drone);
+			// Barometer
+			if (g_BAR_Read_Flag >= 3){ Read_Bar(&Drone, &cal_data, up_link.Base_altitude); throughput_counter[1]++;}
 
+			// Magnetometer
+			if (g_MAG_Read_Flag >= 2){ Read_Mag(&Drone, &cal_data); throughput_counter[2]++;}
+			
+			// IMU
+			if (g_Accel_Read_Flag){ Read_Accel(&Drone); throughput_counter[3]++;}
 
+			if (g_Gyro_Read_Flag){ Read_Gyro(&Drone, &cal_data); throughput_counter[4]++;}
+
+			// Observer
+			if (g_Attitude_Observer_Update_Flag >= 4){ Observer_Update(&Drone); throughput_counter[5]++;}
+				
+			if (g_Attitude_Observer_Predict_Flag){ Observer_Predict(&Drone); throughput_counter[6]++;}
+
+			unused_time_counter++;
 			//--------------Status code-------------//
 			if (Flight_Controller_Status == Standby){
 				// Initialize or reset calibration data
-				Drone.Latitude = -1;
-				Drone.Longitude = -1;
-				cal_data.bar_cal_status = 0;
-				cal_data.gps_cal_status = 0;
-				cal_data.imu_cal_status = 0;
-				cal_data.mag_cal_status = 0;
+				if (reset){
+					cal_data = reset_cal_data;
+					Drone.Latitude = -1;
+					Drone.Longitude = -1;
+					reset++;
+				}
 			}
 			else if (Flight_Controller_Status == Calibrating){
-				
-				if (cal_data.gps_cal_status == 0) Calibrate_GPS(&Drone, &cal_data);
+				reset = 0;
+				//if (cal_data.gps_cal_status == 0) Calibrate_GPS(&Drone, &cal_data);
 				
 				if (cal_data.bar_cal_status == 0) Calibrate_Bar(&Drone, &cal_data, up_link.Base_altitude);
 				
@@ -128,6 +156,8 @@ int main(){
 				
 				if (cal_data.imu_cal_status == 0) Calibrate_IMU(&Drone, &cal_data);
 
+				if (cal_data.bar_cal_status && cal_data.mag_cal_status && cal_data.imu_cal_status) Flight_Controller_Status = Ready;
+	
 			}
 			else if (Flight_Controller_Status == Ready){
 				
@@ -169,7 +199,6 @@ int main(){
 ISR(RTC_CNT_vect){
 	++g_seconds;
 	++g_Print_Flag;
-	//++g_LoRa_Flag;
 	RTC_CNT = 0;
 	RTC_INTFLAGS = RTC_CMP_bm;
 }
@@ -177,9 +206,8 @@ ISR(RTC_CNT_vect){
 ISR(TCB0_INT_vect){
 	++g_LoRa_Check_Flag;
 	++g_Motor_Run_Flag;
-	//++g_Print_Flag;
 	++g_BAR_Read_Flag;
-	++g_Attitude_Observer_Run_Flag;
+	++g_Attitude_Observer_Update_Flag;
 	++g_MAG_Read_Flag;
 	++g_MRAC_Flag;
 	++g_LQR_Flag;
@@ -187,6 +215,12 @@ ISR(TCB0_INT_vect){
 }
 
 ISR(TCB1_INT_vect){
-	++g_IMU_Read_Flag;
+	++g_Accel_Read_Flag;
+	++g_Attitude_Observer_Predict_Flag;
 	TCB1_INTFLAGS = TCB_CAPT_bm;
+}
+
+ISR(TCB2_INT_vect){
+	++g_Gyro_Read_Flag;
+	TCB2_INTFLAGS = TCB_CAPT_bm;
 }

@@ -30,7 +30,9 @@ extern volatile unsigned char g_Print_Flag;
 // Tracks when to sample magnetometer
 extern volatile unsigned char g_MAG_Read_Flag;
 // Tracks when to sample imu
-extern volatile unsigned char g_IMU_Read_Flag;
+extern volatile unsigned char g_Accel_Read_Flag;
+// Tracks when to sample imu
+extern volatile unsigned char g_Gyro_Read_Flag;
 // Tracks when to sample barometer
 extern volatile unsigned char g_BAR_Read_Flag;
 // Tracks when to run attitude observer
@@ -43,6 +45,10 @@ extern volatile unsigned char g_MRAC_Flag;
 extern volatile unsigned char g_LQR_Flag;
 // Tracks when to send downlink
 extern volatile unsigned char g_LoRa_Send_Flag;
+// Tracks when to use accelerometer and magnetometer data to include measurements
+extern volatile unsigned char g_Attitude_Observer_Update_Flag;
+// Tracks when to use gyro data to make predictions
+extern volatile unsigned char g_Attitude_Observer_Predict_Flag;
 
 // Either sets or clears a bit within a bitmask depending on the input
 #define SET_BIT(current_val, position, val) ((val < 1) ? current_val&(~(val<<position)) : current_val|(val<<position))

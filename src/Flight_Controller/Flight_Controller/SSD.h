@@ -1,7 +1,9 @@
 #ifndef SSD_H
 #define SSD_H
 
-// Macros
+#include "FC_Types.h"
+#include "LoRa.h"
+
 // Thanks to https://robotcantalk.blogspot.com/2015/03/interfacing-arduino-with-ssd1306-driven.html
 // 0x80 -> writes single command byte
 // 0x00 -> writes stream of command bytes
@@ -35,7 +37,6 @@
 #define SSD_PAGE6 0xB6
 #define SSD_PAGE7 0xB7
 
-// Functions
 unsigned char
 	Setup_SSD(),
 	Write_Display(unsigned char Data_Byte),
@@ -44,6 +45,6 @@ unsigned char
 	Clear_Display(),
 	Print_Page(unsigned char page, char *to_print, unsigned char number);
 
-void Print_Output(float *Desired_Thrust, float Desired_Moments[3], unsigned int Motor_Throttles[4]);
+void Print_Output(States *Drone, Calibration_Data *cal_data, Uplink *uplink);
 
 #endif

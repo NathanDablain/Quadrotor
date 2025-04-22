@@ -15,7 +15,7 @@ typedef struct{
 	float m_vec[3];
 	signed long m_xyz_LSB[3];
 	float Euler[3];
-	float pressure_altitude;
+	float Pressure_Altitude;
 	float Position_NED[3];
 	signed long Longitude;
 	signed long Latitude;
@@ -26,9 +26,9 @@ typedef struct{
 
 typedef struct{
 	// bar_cal_status -> flag with state of calibration, 0: uncalibrated, 1:ready
-	// base_altitude -> offset to apply against bar reading, either from ground controller or last good reading
+	// altitude_bias -> offset to apply against bar reading, either from ground controller or last good reading
 	unsigned char bar_cal_status;
-	float base_altitude;
+	float altitude_bias;
 	// imu_cal_status -> flag with state of calibration, 0: uncalibrated, 1: ready
 	// w_bias -> constant offset along each gyro axis in LSB
 	unsigned char imu_cal_status;

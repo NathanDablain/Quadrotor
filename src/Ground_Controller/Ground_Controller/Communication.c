@@ -282,10 +282,8 @@ Downlink_Reponse_Codes Receive_Downlink(Downlink *inbound, unsigned char ID_inde
 	if ((checksum_hex[0] == Check_Sum[0])&&(checksum_hex[1] == Check_Sum[1])){
 		char inbound_ID[3] = {buffer[3], buffer[4], 0};
 		if (strcmp(inbound_ID, ID[ID_index]) == 0){
-			char Cal_status[2] = {buffer[5], 0};
-			char Track_status[2] = {buffer[6], 0};
-			inbound->Calibration_Status = atoi(Cal_status);
-			inbound->Tracking_Status = atoi(Track_status);
+			inbound->Calibration_Status = buffer[5];
+			inbound->Tracking_Status = buffer[6];
 			return Good_response;
 		}
 		return Bad_ID;

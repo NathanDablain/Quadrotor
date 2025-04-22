@@ -9,6 +9,7 @@
 #define MAG_CFG_REG_C 0x62
 #define MAG_DATA_START 0x68
 #define MAG_WINDOW_SIZE 4
+#define MAG_CAL_TIMEOUT 5
 
 unsigned char Setup_Mag();
 

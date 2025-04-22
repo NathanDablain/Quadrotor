@@ -17,9 +17,11 @@
 #define BAR_R 8.31432 // Universal gas constant (J/(mol-K))S
 #define BAR_M 0.0289644 // Molar mass of air (kg/mol)
 
+#define BAR_MAX_CAL_DIFF 5.0
+
 unsigned char Setup_Bar();
 
-void Read_Bar(States *Drone, Calibration_Data *cal_data);
+void Read_Bar(States *Drone, Calibration_Data *cal_data, float base_altitude);
 
 void Calibrate_Bar(States *Drone, Calibration_Data *cal_data, float base_altitude);
 

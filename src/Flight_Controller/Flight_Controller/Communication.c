@@ -261,14 +261,11 @@ void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Contr
 	if (data_available < UPLINK_SIZE) return;
 	
 	unsigned char uplink_status = 1;
-	char buffer[100] = {0};
+	char buffer[50] = {0};
 	unsigned char RX_Adrs = 0;
 	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_RX_ADR,&RX_Adrs,1);
 	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),RX_Adrs); // Set FIFO ptr to current FIFO RX address
 	(void)Read_SPI_c(PORT_LORA,CS_LORA,LORA_REG_FIFO,buffer,data_available);
-	
-	Print_Page(0, buffer, data_available/2);
-	Print_Page(1, (buffer+(data_available/2)), (data_available-(data_available/2)));
 
 	// Keeps track of index in buffer
 	unsigned char i = 0;
@@ -362,7 +359,7 @@ FC_Status Manage_FC_Status(FC_Status Desired, FC_Status Current){
 				case Standby:
 					return Current;
 				case Calibrating:
-					return Current;
+					return Desired;
 				case Ready:
 					return Desired;
 				case Flying:
@@ -380,7 +377,7 @@ FC_Status Manage_FC_Status(FC_Status Desired, FC_Status Current){
 				case Calibrating:
 					return Current;
 				case Ready:
-					return Desired;
+					return Current;
 				case Flying:
 					return Landing;
 				case Landing:
@@ -798,15 +795,15 @@ unsigned char Print_Page(unsigned char page, char *to_print, unsigned char lengt
 	return Print_status;
 }
 
-void Print_Output(float *Desired_Thrust, float Desired_Moments[3], unsigned int Motor_Throttles[4]){
+void Print_Output(States *Drone, Calibration_Data *cal_data, Uplink *uplink){
 	g_Print_Flag = 0;
-	char buffer[4][15] = {0};
-	unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%3.3f , %3.3f", *Desired_Thrust, Desired_Moments[0]);
+	char buffer[4][20] = {0};
+	unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%2.1f , %2.1f, %2.1f", Drone->Euler[0], Drone->Euler[1], Drone->Euler[2]);
 	Print_Page(0, buffer[0], length_to_print);
-	length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%3.3f, %3.3f", Desired_Moments[1], Desired_Moments[2]);
+	length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%d, %d, %d", cal_data->w_bias[0], cal_data->w_bias[1], cal_data->w_bias[2]);
 	Print_Page(1, buffer[1], length_to_print);
-	length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%d , %d", Motor_Throttles[0], Motor_Throttles[1]);
+	length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%d, %d, %d", cal_data->hard_iron[0], cal_data->hard_iron[1], cal_data->hard_iron[2]);
 	Print_Page(2, buffer[2], length_to_print);
-	length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "%d , %d", Motor_Throttles[2], Motor_Throttles[3]);
+	length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "%3.1f,%3.1f,%3.1f", cal_data->altitude_bias, uplink->Base_altitude, -Drone->Position_NED[2]);
 	Print_Page(3, buffer[3], length_to_print);
 }
