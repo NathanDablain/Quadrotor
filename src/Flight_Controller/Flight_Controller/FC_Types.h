@@ -9,9 +9,9 @@ extern volatile unsigned long g_seconds;
 
 // Structures
 typedef struct{
-	float w[3];
+	signed int w[3];
 	signed long w_xyz_LSB[3];
-	float g_vec[3]; // In the frame Forward - Right - Down
+	signed int g_vec[3]; // In the frame Forward - Right - Down
 	float m_vec[3];
 	signed long m_xyz_LSB[3];
 	float Euler[3];

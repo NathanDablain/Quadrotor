@@ -8,7 +8,7 @@ unsigned char Setup(){
 	// [7]		[6]		[5]		[4]		[3]		[2]		[1]		[0]
 	//					SSD	   LoRa	    MAG		IMU		BAR		GPS
 	
-	_PROTECTED_WRITE (CLKCTRL_OSCHFCTRLA, CLKCTRL_FRQSEL_24M_gc); // Sets CPU clock to 24 MHz
+	_PROTECTED_WRITE (CLKCTRL_OSCHFCTRLA, (CLKCTRL_FRQSEL_24M_gc|CLKCTRL_AUTOTUNE_bm)); // Sets CPU clock to 24 MHz
 	while(!(CLKCTRL_MCLKSTATUS & CLKCTRL_OSCHFS_bm)); // Wait for clock to stabilize
 	unsigned char GPS_setup_status = Setup_GPS();
 	Setup_SPI();
@@ -53,7 +53,7 @@ void Setup_Timers(){
 	// Generates an interrupt every 2.4 ms, is used by:
 	//	-> Accel and Observer running at 416 Hz
 	TCB1_CTRLA |= TCB_ENABLE_bm | TCB_CLKSEL_DIV1_gc;
-	TCB1_INTCTRL |= TCB_CAPT_bm;
+	TCB1_INTCTRL |= TCB_CAPT_bm; // Generate interrupts twice as fast as needed, trigger gyro on one and predictor on other
 	TCB1_CCMP = 57600;
 	//-------------------------------------------------------//
 	//-------Setup Timer/Counter B2 for output compare--------//
@@ -94,6 +94,7 @@ int main(){
 		unsigned int seconds_last = g_seconds;
 		unsigned char reset = 0;
 		while(1){
+			// READ STATUS REGISTERS OF SENSORS TO DETERMINE WHEN TO SAMPLE, READ THEM AT TWICE THE OUTPUT RATE
 			//--------------Common code--------------//
 			// LoRa
 			if (g_LoRa_Check_Flag>=2){
@@ -102,13 +103,19 @@ int main(){
 				 ++throughput_counter[0];
 			}
 			// Printing
-			//if (g_Print_Flag&&(Setup_Bitmask & (1<<SU_SSD_bp))) Print_Output(&Drone, &cal_data, &up_link);
+			if (g_Print_Flag >= 20 &&(Setup_Bitmask & (1<<SU_SSD_bp))){
+				g_Print_Flag = 0;
+				char p_buffer[20];
+				unsigned char length_to_print = snprintf(p_buffer, sizeof(p_buffer), "%3.1f, %3.1f, %3.1f", Drone.Euler[0], Drone.Euler[1], Drone.Euler[2]);
+				Print_Page(3, p_buffer, length_to_print);
+				 //Print_Output(&Drone, &cal_data, &up_link);
+			}
 			if ((g_seconds - seconds_last) >= 1){
 				seconds_last = g_seconds;
 				char buffer[3][20] = {0};
 				unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "B:%d,M:%d,A:%d", throughput_counter[1], throughput_counter[2], throughput_counter[3]);
 				Print_Page(0, buffer[0], length_to_print);
-				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "G:%d,O1:%d,O2:%d",throughput_counter[4], throughput_counter[5], throughput_counter[6]);
+				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "G:%d,U:%d,P:%d",throughput_counter[4], throughput_counter[5], throughput_counter[6]);
 				Print_Page(1, buffer[1], length_to_print);
 				length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%ld", unused_time_counter);
 				Print_Page(2, buffer[2], length_to_print);
@@ -119,27 +126,40 @@ int main(){
 			//// GPS
 			//if (g_GPS_Read_Flag) Read_GPS(&Drone, &cal_data);
 //
-			// Barometer
-			if (g_BAR_Read_Flag >= 3){ Read_Bar(&Drone, &cal_data, up_link.Base_altitude); throughput_counter[1]++;}
+			// Barometer -> check 10Hz, samples at 4.6Hz
+			if (g_BAR_Read_Flag >= 20){
+				unsigned char bar_status = Read_Bar(&Drone, &cal_data, up_link.Base_altitude);
+				if (bar_status) throughput_counter[1]++;
+			}
 
-			// Magnetometer
-			if (g_MAG_Read_Flag >= 2){ Read_Mag(&Drone, &cal_data); throughput_counter[2]++;}
+			// Magnetometer -> check at 200 Hz, samples at 50Hz
+			if (g_MAG_Read_Flag){
+				 unsigned char mag_status = Read_Mag(&Drone, &cal_data);
+				 if (mag_status) throughput_counter[2]++;
+			}
 			
-			// IMU
-			if (g_Accel_Read_Flag){ Read_Accel(&Drone); throughput_counter[3]++;}
+			// Accelerometer -> check at 200 Hz, samples at 52Hz
+			if (g_Accel_Read_Flag){ 
+				unsigned char accel_status = Read_Accel(&Drone);
+				if (accel_status) throughput_counter[3]++;
+			}
 
-			if (g_Gyro_Read_Flag){ Read_Gyro(&Drone, &cal_data); throughput_counter[4]++;}
+			// Gyro -> Check at 1666Hz, samples at 416Hz
+			if (g_Gyro_Read_Flag){
+				 unsigned char gyro_status = Read_Gyro(&Drone, &cal_data); 
+				 if (gyro_status) throughput_counter[4]++;}
 
-			// Observer
+			// Observer update -> 50Hz
 			if (g_Attitude_Observer_Update_Flag >= 4){ Observer_Update(&Drone); throughput_counter[5]++;}
 				
+			// Observer predict -> 400Hz
 			if (g_Attitude_Observer_Predict_Flag){ Observer_Predict(&Drone); throughput_counter[6]++;}
 
-			unused_time_counter++;
+			//unused_time_counter++;
 			//--------------Status code-------------//
 			if (Flight_Controller_Status == Standby){
 				// Initialize or reset calibration data
-				if (reset){
+				if (reset == 0){
 					cal_data = reset_cal_data;
 					Drone.Latitude = -1;
 					Drone.Longitude = -1;
@@ -198,12 +218,12 @@ int main(){
 
 ISR(RTC_CNT_vect){
 	++g_seconds;
-	++g_Print_Flag;
 	RTC_CNT = 0;
 	RTC_INTFLAGS = RTC_CMP_bm;
 }
 
 ISR(TCB0_INT_vect){
+	++g_Accel_Read_Flag;
 	++g_LoRa_Check_Flag;
 	++g_Motor_Run_Flag;
 	++g_BAR_Read_Flag;
@@ -211,11 +231,11 @@ ISR(TCB0_INT_vect){
 	++g_MAG_Read_Flag;
 	++g_MRAC_Flag;
 	++g_LQR_Flag;
+	++g_Print_Flag;
 	TCB0_INTFLAGS = TCB_CAPT_bm;
 }
 
 ISR(TCB1_INT_vect){
-	++g_Accel_Read_Flag;
 	++g_Attitude_Observer_Predict_Flag;
 	TCB1_INTFLAGS = TCB_CAPT_bm;
 }

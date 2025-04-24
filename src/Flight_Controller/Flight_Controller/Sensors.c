@@ -19,14 +19,15 @@
 volatile unsigned char g_BAR_Read_Flag = 0;
 
 unsigned char Setup_Bar(){
-	unsigned char BAR_ID = 0;
 	unsigned char BAR_status = 2;
-	
-	BAR_status &= Read_SPI(PORT_BAR,CS_BAR,(BAR_WHO_AM_I|0x80),&BAR_ID,1);
-	BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_IF_CTRL,0b00000111); // Disables unused interfaces
+
+	BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_CTRL_REG2,0b00000100); // Resets device
+	Delay(10000);
 	BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_CTRL_REG1,0b01011100); // Sets ODR to 75Hz, enables LPF
 	BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_CTRL_REG2,0b00010010); // Enables low noise mode, maximum ODR for this mode is 75 Hz
-	
+	BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_FIFO_WTM,0b00010000); // Sets FIFO watermark level to 16
+	BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_FIFO_CTRL,0b00000001); // Enables FIFO
+
 	if (BAR_status != 2){return 0;}
 	return 1;
 }
@@ -38,35 +39,28 @@ void Calibrate_Bar(States *Drone, Calibration_Data *cal_data, float base_altitud
 	}
 }
 
-void Read_Bar(States *Drone, Calibration_Data *cal_data, float base_altitude){
-	static unsigned long pressure_window[BAR_WINDOW_SIZE];
-	static unsigned char window_counter;
-	
+unsigned char Read_Bar(States *Drone, Calibration_Data *cal_data, float base_altitude){
 	g_BAR_Read_Flag = 0;
+
+	unsigned char fifo_level = 0;
+	Read_SPI(PORT_BAR,CS_BAR,(BAR_FIFO_STATUS1|0x80),&fifo_level,1);
+	if (fifo_level < BAR_WINDOW_SIZE) return 0;
 	
-	unsigned char Read_status = 0;
-	unsigned char Data[3] = {0};
-	Read_status = Read_SPI(PORT_BAR, CS_BAR, (BAR_DATA_START|0x80), Data, sizeof(Data));
-	
-	if (Read_status != 2){return;}
-	
-	unsigned long pressure_LSB = (((unsigned long)Data[2])<<16);
-	pressure_LSB += (((unsigned int)Data[1])<<8);
-	pressure_LSB += Data[0];
-	
-	pressure_window[window_counter++] = pressure_LSB;
-	
-	if (window_counter >= BAR_WINDOW_SIZE){
-		volatile unsigned long pressure_oversampled = 0;
-		for (unsigned char i=0;i<BAR_WINDOW_SIZE;i++){
-			pressure_oversampled += pressure_window[i];
-		}
-		pressure_oversampled >>= 4;
-		Drone->Pressure_Altitude = Height_Bar(pressure_oversampled);
-		Drone->Position_NED[2] = -(Drone->Pressure_Altitude - (cal_data->altitude_bias + base_altitude));
-		window_counter = 0;
+	unsigned char Data[5*BAR_WINDOW_SIZE];
+	Read_SPI_Stream(PORT_BAR, CS_BAR, (BAR_FIFO_DATA_START|0x80), Data, 5*BAR_WINDOW_SIZE);
+	// Read in data, average samples, skip over temperature measurements
+	unsigned long pressure_oversampled = 0;
+	for (unsigned char i = 0; i < BAR_WINDOW_SIZE; i++){
+		unsigned char p_LSB = Data[5*i];
+		unsigned int p_MSB = ((unsigned int)Data[5*i + 1])<<8;
+		unsigned long p_HSB = ((unsigned long)Data[5*i + 2])<<16;
+		pressure_oversampled += p_HSB + p_MSB + p_LSB;
 	}
+	pressure_oversampled >>= 4;
+	Drone->Pressure_Altitude = Height_Bar(pressure_oversampled);
+	Drone->Position_NED[2] = -(Drone->Pressure_Altitude - (cal_data->altitude_bias + base_altitude));
 	
+	return 1;
 }
 
 float Height_Bar(unsigned long pressure_LSB){
@@ -86,15 +80,18 @@ volatile unsigned char g_Gyro_Read_Flag = 0;
 unsigned char Setup_IMU(){
 	// Configure IMU
 	unsigned char IMU_status = 2;
-	unsigned char IMU_ID = 0;
 	
-	IMU_status &= Read_SPI(PORT_IMU, CS_IMU, (IMU_WHO_AM_I|0x80), &IMU_ID, 1);
+	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_CTRL3_C, 0b00000001); // Reboot
+	Delay(1000);
+	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_FIFO_CTRL1, 2*3*8); // Sets FIFO watermark to 24
+	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_FIFO_CTRL3, 0b00000001); // Puts accelerometer in FIFO
+	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_FIFO_CTRL5, 0b00110001); // Sets FIFO ODR to 416Hz, enables FIFO
 	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_CTRL1_XL, 0b01100000); // Sets Accelerometer ODR to 416 Hz, range to +-2g
-	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_CTRL2_G, 0b10000100); // Sets Gyro ODR to 1666 Hz, range to +-500dps
+	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_CTRL2_G, 0b01100100); // Sets Gyro ODR to 416 Hz, range to +-500dps
+	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_CTRL3_C, 0b01000100); // Sets block data update, auto increment address
 	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_CTRL8_XL, 0b11001000); // Sets Accelerometer LPF to ODR/9, low noise
 	
-	if(IMU_status != 2){return 0;}
-	return 1;
+	return (IMU_status != 2)?(0):(1);
 }
 
 void Calibrate_IMU(States *Drone, Calibration_Data *cal_data){
@@ -110,63 +107,49 @@ void Calibrate_IMU(States *Drone, Calibration_Data *cal_data){
 	
 }
 
-void Read_Accel(States *Drone){
-	static signed int a_xyz_window[3][IMU_WINDOW_SIZE];
-	static unsigned char window_counter_a;
+unsigned char Read_Accel(States *Drone){
 	g_Accel_Read_Flag = 0;
-	
-	unsigned char Data[6] = {0};
-	Read_SPI(PORT_IMU, CS_IMU, (ACCEL_DATA_START|0x80), Data, sizeof(Data));
-	
-	a_xyz_window[0][window_counter_a] = (((signed int)Data[1])<<8) + Data[0];
-	a_xyz_window[1][window_counter_a] = (((signed int)Data[3])<<8) + Data[2];
-	a_xyz_window[2][window_counter_a] = (((signed int)Data[5])<<8) + Data[4];
 
-	window_counter_a++;
+	unsigned char fifo_level = 0;
+	Read_SPI(PORT_IMU,CS_IMU,(IMU_FIFO_STATUS1|0x80),&fifo_level,1);
+	if (fifo_level < 6*ACCEL_WINDOW_SIZE) return 0;
 	
-	if (window_counter_a >= IMU_WINDOW_SIZE){
-		window_counter_a = 0;
-		signed long a_xyz_FIR[3] = {0};
-		for (unsigned char i=0;i<3;i++){
-			for (unsigned char j=0;j<IMU_WINDOW_SIZE;j++){
-				a_xyz_FIR[i] += a_xyz_window[i][j];
-			}
-			a_xyz_FIR[i] >>= 3;
-		}
-		// Flip positive directions on Accelerometer y axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
-		Drone->g_vec[0] = ((float)a_xyz_FIR[0])*ACCEL_SENS;
-		Drone->g_vec[1] = ((float)-a_xyz_FIR[1])*ACCEL_SENS;
-		Drone->g_vec[2] = ((float)a_xyz_FIR[2])*ACCEL_SENS;
+	unsigned char Data[6*ACCEL_WINDOW_SIZE];
+	Read_SPI_Stream(PORT_IMU, CS_IMU, (IMU_FIFO_DATA_START|0x80), Data, 3*BAR_WINDOW_SIZE);
+	
+	signed long a_xyz_oversampled[3] = {0};
+	for (unsigned char i=0; i<ACCEL_WINDOW_SIZE; i++){
+		a_xyz_oversampled[0] += (((signed int)Data[6*i + 1])<<8) + Data[6*i + 0];
+		a_xyz_oversampled[1] += (((signed int)Data[6*i + 3])<<8) + Data[6*i + 2];
+		a_xyz_oversampled[2] += (((signed int)Data[6*i + 5])<<8) + Data[6*i + 4];
 	}
+	a_xyz_oversampled[0] >>= 3;
+	a_xyz_oversampled[1] >>= 3;
+	a_xyz_oversampled[2] >>= 3;
+
+	// Flip positive directions on Accelerometer y axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
+	Drone->g_vec[0] = a_xyz_oversampled[0];
+	Drone->g_vec[1] = -a_xyz_oversampled[1];
+	Drone->g_vec[2] = a_xyz_oversampled[2];
+	return 1;
 	
 }
 
-void Read_Gyro(States *Drone, Calibration_Data *cal_data){
-	static signed int w_xyz_window[3][GYRO_WINDOW_SIZE];
-	static unsigned char window_counter_g;	
+unsigned char Read_Gyro(States *Drone, Calibration_Data *cal_data){
 	g_Gyro_Read_Flag = 0;
+	
+	unsigned char gyro_status = 0;
+	Read_SPI(PORT_IMU, CS_IMU, (IMU_STATUS|0x80), &gyro_status, 1);
+	if (!(gyro_status & GYRO_DRDY_bm)) return 0;
 	
 	unsigned char Data[6] = {0};
 	Read_SPI(PORT_IMU, CS_IMU, (GYRO_DATA_START|0x80), Data, sizeof(Data));
 	
-	w_xyz_window[0][window_counter_g] = (((signed int)Data[1])<<8) + Data[0];
-	w_xyz_window[1][window_counter_g] = (((signed int)Data[3])<<8) + Data[2];
-	w_xyz_window[2][window_counter_g] = (((signed int)Data[5])<<8) + Data[4];
-	window_counter_g++;
+	Drone->w[0] = -((((signed int)Data[1])<<8) + Data[0]) - cal_data->w_bias[0];
+	Drone->w[1] = ((((signed int)Data[3])<<8) + Data[2]) - cal_data->w_bias[1];
+	Drone->w[2] = -((((signed int)Data[5])<<8) + Data[4]) - cal_data->w_bias[2];
 	
-	if (window_counter_g >= GYRO_WINDOW_SIZE){
-		window_counter_g = 0;
-		for (unsigned char i=0;i<3;i++){
-			Drone->w_xyz_LSB[i] = w_xyz_window[i][0] + w_xyz_window[i][1] + w_xyz_window[i][2] + w_xyz_window[i][3];
-			Drone->w_xyz_LSB[i] >>= 2;
-		}
-		// Flip positive directions on Gyro x and z axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
-		signed int w_diff[3] = {-Drone->w_xyz_LSB[0]-cal_data->w_bias[0], Drone->w_xyz_LSB[1]-cal_data->w_bias[1], -Drone->w_xyz_LSB[2]-cal_data->w_bias[2]};
-		for (unsigned char i=0;i<3;i++){
-			Drone->w[i] = ((float)w_diff[i])*GYRO_SENS*D2R;
-		}
-	}
-	
+	return 1;
 }
 // MAGNETOMETER CODE
 // Mag -> 0 is a write, 1 is a read
@@ -175,15 +158,13 @@ volatile unsigned char g_MAG_Read_Flag = 0;
 
 unsigned char  Setup_Mag(){
 	unsigned char MAG_status = 2;
-	unsigned char Mag_ID = 0;
-	
+	Write_SPI(PORT_MAG,CS_MAG,MAG_CFG_REG_A,0b01000000); // Reset device
+	Delay(10000);
 	MAG_status &= Write_SPI(PORT_MAG, CS_MAG, MAG_CFG_REG_C, 0b00110100); // Enables 4 wire SPI, disables I2C
-	MAG_status &= Read_SPI(PORT_MAG, CS_MAG, (MAG_WHO_AM_I|0x80), &Mag_ID, 1);
-	MAG_status &= Write_SPI(PORT_MAG, CS_MAG, MAG_CFG_REG_A, 0b10001100); // Sets continuous mode, 100 Hz ODR, temp compensation enabled
+	MAG_status &= Write_SPI(PORT_MAG, CS_MAG, MAG_CFG_REG_A, 0b10001000); // Sets continuous mode, 50 Hz ODR, temp compensation enabled
 	MAG_status &= Write_SPI(PORT_MAG, CS_MAG, MAG_CFG_REG_B, 0b00000001); // Enables LPF
 	
-	if (MAG_status != 2){return 0;}
-	return 1;
+	return (MAG_status != 2)?(0):(1);
 }
 
 void Calibrate_Mag(States *Drone, Calibration_Data *cal_data){
@@ -216,37 +197,25 @@ void Calibrate_Mag(States *Drone, Calibration_Data *cal_data){
 	}
 }
 
-void Read_Mag(States *Drone, Calibration_Data *cal_data){
-	static signed int m_xyz_window[3][MAG_WINDOW_SIZE];
-	static unsigned char window_counter;
-	unsigned char Read_status = 0;
-	
+unsigned char Read_Mag(States *Drone, Calibration_Data *cal_data){
 	g_MAG_Read_Flag = 0;
+	unsigned char Mag_drdy = 0;
+	
+	Read_SPI(PORT_MAG,CS_MAG,(MAG_STATUS|0x80),&Mag_drdy,1);
+	if (!(Mag_drdy & MAG_DRDY_bm)) return 0;
+	
 	unsigned char Data[6] = {0};
-	Read_status = Read_SPI(PORT_MAG, CS_MAG, (MAG_DATA_START|0x80), Data, 6);
-	if (Read_status != 2) return;
+	Read_SPI(PORT_MAG, CS_MAG, (MAG_DATA_START|0x80), Data, 6);
 	
 	for (unsigned char i=0;i<3;i++){
-		m_xyz_window[i][window_counter] = (((signed int)Data[2*i+1])<<8) + Data[2*i];
+		Drone->m_xyz_LSB[i] = (((signed int)Data[2*i+1])<<8) + Data[2*i];
 	}
-	
-	window_counter++;
-	if (window_counter >= MAG_WINDOW_SIZE){
-		window_counter = 0;
-		for (unsigned char i=0;i<3;i++){
-			Drone->m_xyz_LSB[i] = 0;
-			for (unsigned char j=0;j<MAG_WINDOW_SIZE;j++){
-				Drone->m_xyz_LSB[i] += m_xyz_window[i][j];
-			}
-			Drone->m_xyz_LSB[i] >>= 2;
-		}
 
-		Drone->m_vec[0] = ((float)(Drone->m_xyz_LSB[1] - cal_data->hard_iron[1]))/((float)cal_data->hard_iron[1]*2.0);
-		Drone->m_vec[1] = -((float)(Drone->m_xyz_LSB[0]- cal_data->hard_iron[0]))/((float)cal_data->hard_iron[0]*2.0);
-		Drone->m_vec[2] = ((float)(Drone->m_xyz_LSB[2] - cal_data->hard_iron[2]))/((float)cal_data->hard_iron[2]*2.0);
-
-	}
+	Drone->m_vec[0] = ((float)(Drone->m_xyz_LSB[1] - cal_data->hard_iron[1]))/((float)cal_data->hard_iron[1]*2.0);
+	Drone->m_vec[1] = -((float)(Drone->m_xyz_LSB[0]- cal_data->hard_iron[0]))/((float)cal_data->hard_iron[0]*2.0);
+	Drone->m_vec[2] = ((float)(Drone->m_xyz_LSB[2] - cal_data->hard_iron[2]))/((float)cal_data->hard_iron[2]*2.0);
 	
+	return 1;
 }
 
 // GPS CODE
@@ -507,53 +476,8 @@ ISR(USART3_RXC_vect){
 
 // OBSERVER CODE
 
-volatile unsigned char g_Attitude_Observer_Run_Flag = 0;
 volatile unsigned char g_Attitude_Observer_Update_Flag = 0;
 volatile unsigned char g_Attitude_Observer_Predict_Flag = 0;
-
-void Observer(States *Drone){
-	const float 
-		L = 0.05, // Observer gain, increasing the gain increases the trust on the model(gyro),
-	// and decreasing it increases the trust on the measurement (accelerometer and magnetometer)
-		dt = 0.02, // Time between integrations
-		Gimbal_Lock_Check_Angle = 5.0*D2R;
-	// Measure
-	
-	g_Attitude_Observer_Run_Flag = 0;
-
-	float phi_m = atan2f(Drone->g_vec[1], Drone->g_vec[2]);
-	if (isnan(phi_m)){
-		phi_m = Drone->Euler[0];
-	}
-	float theta_m = atan2f(-Drone->g_vec[0], sqrt(pow(Drone->g_vec[1],2) + pow(Drone->g_vec[2],2)));
-	if (isnan(theta_m)){
-		theta_m = Drone->Euler[1];
-	}
-	float mag_x_NED = cosf(Drone->Euler[1])*Drone->m_vec[0] + sinf(Drone->Euler[0])*sinf(Drone->Euler[1])*Drone->m_vec[1] + cosf(Drone->Euler[0])*sinf(Drone->Euler[1])*Drone->m_vec[2];
-	float mag_y_NED = cosf(Drone->Euler[0])*Drone->m_vec[1] - sinf(Drone->Euler[0])*Drone->m_vec[2];
-	float psi_m = -atan2f(mag_y_NED, mag_x_NED);
-	if (isnan(psi_m)){
-		psi_m = Drone->Euler[2];
-	}
-	if (psi_m <= 0){
-		psi_m += 2.0*M_PI;
-	}
-	
-	// Predict
-	float phi_hat = Drone->Euler[0];
-	float theta_hat = Drone->Euler[1];
-	float psi_hat = Drone->Euler[2];
-	if (abs(abs(Drone->Euler[1]) - M_PI_2) > Gimbal_Lock_Check_Angle){
-		phi_hat += (Drone->w[0] + sinf(Drone->Euler[0])*tanf(Drone->Euler[1])*Drone->w[1] + cosf(Drone->Euler[0])*tanf(Drone->Euler[1])*Drone->w[2])*dt;
-		theta_hat += (cosf(Drone->Euler[0])*Drone->w[1] - sinf(Drone->Euler[0])*Drone->w[2])*dt;
-		psi_hat += ((sinf(Drone->Euler[0])/cosf(Drone->Euler[1]))*Drone->w[1] + (cosf(Drone->Euler[0])/cosf(Drone->Euler[1]))*Drone->w[2])*dt;
-	}
-	// Update
-	Drone->Euler[0] = phi_hat + L*(phi_m-phi_hat);
-	Drone->Euler[1] = theta_hat + L*(theta_m-theta_hat);
-	// Prevent yaw angle discontinuity at 2pi - 0 to cause the filter to slowly cycle between them
-	Drone->Euler[2] = (abs(psi_m-psi_hat)>M_PI)?(psi_m):(psi_hat + L*(psi_m-psi_hat));
-}
 
 void Observer_Update(States *Drone){
 	g_Attitude_Observer_Update_Flag = 0;
@@ -588,8 +512,8 @@ void Observer_Predict(States *Drone){
 	g_Attitude_Observer_Predict_Flag = 0;
 	// Predict
 	if (abs(abs(Drone->Euler[1]) - M_PI_2) > OBSERVER_GIMBAL_LOCK_CHECK){
-		Drone->Euler[0] += (Drone->w[0] + sinf(Drone->Euler[0])*tanf(Drone->Euler[1])*Drone->w[1] + cosf(Drone->Euler[0])*tanf(Drone->Euler[1])*Drone->w[2])*OBSERVER_DT;
-		Drone->Euler[1] += (cosf(Drone->Euler[0])*Drone->w[1] - sinf(Drone->Euler[0])*Drone->w[2])*OBSERVER_DT;
-		Drone->Euler[2] += ((sinf(Drone->Euler[0])/cosf(Drone->Euler[1]))*Drone->w[1] + (cosf(Drone->Euler[0])/cosf(Drone->Euler[1]))*Drone->w[2])*OBSERVER_DT;
+		Drone->Euler[0] += (Drone->w[0] + sinf(Drone->Euler[0])*tanf(Drone->Euler[1])*Drone->w[1] + cosf(Drone->Euler[0])*tanf(Drone->Euler[1])*Drone->w[2])*OBSERVER_DT*GYRO_SENS*D2R;
+		Drone->Euler[1] += (cosf(Drone->Euler[0])*Drone->w[1] - sinf(Drone->Euler[0])*Drone->w[2])*OBSERVER_DT*GYRO_SENS*D2R;
+		Drone->Euler[2] += ((sinf(Drone->Euler[0])/cosf(Drone->Euler[1]))*Drone->w[1] + (cosf(Drone->Euler[0])/cosf(Drone->Euler[1]))*Drone->w[2])*OBSERVER_DT*GYRO_SENS*D2R;
 	}
 }

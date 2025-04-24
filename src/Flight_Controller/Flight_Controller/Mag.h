@@ -8,12 +8,14 @@
 #define MAG_CFG_REG_B 0x61
 #define MAG_CFG_REG_C 0x62
 #define MAG_DATA_START 0x68
+#define MAG_STATUS 0x67
+#define MAG_DRDY_bm (1<<3)
 #define MAG_WINDOW_SIZE 4
 #define MAG_CAL_TIMEOUT 5
 
 unsigned char Setup_Mag();
 
-void Read_Mag(States *Drone, Calibration_Data *cal_data);
+unsigned char Read_Mag(States *Drone, Calibration_Data *cal_data);
 
 void Calibrate_Mag(States *Drone, Calibration_Data *cal_data);
 

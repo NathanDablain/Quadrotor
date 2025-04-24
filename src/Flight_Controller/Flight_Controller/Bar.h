@@ -8,6 +8,12 @@
 #define BAR_CTRL_REG1 0x10
 #define BAR_CTRL_REG2 0x11
 #define BAR_DATA_START 0x28
+#define BAR_FIFO_DATA_START 0x78
+#define BAR_FIFO_WTM 0x14
+#define BAR_STATUS 0x27
+#define BAR_FIFO_CTRL 0x13
+#define BAR_FIFO_STATUS1 0x25
+#define BAR_P_DRDY_bm 0x01
 #define BAR_SENS 1.0/40.96 // Pa/LSB
 #define BAR_WINDOW_SIZE 16
 #define BAR_TB 288.15 // Standard temperature at sea level (K)
@@ -21,7 +27,7 @@
 
 unsigned char Setup_Bar();
 
-void Read_Bar(States *Drone, Calibration_Data *cal_data, float base_altitude);
+unsigned char Read_Bar(States *Drone, Calibration_Data *cal_data, float base_altitude);
 
 void Calibrate_Bar(States *Drone, Calibration_Data *cal_data, float base_altitude);
 

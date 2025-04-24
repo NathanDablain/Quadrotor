@@ -57,6 +57,35 @@ unsigned char Read_SPI(char Port, unsigned char Pin, unsigned char Register, uns
 	return 2;
 }
 
+void Read_SPI_Stream(char Port, unsigned char Pin, unsigned char Register, unsigned char *Data, unsigned int Data_Length){
+	unsigned int i = 0;
+	
+	if (Port == 'A'){
+		PORTA_OUT &= ~(1<<Pin);
+	}
+	else if (Port == 'B'){
+		PORTB_OUT &= ~(1<<Pin);
+	}
+	else {return;}
+		
+	SPI1_DATA = Register;
+	while (!(SPI1_INTFLAGS & SPI_IF_bm));
+	SPI1_INTFLAGS &= ~SPI_IF_bm;
+	
+	while (i++<Data_Length){
+		SPI1_DATA = 0;
+		while (!(SPI1_INTFLAGS & SPI_IF_bm));
+		*Data++ = SPI1_DATA;
+	}
+	
+	if (Port == 'A'){
+		PORTA_OUT |= (1<<Pin);
+	}
+	else {
+		PORTB_OUT |= (1<<Pin);
+	}
+}
+
 void Read_SPI_c(char Port, unsigned char Pin, unsigned char Register, char *Data, unsigned char Data_Length){
 	unsigned char i = 0;
 	
@@ -347,7 +376,6 @@ void Send_Downlink(Downlink *outbound){
 		if (LoRa_TX_Status == LORA_IRQ_TX_DONE){
 			break;
 		}
-		Delay(1000);
 	}
 	
 }
