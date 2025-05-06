@@ -1,56 +1,19 @@
 #include "Controllers.h"
 
-//K_attitude = [1 0.2 0.2]; % P-I-D
-
-float Height_MRAC(States &MCU, float h_ref){
-    const float d_t = 0.25;
-    // Reference Model
-    // h and h_dot
-    static float x_ref[2];
-    float x_ref_dot[2];
-    // Natural frequency and damping ratio for reference model
-    const float w_n = 1.0;
-    const float zeta = 0.707;
-    const float c1 = 2.0*zeta*w_n;
-    const float c2 = pow(w_n, 2);
-    float h = -MCU.Position_NED[2];
-    
-    x_ref_dot[0] = x_ref[1];
-    x_ref_dot[1] = -c1*x_ref[0] - c2*x_ref[1] + c1*h_ref;
-    x_ref[0] += (x_ref_dot[0]*d_t);
-    x_ref[1] += (x_ref_dot[1]*d_t);
-
-    // Update Gains
+float Height_LQR(float h, float h_ref){
+    // u = -K*x -> x = h_int, h, h_dot
+    const float mass = 0.45;
+    const float d_t = 0.01;
+    float K[2] = {3.0, 4.0};
+    float K_int = 0.002;
+    static float e_int;
     static float h_last;
-    float e[2];
-    e[0] = x_ref[0] - h;
-    float h_dot = (h - h_last)/d_t;
+    e_int += (h_ref-h);
+    float h_dot = (h-h_last)/d_t;
     h_last = h;
-    e[1] = x_ref[1] - h_dot;
-
-    // This is actually a 2x2 matrix but P_12 = P_21 so only store that value once as P_lyap[1]
-    static float k_x[2], k_r, w;
-    const float P_lyap[3] = {36.2143, -0.5, 50.7070};
-    const float gamma_x[2] = {0.2, 10.0};
-    float k_x_dot[2];
-
-    float phi_x = cos(MCU.Euler[0])*cos(MCU.Euler[1]);
-    k_x_dot[0] = 0.1*gamma_x[0]*-MCU.Position_NED[2]*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
-    k_x_dot[1] = 0.1*gamma_x[1]*h_dot*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
-    float k_r_dot = 0.1*h_ref*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
-    float w_dot = 0.1*phi_x*(P_lyap[1]*e[0] + P_lyap[2]*e[1]);
-
-    // Integrate controller gains
-    k_x[0] += (k_x_dot[0]*d_t);
-    k_x[1] += (k_x_dot[1]*d_t);
-    k_r += (k_r_dot*d_t);
-    w += (w_dot*d_t);
-
-    // Update Thrust
-    float temp = k_x[0]*h + k_x[1]*h_dot + k_r*h_ref - w*phi_x;
-    float thrust = Saturate(temp, MAX_THRUST, 0.0);
-
-    return thrust;
+    float u = -K[0]*(h-h_ref) - K[1]*h_dot + K_int*e_int + 9.81;
+    float thrust = mass*u;
+    return thrust; 
 }
 
 void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desired_moments[3]){
@@ -126,223 +89,20 @@ void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desi
         }
         float temp = ((I - Current[first])/(Current[last]-Current[first]))*100;
         motor_throttles[i] = first*100 + (uint16_t)temp;
-    }
-}
-
-void Attitude_Gain_Lookup(uint8_t index, float Gains[3][6]){
-    const float Gain_table[25][3][6] ={
-    {{4.5308,    0.0000   , 1.1644 ,  -9.8481   ,-0.0000,   -1.7365}, // 0
-    {0.1402  ,  4.3062   ,-1.5041   ,-0.5939   ,-9.3969  ,  3.3682},
-    {-0.3852  ,  1.5673 ,   4.1325   , 1.6318 ,  -3.4202  , -9.2542}}, 
-
-    {{4.5308   , 0.0000  ,  1.1644 ,  -9.8481 ,  -0.0000 ,  -1.7365}, // 1
-    {0.0712  ,  4.5130  , -0.7637   ,-0.3015 ,  -9.8481   , 1.7101},
-   {-0.4037   , 0.7958 ,   4.3309 ,   1.7101,   -1.7365  , -9.6985}},
-
-    {{4.5308  ,  0.0000  ,  1.1644 ,  -9.8481 ,  -0.0000,   -1.7365}, // 2
-   {-0.0000 ,   4.5826 ,  -0.0000  , -0.0000,  -10.0000 ,   0.0000},
-   {-0.4099 ,  -0.0000 ,   4.3978 ,   1.7365 ,   0.0000 ,  -9.8481}},
-
-    {{4.5308 ,  -0.0000 ,   1.1644 ,  -9.8481  ,  0.0000 ,  -1.7365}, // 3
-   {-0.0712  ,  4.5130  ,  0.7637  ,  0.3015 ,  -9.8481 ,  -1.7101},
-   {-0.4037 ,  -0.7958  ,  4.3309  ,  1.7101 ,   1.7365  , -9.6985}},
-
-    {{4.5308 ,   0.0000 ,   1.1644  , -9.8481 ,  -0.0000 ,  -1.7365},
-   {-0.1402 ,   4.3062  ,  1.5041,    0.5939 ,  -9.3969 ,  -3.3682},
-   {-0.3852 ,  -1.5673 ,   4.1325 ,   1.6318  ,  3.4202 ,  -9.2542}},
-
-    {{4.5695 ,  -0.0000 ,   0.5883,   -9.9619 ,   0.0000,   -0.8716}, // 5
-    {0.0713  ,  4.3062  , -1.5515  , -0.2981  , -9.3969 ,   3.4072},
-   {-0.1958 ,   1.5673 ,   4.2627 ,   0.8190 ,  -3.4202 ,  -9.3612}},
-
-    {{4.5695  , -0.0000  ,  0.5883 ,  -9.9619 ,   0.0000,   -0.8716},
-    {0.0362 ,   4.5130 ,  -0.7877,   -0.1513  , -9.8481 ,   1.7299},
-   {-0.2052  ,  0.7958  ,  4.4674 ,   0.8583 ,  -1.7365 ,  -9.8106}},
-
-    {{4.5695 ,  -0.0000 ,   0.5883,   -9.9619 ,  -0.0000,   -0.8716},
-    {0.0000  ,  4.5826  ,  0.0000  , -0.0000 , -10.0000  , -0.0000},
-   {-0.2084  , -0.0000  ,  4.5363   , 0.8716,    0.0000   ,-9.9619}},
-
-    {{4.5695,    0.0000 ,   0.5883 ,  -9.9619 ,  -0.0000  , -0.8716},
-   {-0.0362  ,  4.5130 ,   0.7877 ,   0.1513 ,  -9.8481  , -1.7299},
-   {-0.2052   ,-0.7958,    4.4674,    0.8583,    1.7365 ,  -9.8106}},
-
-    {{4.5695 ,   0.0000 ,   0.5883  , -9.9619 ,  -0.0000,   -0.8716},
-   {-0.0713 ,   4.3062 ,   1.5515 ,   0.2981 ,  -9.3969 ,  -3.4072},
-   {-0.1958 ,  -1.5673 ,   4.2627  ,  0.8190 ,   3.4202 ,  -9.3612}},
-
-    {{4.5826 ,  -0.0000  ,  0.0000,  -10.0000  ,  0.0000 ,  -0.0000}, // 10
-   {-0.0000 ,   4.3062  , -1.5673 ,   0.0000 ,  -9.3969  ,  3.4202},
-    {0.0000  ,  1.5673  ,  4.3062 ,  -0.0000 ,  -3.4202 ,  -9.3969}},
-
-    {{4.5826 ,  -0.0000,   -0.0000 , -10.0000  ,  0.0000   , 0.0000},
-   {-0.0000  ,  4.5130 ,  -0.7958 ,   0.0000,   -9.8481 ,   1.7365},
-    {0.0000  ,  0.7958,    4.5130 ,   0.0000,   -1.7365 ,  -9.8481}},
-
-    {{4.5826  ,  0.0000 ,  -0.0000  ,-10.0000  ,  0.0000  ,  0.0000}, // 12
-    {0.0000  ,  4.5826 ,   0.0000 ,  -0.0000,  -10.0000 ,   0.0000},
-    {0.0000  , -0.0000 ,   4.5826 ,  -0.0000   , 0.0000 , -10.0000}},
-
-   {{4.5826 ,  -0.0000 ,  -0.0000 , -10.0000,    0.0000  ,  0.0000}, // 13
-   {-0.0000 ,   4.5130,    0.7958 ,   0.0000,   -9.8481 ,  -1.7365},
-    {0.0000  , -0.7958,    4.5130 ,  -0.0000 ,   1.7365 ,  -9.8481}},
-
-    {{4.5826 ,  -0.0000 ,  -0.0000 , -10.0000 ,   0.0000 ,   0.0000},
-   {-0.0000  ,  4.3062 ,   1.5673 ,   0.0000 ,  -9.3969 ,  -3.4202},
-    {0.0000 ,  -1.5673 ,   4.3062  ,  0.0000  ,  3.4202 ,  -9.3969}},
-
-    {{4.5695 ,   0.0000  , -0.5883 ,  -9.9619  , -0.0000 ,   0.8716},
-   {-0.0713,    4.3062 ,  -1.5515 ,   0.2981 ,  -9.3969 ,   3.4072},
-    {0.1958  ,  1.5673  ,  4.2627 ,  -0.8190 ,  -3.4202 ,  -9.3612}},
-
-    {{4.5695,   -0.0000  , -0.5883   ,-9.9619 ,   0.0000  ,  0.8716},
-   {-0.0362  ,  4.5130 ,  -0.7877  ,  0.1513 ,  -9.8481  ,  1.7299},
-    {0.2052 ,   0.7958  ,  4.4674 ,  -0.8583  , -1.7365 ,  -9.8106}},
-
-    {{4.5695  ,  0.0000 ,  -0.5883 ,  -9.9619 ,  -0.0000 ,   0.8716},
-   {-0.0000  ,  4.5826 ,  -0.0000 ,  -0.0000,  -10.0000 ,  -0.0000},
-    {0.2084  ,  0.0000 ,   4.5363 ,  -0.8716 ,   0.0000 ,  -9.9619}},
-
-    {{4.5695,    0.0000  , -0.5883,   -9.9619 ,  -0.0000,    0.8716},
-    {0.0362  ,  4.5130  ,  0.7877  , -0.1513 ,  -9.8481  , -1.7299},
-    {0.2052   ,-0.7958 ,   4.4674   ,-0.8583,    1.7365  , -9.8106}},
-
-    {{4.5695 ,  -0.0000 ,  -0.5883 ,  -9.9619 ,   0.0000 ,   0.8716},
-    {0.0713  ,  4.3062  ,  1.5515  , -0.2981 ,  -9.3969  , -3.4072},
-    {0.1958 ,  -1.5673  ,  4.2627  , -0.8190 ,   3.4202  , -9.3612}},
-
-    {{4.5308 ,   0.0000,   -1.1644 ,  -9.8481,   -0.0000  ,  1.7365},
-   {-0.1402  ,  4.3062 ,  -1.5041 ,   0.5939 ,  -9.3969  ,  3.3682},
-    {0.3852  ,  1.5673 ,   4.1325 ,  -1.6318  , -3.4202  , -9.2542}},
-
-    {{4.5308 ,  -0.0000 ,  -1.1644 ,  -9.8481,   -0.0000 ,   1.7365},
-   {-0.0712  ,  4.5130 ,  -0.7637 ,   0.3015 ,  -9.8481 ,   1.7101},
-    {0.4037  ,  0.7958 ,   4.3309  , -1.7101 ,  -1.7365 ,  -9.6985}},
-
-    {{4.5308  ,  0.0000 ,  -1.1644 ,  -9.8481,   -0.0000  ,  1.7365},
-   {-0.0000 ,   4.5826 ,   0.0000 ,  -0.0000 , -10.0000 ,  -0.0000},
-    {0.4099  ,  0.0000 ,   4.3978 ,  -1.7365 ,   0.0000,   -9.8481}},
-
-    {{4.5308 ,  -0.0000 ,  -1.1644 ,  -9.8481 ,   0.0000 ,   1.7365},
-    {0.0712 ,   4.5130  ,  0.7637 ,  -0.3015,   -9.8481 ,  -1.7101},
-    {0.4037 ,  -0.7958  ,  4.3309 ,  -1.7101 ,   1.7365 ,  -9.6985}},
-
-    {{4.5308 ,  -0.0000,   -1.1644 ,  -9.8481 ,   0.0000 ,   1.7365},
-    {0.1402 ,   4.3062 ,   1.5041 ,  -0.5939 ,  -9.3969 ,  -3.3682},
-    {0.3852 ,  -1.5673 ,   4.1325 ,  -1.6318  ,  3.4202,   -9.2542}}};
-
-    for (uint8_t i = 0; i<3; i++){
-        for (uint8_t j = 0; j<6; j++){
-            Gains[i][j] = Gain_table[index][i][j];
-        }
-    }
-}
-
-void Attitude_LQR(States &MCU, States &Reference){
-    const uint8_t index_map[5][5] = {
-        { 0, 1, 2, 3, 4},
-        { 5, 6, 7, 8, 9},
-        {10,11,12,13,14},
-        {15,16,17,18,19},
-        {20,21,22,23,24}
-    };
-    const float d_t = 0.0025;
-    float K[3][6];
-
-    const int8_t theta[5] = {-20, -10, 0, 10, 20};
-    const int8_t phi[5] = {-20, -10, 0, 10, 20};
-    float theta_deg = MCU.Euler[1]*R2D;
-    int16_t theta_m = (int16_t)theta_deg;
-    float phi_deg = MCU.Euler[0]*R2D;
-    int16_t phi_m = (int16_t)phi_deg;
-
-    uint8_t theta_index = INDEX_NOT_SET;
-    uint8_t phi_index = INDEX_NOT_SET;
-    for (uint8_t i = 0; i<sizeof(theta); i++){
-        if (abs(theta_m-theta[i]) <= 5){
-            theta_index = i;
-            break;
-        }
-    }
-    if (theta_index == INDEX_NOT_SET){
-        if (theta_m < theta[0]){
-            theta_index = 0;
-        }
-        else{
-            theta_index = sizeof(theta) - 1;
-        }
-    }
-
-    for (uint8_t i = 0; i<sizeof(phi); i++){
-        if (abs(phi_m-phi[i]) <= 5){
-            phi_index = i;
-            break;
-        }
-    }
-    if (phi_index == INDEX_NOT_SET){
-        if (phi_m < phi[0]){
-            phi_index = 0;
-        }
-        else{
-            phi_index = sizeof(phi) - 1;
-        }
-    }
-    uint8_t Gain_index = index_map[theta_index][phi_index];
-    Attitude_Gain_Lookup(Gain_index, K);
-    // LQR includes integrator in addition to state feedback
-    static float Euler_error_int[3];
-    float Euler_error[3];
-    float temp;
-    for (uint8_t i = 0; i < 3; i++){
-        Euler_error[i] = Angle_difference(Reference.Euler[i], MCU.Euler[i]); //Reference.Euler[i]-MCU.Euler[i];
-        Euler_error_int[i] += (Euler_error[i]*d_t);
-    }
-    for (uint8_t i = 0; i < 3; i++){
-        temp = -(MCU.Euler[0]*K[i][0] + MCU.Euler[1]*K[i][1] + Angle_Discontinuity(MCU.Euler[2])*K[i][2]
-         + Euler_error_int[0]*K[i][3] + Euler_error_int[1]*K[i][4] + Euler_error_int[2]*K[i][5]);
-        Reference.w[i] = 0.1*Saturate(temp, MAX_W, -MAX_W);
+        if (motor_throttles[i]  < 310) motor_throttles[i] = 0;
     }
 }
 
 void Angular_Rate_Control(States &MCU, States &Reference, float desired_moments[3]){
-    // A PID controller is used to control each body angular rate and set moments
-    const float d_t = 0.01;
-    const float K_p = 0.05;
-    const float K_i = 0;
-    const float K_d = 0;
-    static float e_last[3];
-    static float e_int[3];
+    // const float I[3] = {0.00149, 0.00262, 0.00149};
+    const float d_t = 0.0025;
+    float K[3][2] = {{1.0, 0.1},{1.0, 0.4},{0.1, 0.4}};
+    static float Euler_last[3];
     for (uint8_t i = 0; i < 3; i++){
-        float e = Reference.w[i] - MCU.w[i];
-        float e_d = e - e_last[i];
-        e_last[i] = e;
-        e_int[i] += (e*d_t);
-        float temp = K_p*e + K_i*e_int[i] + K_d*e_d;
-        desired_moments[i] = Saturate(temp, MAX_MOMENT, -MAX_MOMENT);
+        float e = Reference.Euler[i]-MCU.Euler[i];
+        float Euler_dot = (MCU.Euler[i]-Euler_last[i])/d_t;
+        Euler_last[i] = MCU.Euler[i];
+        desired_moments[i] = K[i][0]*e - K[i][1]*Euler_dot;
     }
-}
-
-float Saturate(float value_in, float max_value, float min_value){
-    if (value_in > max_value){
-        return max_value;
-    }
-    else if (value_in < min_value){
-        return min_value;
-    }
-    return value_in;
-}
-
-float Angle_difference(float angle1, float angle2){
-    float diff = angle1 - angle2;
-    if (diff > PI){
-        diff -= 2.0*PI;
-    }
-    else if (diff < -PI){
-        diff += 2.0*PI;
-    }
-    return diff;
-}
-
-float Angle_Discontinuity(float angle){
-    return (angle > PI)?(angle - 2.0*PI):(angle);
+    
 }

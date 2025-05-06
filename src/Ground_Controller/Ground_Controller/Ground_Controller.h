@@ -25,6 +25,8 @@ extern volatile unsigned char g_LoRa_Uplink_Flag;
 extern volatile unsigned char g_ADC_Flag;
 // Tracks when button 0 has been pressed
 extern volatile unsigned char g_Button0_Flag;
+// Tracks when button 1 has been pressed
+extern volatile unsigned char g_Button1_Flag;
 // Tracks how often to change button status
 extern volatile unsigned char g_Button_Read_Flag;
 // Tracks when to print

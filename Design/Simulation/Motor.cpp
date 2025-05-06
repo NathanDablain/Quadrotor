@@ -21,7 +21,7 @@ void Motor::Update_speed(){
     double current_interp = (Current[upper_index] - Current[lower_index])*(to_interp - static_cast<double>(lower_index)) + Current[lower_index];
     // Using motor torque constant and propeller torque constant, convert current to speed
     double speed = sqrt(KT*current_interp/k_t);
-    w = w*0.9 + speed*0.1;
+    w = w*0.7 + speed*0.3;
 }
 
 double Motor::Get_motor_thrust(){

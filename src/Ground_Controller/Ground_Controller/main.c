@@ -76,7 +76,8 @@ int main(void){
 }
 
 ISR(PORTC_PORT_vect){
-	g_Button0_Flag = 1;
+	if (!(PORTC_IN & (1<<1))) g_Button0_Flag = 1;
+	if (!(PORTC_IN & (1<<2))) g_Button1_Flag = 1;
 	PORTC_INTFLAGS |= PIN1_bm;
 }
 

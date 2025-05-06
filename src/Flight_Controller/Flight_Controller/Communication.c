@@ -25,39 +25,7 @@ void Setup_SPI(){
 	SPI1_CTRLA |= SPI_MASTER_bm | SPI_ENABLE_bm;
 }
 
-unsigned char Read_SPI(char Port, unsigned char Pin, unsigned char Register, unsigned char *Data, unsigned char Data_Length){
-	// Returns 2 if successful, 0 if port assignment not valid, and 1 if a timeout occurs while waiting for data
-	unsigned char i = 0;
-	unsigned long timeout = 0;
-	
-	if (Port == 'A'){
-		PORTA_OUT &= ~(1<<Pin);
-	}
-	else if (Port == 'B'){
-		PORTB_OUT &= ~(1<<Pin);
-	}
-	else {return 0;}
-	SPI1_DATA = Register;
-	while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
-	SPI1_INTFLAGS &= ~SPI_IF_bm;
-	
-	while (i++<Data_Length){
-		SPI1_DATA = 0;
-		while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
-		*Data++ = SPI1_DATA;
-	}
-	
-	if (Port == 'A'){
-		PORTA_OUT |= (1<<Pin);
-	}
-	else {
-		PORTB_OUT |= (1<<Pin);
-	}
-	
-	return 2;
-}
-
-void Read_SPI_Stream(char Port, unsigned char Pin, unsigned char Register, unsigned char *Data, unsigned int Data_Length){
+void Read_SPI(char Port, unsigned char Pin, unsigned char Register, unsigned char *Data, unsigned int Data_Length){
 	unsigned int i = 0;
 	
 	if (Port == 'A'){
@@ -168,54 +136,6 @@ unsigned char Write_SPI_Stream(char Port, unsigned char Pin, unsigned char Regis
 	else {
 		PORTB_OUT |= (1<<Pin);
 	}
-	
-	return 2;
-}
-
-unsigned char Write_DGW(float Data, char option){
-	// Writes a floating point number to the Digital Gateway, returns 2 if successful, 1 if a timeout occurs
-	unsigned long timeout = 0;
-	
-	unsigned char i = 0;
-	char buffer[50] = {0};
-	unsigned char Data_Length = 0;
-	Data_Length = snprintf(buffer, Data_Length, "%f", Data);
-	
-	PORTB_OUT &= ~(1<<CS_DGW);
-	while (i<Data_Length){
-		SPI1_DATA = buffer[i];
-		i++;
-		while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
-	}
-	if (option == 'e'){
-		SPI1_DATA = '\n';
-		while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
-	}
-	else{
-		SPI1_DATA = 32; // ' '
-		while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
-		SPI1_DATA = 44; // ','
-		while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
-		SPI1_DATA = 32; // ' '
-		while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
-	}
-	PORTB_OUT |= (1<<CS_DGW);
-	
-	return 2;
-}
-
-unsigned char Write_char_DGW(char *Data, unsigned char length){
-	// Writes a single character to the Digital Gateway, returns 2 if successful and 1 if a timeout occurs
-	unsigned long timeout = 0;
-	
-	PORTB_OUT &= ~(1<<CS_DGW);
-	for (unsigned char i=0;i<length;i++){
-		SPI1_DATA = *Data++;
-		while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
-	}
-	SPI1_DATA = '\n';
-	while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
-	PORTB_OUT |= (1<<CS_DGW);
 	
 	return 2;
 }
@@ -364,7 +284,7 @@ void Send_Downlink(Downlink *outbound){
 	message[sizeof(message)-3] = checksum_hex[0];
 	
 	// Set FIFO pointer to TX base address, and write message
-	unsigned char TX_base_adr;
+	unsigned char TX_base_adr = 0;
 	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_TX_ADR,&TX_base_adr,1);
 	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),TX_base_adr);
 	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PAYLOAD_LENGTH|0x80),sizeof(message)-1);

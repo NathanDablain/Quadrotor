@@ -386,6 +386,11 @@ void Set_Status(Uplink *up_link){
 				break;
 		}
 	}
+	
+	if (g_Button1_Flag){
+		g_Button1_Flag = 0;
+		up_link->Drone_status = Standby;
+	}
 }
 
 // SOLOMON SYSTECH DRIVER (SSD) 1306 CODE

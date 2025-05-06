@@ -2,10 +2,12 @@
 
 using namespace std;
 
-Quadrotor::Quadrotor(double Sim_dt, double Sim_tf){
+Quadrotor::Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf){
     sim_dt = Sim_dt;
     sim_tf = Sim_tf;
-    sim_t = 0.0;
+    sim_t.MicroSeconds = 0;
+    sim_t.Seconds = 0;
+    cal_start_time = {.Seconds = 5, .MicroSeconds = 0};
     inertia.data[0][0] = Ixx;
     inertia.data[1][1] = Iyy;
     inertia.data[2][2] = Izz;
@@ -14,41 +16,70 @@ Quadrotor::Quadrotor(double Sim_dt, double Sim_tf){
     Motors[1].deadzone = 125;
     Motors[2].deadzone = 130;
     Motors[3].deadzone = 120;
+    AVR128DB48.barometer.Initialize(75, 16, Bar_Mode_FIFO);
+    AVR128DB48.magnetometer.Initialize(50);
+    AVR128DB48.imu.Initialize(416, 52, 8);
+    AVR128DB48.Reference.Position_NED[2] = -5.0;
 
-    Reference.Position_NED[2] = -5.0;
-
-    log_sim.open("Sim_log.txt");
-
-    log_mcu.open("MCU_log.txt");
+    if (log_flag){
+        log_sim.open("Sim_log.txt");
+        log_mcu.open("MCU_log.txt");
+    }
 
 }
 
 void Quadrotor::Run_sim(){
     Environment env(-97.06265, 32.79100, 0.0, sim_dt);
 
-    Calibrate_sensors(env);
-    MCU_Cal_Flag = true;
-
-    while(sim_t < sim_tf){
+    while(sim_t <= sim_tf){
         env.Update(Position_NED, q, v);
 
-        Run_MCU(env);
+        Run_Sensors(env);
 
-        Update_drone_forces_moments(env.gravity, env.ground_stiffness, env.ground_damping);
+        Manage_FC_Status();
+
+        AVR128DB48.Run(env, sim_t);
+
+        Update_drone_forces_moments(env);
         
         Update_drone_states();
 
-        Log_data(env);
+        if (log_flag) Log_data(env);
 
         sim_t += sim_dt;
     }
-    log_sim.close();
-    log_mcu.close();
+    if (log_flag){
+        log_sim.close();
+        log_mcu.close();
+    }
     cout << setprecision(8) << "  P0:" << Position_NED.data[0] << "   P1:" << Position_NED.data[1] << "  P2:" << Position_NED.data[2] << endl;
 }
 
+void Quadrotor::Manage_FC_Status(){
+    if (sim_t == cal_start_time){
+        AVR128DB48.Flight_Controller_Status = Calibrating;
+    }
+    if ((sim_t.Seconds - cal_start_time.Seconds >= 2)&&(AVR128DB48.Flight_Controller_Status == Calibrating)){
+        w.data[0] = 0.2;
+        w.data[1] = -0.04;
+        w.data[2] = 0.2;
+    }
+    if (AVR128DB48.Flight_Controller_Status == Ready){
+        w.data[0] = 0; w.data[1] = 0; w.data[2] = 0;
+        q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
+    }
+}
+
+void Quadrotor::Run_Sensors(Environment &env){
+    AVR128DB48.barometer.Sample(env, sim_t);
+    AVR128DB48.magnetometer.Sample(env, sim_t);
+    AVR128DB48.imu.Sample_Acc(env, q, sim_t);
+    AVR128DB48.imu.Sample_Gyr(env, w, sim_t);
+}
+
 void Quadrotor::Log_data(Environment &env){
-    if (sim_t == 0.0){
+    const Sim_Time sim_init = {.Seconds = 0, .MicroSeconds = 0};
+    if (sim_t == sim_init){
         LOG_SIM("Time");
         LOG_SIM("P_n");
         LOG_SIM("P_e");
@@ -72,6 +103,7 @@ void Quadrotor::Log_data(Environment &env){
         LOG_SIM("Moment Z");
         LOG_SIM(endl);
         LOG_MCU("Time");
+        LOG_MCU("FC Status");
         LOG_MCU("P_n");
         LOG_MCU("P_e");
         LOG_MCU("Height");
@@ -82,9 +114,6 @@ void Quadrotor::Log_data(Environment &env){
         LOG_MCU("w_x");
         LOG_MCU("w_y");
         LOG_MCU("w_z");
-        LOG_MCU("v_x");
-        LOG_MCU("v_y");
-        LOG_MCU("v_z");
         LOG_MCU("Roll Desired");
         LOG_MCU("Pitch Desired");
         LOG_MCU("Yaw Desired");
@@ -97,7 +126,7 @@ void Quadrotor::Log_data(Environment &env){
         LOG_MCU(endl);
     }
     log_sim << setprecision(8);
-    LOG_SIM(sim_t);
+    LOG_SIM(sim_t.Time_fp());
     LOG_SIM(Position_NED.data[0]);
     LOG_SIM(Position_NED.data[1]);
     LOG_SIM(Position_NED.data[2]);
@@ -120,33 +149,31 @@ void Quadrotor::Log_data(Environment &env){
     LOG_SIM(Moments_Body.data[2]);
     LOG_SIM(endl);
     log_mcu << setprecision(8);
-    LOG_MCU(sim_t);
-    LOG_MCU(MCU.Position_NED[0]);
-    LOG_MCU(MCU.Position_NED[1]);
-    LOG_MCU(MCU.Position_NED[2]);
-    LOG_MCU(MCU.pressure);
-    LOG_MCU(MCU.Euler[0]);
-    LOG_MCU(MCU.Euler[1]);
-    LOG_MCU(MCU.Euler[2]);
-    LOG_MCU(MCU.w[0]);
-    LOG_MCU(MCU.w[1]);
-    LOG_MCU(MCU.w[2]);
-    LOG_MCU(v.data[0]);
-    LOG_MCU(v.data[1]);
-    LOG_MCU(v.data[2]);
-    LOG_MCU(Reference.Euler[0]);
-    LOG_MCU(Reference.Euler[1]);
-    LOG_MCU(Reference.Euler[2]);
-    LOG_MCU(Reference.w[0]);
-    LOG_MCU(Reference.w[1]);
-    LOG_MCU(Reference.w[2]);
-    LOG_MCU(Desired_Moments[0]);
-    LOG_MCU(Desired_Moments[1]);
-    LOG_MCU(Desired_Moments[2]);
+    LOG_MCU(sim_t.Time_fp());
+    LOG_MCU(AVR128DB48.Flight_Controller_Status);
+    LOG_MCU(AVR128DB48.mcu.Position_NED[0]);
+    LOG_MCU(AVR128DB48.mcu.Position_NED[1]);
+    LOG_MCU(AVR128DB48.mcu.Position_NED[2]);
+    LOG_MCU(AVR128DB48.mcu.pressure);
+    LOG_MCU(AVR128DB48.mcu.Euler[0]);
+    LOG_MCU(AVR128DB48.mcu.Euler[1]);
+    LOG_MCU(AVR128DB48.mcu.Euler[2]);
+    LOG_MCU((AVR128DB48.mcu.w[0]*GYRO_SENS*D2R));
+    LOG_MCU((AVR128DB48.mcu.w[1]*GYRO_SENS*D2R));
+    LOG_MCU((AVR128DB48.mcu.w[2]*GYRO_SENS*D2R));
+    LOG_MCU(AVR128DB48.Reference.Euler[0]);
+    LOG_MCU(AVR128DB48.Reference.Euler[1]);
+    LOG_MCU(AVR128DB48.Reference.Euler[2]);
+    LOG_MCU(AVR128DB48.Reference.w[0]);
+    LOG_MCU(AVR128DB48.Reference.w[1]);
+    LOG_MCU(AVR128DB48.Reference.w[2]);
+    LOG_MCU(AVR128DB48.Desired_Moments[0]);
+    LOG_MCU(AVR128DB48.Desired_Moments[1]);
+    LOG_MCU(AVR128DB48.Desired_Moments[2]);
     LOG_MCU(endl);
 }
 
-void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffness, double ground_damping){
+void Quadrotor::Update_drone_forces_moments(Environment &env){
     // Update drone forces and moments, the following effects are considered:
     // -> Gravity
     // -> Motors
@@ -154,11 +181,12 @@ void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffn
     // -> Ground
 
     // Gravity force, dependent on initial LLA position
-    Vec3 g_vec_NED = {0.0, 0.0, gravity};
+    Vec3 g_vec_NED = {0.0, 0.0, env.gravity};
     Vec3 g_force_Body = NED2Body(g_vec_NED, q)*mass;
     // Motor force and moment
     Vec motor_thrusts;
     for (uint8_t i = 0; i < 4; i++){
+        Motors[i].Throttle = AVR128DB48.mapped_throttle_commands[i];
         Motors[i].Update_speed();
     }
     motor_thrusts = {Motors[0].Get_motor_thrust(), Motors[1].Get_motor_thrust(),
@@ -169,6 +197,15 @@ void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffn
     // -> Left motor (1) produces positive rolling torque and positive yawing torque
     // -> Right motor (2) produces negative rolling torque and positive yawing torque
     // -> Front motor (3) produces positive pitching torque and negative yawing torque
+    Vec3 moment_Noise = {0.0,0.0,0.0};
+    const double moment_max_noise = 0.000001;
+    const double moment_noise_sens = moment_max_noise/32767.0;
+    if (AVR128DB48.Flight_Controller_Status == Flying || AVR128DB48.Flight_Controller_Status == Landing){
+        for (uint8_t i = 0; i < 3; i++){
+            double random_noise = 2.0*rand()*moment_noise_sens;
+            moment_Noise.data[i] = (random_noise>moment_max_noise)?(random_noise-moment_max_noise):(random_noise);
+        }
+    }
     Vec3 motor_moment_Body = {
         length_l_r*(motor_thrusts.data[1] - motor_thrusts.data[2]),
         length_f_b*(motor_thrusts.data[3] - motor_thrusts.data[0]),
@@ -179,14 +216,14 @@ void Quadrotor::Update_drone_forces_moments(double gravity, double ground_stiffn
     Vec3 ground_forces_Body;
     Vec3 Velocity_NED = Body2NED(v, q);
     if (Position_NED.data[2] >= 0){
-        ground_forces_NED = {0.0, 0.0, -Position_NED.data[2]*ground_stiffness + -Velocity_NED.data[2]*ground_damping};
+        ground_forces_NED = {0.0, 0.0, -Position_NED.data[2]*env.ground_stiffness + -Velocity_NED.data[2]*env.ground_damping};
         ground_forces_Body = NED2Body(ground_forces_NED, q);
     }
     else{
         ground_forces_Body = {0.0, 0.0, 0.0};
     }
     Forces_Body = g_force_Body + motor_force_Body + ground_forces_Body; // + wind_force_Body;
-    Moments_Body = motor_moment_Body; // + wind_moment_Body;
+    Moments_Body = motor_moment_Body + moment_Noise; // + wind_moment_Body;
 }
 
 void Quadrotor::Update_drone_states(){
@@ -197,13 +234,13 @@ void Quadrotor::Update_drone_states(){
            q.data[0], q.data[1], q.data[2], q.data[3],
            Position_NED.data[0], Position_NED.data[1], Position_NED.data[2]};
     
-    k1 = Differential_equation_momentum(x_1)*sim_dt;
+    k1 = Differential_equation_momentum(x_1)*sim_dt.Time_fp();
     temp = x_1 + k1*0.5;
-    k2 = Differential_equation_momentum(temp)*sim_dt;
+    k2 = Differential_equation_momentum(temp)*sim_dt.Time_fp();
     temp = x_1 + k2*0.5;
-    k3 = Differential_equation_momentum(temp)*sim_dt;
+    k3 = Differential_equation_momentum(temp)*sim_dt.Time_fp();
     temp = x_1 + k3;
-    k4 = Differential_equation_momentum(temp)*sim_dt;
+    k4 = Differential_equation_momentum(temp)*sim_dt.Time_fp();
 
     x_2 = x_1 + (k1 + k2*2.0 + k3*2.0 + k4)*(1.0/6.0);
 
@@ -246,332 +283,4 @@ Vec Quadrotor::Differential_equation_momentum(Vec x_in){
              P_dot.data[0], P_dot.data[1], P_dot.data[2]};
 
     return x_dot;
-}
-
-void Quadrotor::Run_MCU(Environment &env){
-    // This method models the flight controller source code in src/flight_controller
-    static double rtc_timelast, tcb0_timelast, tcb1_timelast, gps_timelast;
-    static uint8_t seconds, LoRa_Read_Flag, Motor_Run_Flag, BAR_Read_Flag, Attitude_Observer_Run_Flag,
-         MAG_Read_Flag, IMU_Read_Flag, GPS_Read_Flag, MRAC_Flag, LQR_Flag;
-    static uint16_t motor_throttles[4] = {0};
-
-    // Timing
-    if (sim_t - rtc_timelast >= rtc_rate){
-        ++seconds;
-        ++LoRa_Read_Flag;
-        rtc_timelast = sim_t;
-    }
-
-    if (sim_t - tcb0_timelast >= tcb0_rate){
-        ++MRAC_Flag;
-        ++LQR_Flag;
-        ++Motor_Run_Flag;
-        ++BAR_Read_Flag;
-        ++Attitude_Observer_Run_Flag;
-        ++MAG_Read_Flag;
-        tcb0_timelast = sim_t;
-    }
-    
-    if (sim_t - tcb1_timelast >= tcb1_rate){
-        ++IMU_Read_Flag;
-        tcb1_timelast = sim_t;
-    }
-
-    if (sim_t - gps_timelast >= gps_rate){
-        ++GPS_Read_Flag;
-        gps_timelast = sim_t;
-    }
-
-    // NAVIGATION //
-/*
-    if (GPS_Read_Flag){
-        GPS_Read_Flag = 0;
-        Read_GPS(MCU, env);
-    }
-*/
-    if (BAR_Read_Flag >= 3){
-        BAR_Read_Flag = 0;
-        Read_Bar(MCU, env);
-    }
-
-    if (MAG_Read_Flag >= 2){
-        MAG_Read_Flag = 0;
-        Read_Mag(MCU, env);
-    }
-
-    if (IMU_Read_Flag){
-        IMU_Read_Flag = 0;
-        Read_IMU(MCU, env);
-    }
-
-    if (Attitude_Observer_Run_Flag >= 8){
-        Attitude_Observer_Run_Flag = 0;
-        Observer(MCU);
-    }
-
-    if (LoRa_Read_Flag){
-        LoRa_Read_Flag = 0;
-        Read_LoRa(Reference, env);
-    }
-
-    if (MCU_Cal_Flag && sim_t >= 6.5){
-        // GUIDANCE //
-        // static float desired_thrust;
-        // static float desired_moments[3];
-        if (MRAC_Flag >= 50){
-            MRAC_Flag = 0;
-            Desired_Thrust = Height_MRAC(MCU, -Reference.Position_NED[2]);
-        }
-        if (LQR_Flag >= 8){
-            LQR_Flag = 0;
-            Attitude_LQR(MCU, Reference);
-        }
-        // CONTROL //
-        if (Motor_Run_Flag >= 2){
-            Motor_Run_Flag = 0;
-            Angular_Rate_Control(MCU, Reference, Desired_Moments);
-            Set_throttles(motor_throttles, Desired_Thrust, Desired_Moments);
-            Run_Motors(motor_throttles);
-        }
-    }
-}
-
-void Quadrotor::Read_Bar(States &mcu, Environment &env){
-	static uint32_t pressure_window[BAR_WINDOW_SIZE];
-    static float height_bias;
-	static uint8_t window_counter;
-
-    uint32_t pressure_LSB = env.Get_pressure();
-	
-	pressure_window[window_counter++] = pressure_LSB;
-	
-	if (window_counter >= BAR_WINDOW_SIZE){
-		uint32_t pressure_oversampled = 0;
-		for (uint8_t i=0;i<BAR_WINDOW_SIZE;i++){
-			pressure_oversampled += pressure_window[i];
-		}
-		pressure_oversampled >>= 4;
-        mcu.pressure = static_cast<float>(pressure_oversampled)*BAR_SENS;
-		mcu.pressure_altitude = Height_Bar(pressure_oversampled);
-        if (sim_t < 5){
-            height_bias = mcu.pressure_altitude;
-        }
-        mcu.Position_NED[2] = -(mcu.pressure_altitude - height_bias);
-		window_counter = 0;
-	}
-	
-}
-
-float Height_Bar(uint32_t pressure_LSB){
-	const float c1 = BAR_TB/BAR_LB;
-	const float c2 = (-BAR_R*BAR_LB)/(BAR_G*BAR_M);
-	
-	float pressure_Pa = ((float)pressure_LSB)*BAR_SENS;
-	float height = c1*(pow(pressure_Pa/BAR_PB,c2)-1.0);
-	return height;
-}
-
-void Quadrotor::Read_Mag(States &mcu, Environment &env){
-    static int16_t 
-        m_xyz_window[3][MAG_WINDOW_SIZE],
-        m_max[3],
-        m_min[3],
-        hard_iron[3];
-    static uint8_t window_counter;
-
-
-    array<int16_t, 3> mag_field = env.Get_magnetic_field();
-
-    for (uint8_t i=0;i<3;i++){
-        m_xyz_window[i][window_counter] = mag_field[i];
-    }
-    window_counter++;
-    if (window_counter >= MAG_WINDOW_SIZE){
-        window_counter = 0;
-        int32_t m_xyz_FIP[3] = {0};
-        for (uint8_t i=0;i<3;i++){
-            for (uint8_t j=0;j<MAG_WINDOW_SIZE;j++){
-                m_xyz_FIP[i] += m_xyz_window[i][j];
-            }
-            m_xyz_FIP[i] >>= 2;
-            if (m_xyz_FIP[i] > m_max[i]){
-                m_max[i] = m_xyz_FIP[i];
-                if (abs(m_max[i])<abs(m_min[i])){
-                    hard_iron[i] = m_min[i]-m_max[i];
-                }
-                else{
-                    hard_iron[i] = m_max[i]-m_min[i];
-                }
-                hard_iron[i] >>= 1;
-            }
-            else if (m_xyz_FIP[i] < m_min[i]){
-                m_min[i] = m_xyz_FIP[i];
-                if (abs(m_max[i])<abs(m_min[i])){
-                    hard_iron[i] = m_min[i]-m_max[i];
-                }
-                else{
-                    hard_iron[i] = m_max[i]-m_min[i];
-                }
-                hard_iron[i] >>= 1;
-            }
-        }
-        if (sim_t > 2.0){
-            mcu.m_vec[0] = ((float)(m_xyz_FIP[1] - hard_iron[1]))/(hard_iron[1]*2.0);
-            mcu.m_vec[1] = -((float)(m_xyz_FIP[0]- hard_iron[0]))/(hard_iron[0]*2.0);
-            mcu.m_vec[2] = ((float)(m_xyz_FIP[2] - hard_iron[2]))/(hard_iron[2]*2.0);
-        }
-    }
-
-}
-
-void Quadrotor::Read_IMU(States &mcu, Environment &env){
-    static int16_t 
-        a_xyz_window[3][IMU_WINDOW_SIZE],
-        w_xyz_window[3][GYRO_WINDOW_SIZE],
-        w_bias[3];
-    static uint8_t window_counter_a;
-    static uint8_t window_counter_g;
-
-    array<int16_t, 3> Data_g = env.Get_acceleration(q);
-    array<int16_t, 3> Data_w = env.Get_angular_rate(w);
-
-    for (uint8_t i=0;i<3;i++){
-        a_xyz_window[i][window_counter_a] = Data_g[i];
-        w_xyz_window[i][window_counter_g] = Data_w[i];
-    }
-    window_counter_a++;
-    window_counter_g++;
-
-    if (window_counter_a >= IMU_WINDOW_SIZE){
-        window_counter_a = 0;
-        int32_t a_xyz_FIR[3] = {0};
-        for (uint8_t i=0;i<3;i++){
-            for (uint8_t j=0;j<IMU_WINDOW_SIZE;j++){
-                a_xyz_FIR[i] += a_xyz_window[i][j];
-            }
-            a_xyz_FIR[i] >>= 3;
-        }
-        // Flip positive directions on Accelerometer y axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
-        mcu.g_vec[0] = ((float)a_xyz_FIR[0])*ACCEL_SENS;
-        mcu.g_vec[1] = ((float)-a_xyz_FIR[1])*ACCEL_SENS;
-        mcu.g_vec[2] = ((float)a_xyz_FIR[2])*ACCEL_SENS;
-    }
-
-    if (window_counter_g >= GYRO_WINDOW_SIZE){
-        window_counter_g = 0;
-        int32_t w_xyz_FIR[3] = {0};
-        for (uint8_t i=0;i<3;i++){
-            for (uint8_t j=0;j<GYRO_WINDOW_SIZE;j++){
-                w_xyz_FIR[i] += w_xyz_window[i][j];
-            }
-            w_xyz_FIR[i] >>= 1;
-        }
-        // Flip positive directions on Gyro x and z axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
-        if (sim_t < 1.0){
-            w_bias[0] = -w_xyz_FIR[0];
-            w_bias[1] = w_xyz_FIR[1];
-            w_bias[2] = -w_xyz_FIR[2];
-        }
-        int32_t w_diff[3] = {-w_xyz_FIR[0]-w_bias[0],
-                              w_xyz_FIR[1]-w_bias[1], 
-                             -w_xyz_FIR[2]-w_bias[2]};
-        for (uint8_t i=0;i<3;i++){
-            mcu.w[i] = ((float)w_diff[i])*GYRO_SENS*D2R;
-        }
-    }
-
-}
-
-void Quadrotor::Read_LoRa(States &reference, Environment &env){
-    reference.Position_NED[2] = sim_t > 10.0 ? 0.0 : -5.0;
-    reference.pressure_altitude = 50.75;
-}
-
-void Quadrotor::Calibrate_sensors(Environment &env){
-
-    while(sim_t < cal_t){
-        Position_NED = {0.0, 0.0, -0.5};
-
-        env.Update(Position_NED, q, v);
-
-        Run_MCU(env);
-
-        Update_drone_forces_moments(env.gravity, env.ground_stiffness, env.ground_damping);
-        
-        Update_drone_states();
-
-        Log_data(env);
-
-        if (sim_t > gyro_cal_t + 0.5){
-            w = {0.5, 0.0, PI};
-        }
-
-        sim_t += sim_dt;
-    }
-
-    Position_NED = {0.0, 0.0, 0.0};
-    w = {0.0, 0.0, 0.0};
-    v = {0.0, 0.0, 0.0};
-    q = {1.0, 0.0, 0.0, 0.0};
-}
-
-void Quadrotor::Observer(States &mcu){
-    const float 
-		L = 0.05, // Observer gain, increasing the gain increases the trust on the model(gyro),
-	// and decreasing it increases the trust on the measurement (accelerometer and magnetometer)
-		dt = 0.04, // Time between integrations
-		Gimbal_Lock_Check_Angle = 5.0*D2R;
-	// Measure
-	
-	float phi_m = atan2f(mcu.g_vec[1], mcu.g_vec[2]);
-	if (isnan(phi_m)){
-		phi_m = mcu.Euler[0];
-	}
-	float theta_m = atan2f(-mcu.g_vec[0], sqrt(pow(mcu.g_vec[1],2) + pow(mcu.g_vec[2],2)));
-	if (isnan(theta_m)){
-		theta_m = mcu.Euler[1];
-	}
-	float mag_x_NED = cosf(mcu.Euler[1])*mcu.m_vec[0] + sinf(mcu.Euler[0])*sinf(mcu.Euler[1])*mcu.m_vec[1] + cosf(mcu.Euler[0])*sinf(mcu.Euler[1])*mcu.m_vec[2];
-	float mag_y_NED = cosf(mcu.Euler[0])*mcu.m_vec[1] - sinf(mcu.Euler[0])*mcu.m_vec[2];
-	float psi_m = -atan2f(mag_y_NED, mag_x_NED);
-	if (isnan(psi_m)){
-		psi_m = mcu.Euler[2];
-	}
-	if (psi_m <= 0){
-		psi_m += 2.0*PI;
-	}
-	
-	// Predict
-	float phi_hat = mcu.Euler[0];
-	float theta_hat = mcu.Euler[1];
-	float psi_hat = mcu.Euler[2];
-	if (abs(abs(mcu.Euler[1]) - PI_2) > Gimbal_Lock_Check_Angle){
-		phi_hat += (mcu.w[0] + sinf(mcu.Euler[0])*tanf(mcu.Euler[1])*mcu.w[1] + cosf(mcu.Euler[0])*tanf(mcu.Euler[1])*mcu.w[2])*dt;
-		theta_hat += ((cosf(mcu.Euler[0])*mcu.w[1] - sinf(mcu.Euler[0])*mcu.w[2])*dt);
-		psi_hat += ((sinf(mcu.Euler[0])/cosf(mcu.Euler[1]))*mcu.w[1] + (cosf(mcu.Euler[0])/cosf(mcu.Euler[1]))*mcu.w[2])*dt;
-	}
-	// Update
-	mcu.Euler[0] = phi_hat + L*(phi_m-phi_hat);
-	mcu.Euler[1] = theta_hat + L*(theta_m-theta_hat);
-	// Prevent yaw angle discontinuity at 2pi - 0 to cause the filter to slowly cycle between them
-	mcu.Euler[2] = (abs(psi_m-psi_hat)>PI)?(psi_m):(psi_hat + L*(psi_m-psi_hat));
-    // cout << sim_t << "   " << theta_m << "   " << theta_hat << "   " << Euler.data[1] <<"   " <<
-    //  phi_m << "   " << phi_hat << "   " << Euler.data[0] << "  " << mcu.Euler[0] << endl;
-}
-
-void Quadrotor::Run_Motors(uint16_t motor_throttles[4]){
-    static uint16_t motor_lookup[1001] = {0};
-	// Build the lookup table if it hasn't been built yet
-	if (!(motor_lookup[0])){ 
-		for (uint16_t i=0;i<1001;i++){
-			motor_lookup[i] = 3*i + 3000;
-		}
-	}
-	uint16_t mapped_throttle_commands[4] = {0};
-	// Map commands, saturate if out of bounds
-	for (uint8_t i=0;i<4;i++){
-		motor_throttles[i] = (motor_throttles[i]>1000)?1000:motor_throttles[i];
-		mapped_throttle_commands[i] = motor_lookup[motor_throttles[i]];
-        Motors[i].Throttle = mapped_throttle_commands[i];
-	}
 }

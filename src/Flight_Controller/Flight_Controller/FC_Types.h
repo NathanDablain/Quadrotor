@@ -10,12 +10,13 @@ extern volatile unsigned long g_seconds;
 // Structures
 typedef struct{
 	signed int w[3];
-	signed long w_xyz_LSB[3];
 	signed int g_vec[3]; // In the frame Forward - Right - Down
 	float m_vec[3];
 	signed long m_xyz_LSB[3];
 	float Euler[3];
 	float Pressure_Altitude;
+	float Compensated_Height;
+	float Velocity_NED[3];
 	float Position_NED[3];
 	signed long Longitude;
 	signed long Latitude;
@@ -23,6 +24,11 @@ typedef struct{
 	float Speed_over_ground;
 	float Course_over_ground;
 } States;
+
+typedef struct{
+	float Position_NED[3];
+	float Euler[3];
+} Reference;
 
 typedef struct{
 	// bar_cal_status -> flag with state of calibration, 0: uncalibrated, 1:ready
