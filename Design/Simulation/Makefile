@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -g -Wall -MMD -O0 -I Utility
+CXXFLAGS = -g -Wall -MMD -O2 -I Utility
 
 SOURCES = $(wildcard *.cpp) $(wildcard Utility/*.cpp)
 OBJECTS = $(SOURCES:.cpp=.o)
@@ -19,3 +19,8 @@ clean:
 
 clean_dep:
 	rm -rf $(DEPENDS)
+
+.PHONY: pristine
+
+pristine:
+	rm -rf $(DEPENDS) $(OBJECTS)

@@ -1,10 +1,11 @@
 #include "Quadrotor.h"
+#include "Sim_Time.h"
 
 int main(){
-    double sim_dt = 0.001;
-    double sim_tf = 50.0;
+    Sim_Time Sim_time_step = {.Seconds = 0, .MicroSeconds = 1000};
+    Sim_Time Sim_finish_time = {.Seconds = 75, .MicroSeconds = 0};
 
-    Quadrotor Drone(sim_dt, sim_tf);
+    Quadrotor Drone(Sim_time_step, Sim_finish_time);
     
     Drone.Run_sim();
 

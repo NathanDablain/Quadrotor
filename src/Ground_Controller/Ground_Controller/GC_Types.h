@@ -7,19 +7,6 @@
 #define DIAL_FIR_SIZE 30
 
 typedef enum {
-	// Drone systems initialized, awaiting calibration
-	Standby,
-	// Drone systems calibrating
-	Calibrating,
-	// Drone systems are calibrated, ready to fly
-	Ready,
-	// Drone is flying, responding to commands and under autopilot control
-	Flying,
-	// Drone is following landing procedure, will automatically proceed to ready once complete
-	Landing
-} FC_Status;
-
-typedef enum {
 	// Left-most dial
 	Height_Dial,
 	// Center dial
@@ -44,11 +31,5 @@ typedef struct {
 	unsigned char pin;
 	char port;
 } Led;
-
-typedef struct {
-	FC_Status Drone_status;
-	unsigned char Pin;
-	char Port;
-} Button;
 
 #endif
