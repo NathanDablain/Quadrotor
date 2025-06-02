@@ -282,7 +282,7 @@ Downlink_Reponse_Codes Receive_Downlink(Downlink *inbound, unsigned char ID_inde
 	if ((checksum_hex[0] == Check_Sum[0])&&(checksum_hex[1] == Check_Sum[1])){
 		char inbound_ID[3] = {buffer[3], buffer[4], 0};
 		if (strcmp(inbound_ID, ID[ID_index]) == 0){
-			inbound->Calibration_Status = buffer[5];
+			inbound->Flight_Controller_Status = buffer[5];
 			inbound->Tracking_Status = buffer[6];
 			return Good_response;
 		}
@@ -323,7 +323,7 @@ unsigned char Send_Uplink(Uplink *outbound, Downlink_Reponse_Codes *Downlink_Sta
 	char east_west = (outbound->Desired_east >= 0)?('E'):('W');
 	sprintf(buffer[2], "%06.2f", fabs(outbound->Desired_altitude));
 	sprintf(buffer[3], "%06.2f", fabs(outbound->Pressure_altitude));
-	sprintf(buffer[4], "%d", outbound->Drone_status);
+	sprintf(buffer[4], "%d", outbound->Desired_status);
 	// Build up link message
 	char message[] = {'$', 'N', 'D', ID[ID_index][0], ID[ID_index][1],
 		 buffer[0][0], buffer[0][1], buffer[0][2], buffer[0][3], buffer[0][4], buffer[0][5], north_south,
@@ -362,34 +362,34 @@ unsigned char Send_Uplink(Uplink *outbound, Downlink_Reponse_Codes *Downlink_Sta
 	return output;
 }
 
-void Set_Status(Uplink *up_link){
+void Set_Desired_Status(Uplink *outbound, Downlink *inbound){
 	g_Button_Read_Flag = 0;
 	if (g_Button0_Flag){
 		g_Button0_Flag = 0;
-		switch (up_link->Drone_status){
+		switch (inbound->Flight_Controller_Status){
 			case Standby:
-				up_link->Drone_status = Calibrating;
+				outbound->Desired_status = Calibrating;
 				break;
 			case Calibrating:
 			// Drone can only move out of calibrating status internally
-				up_link->Drone_status = Standby;
+				outbound->Desired_status = Standby;
 				break;
 			case Ready:
-				up_link->Drone_status = Flying;
+				outbound->Desired_status = Flying;
 				break;
 			case Flying:
-				up_link->Drone_status = Landing;
+				outbound->Desired_status = Landing;
 				break;
 			case Landing:
 			// Drone can only move out of landing status to ready internally
-				up_link->Drone_status = Flying;
+				outbound->Desired_status = Flying;
 				break;
 		}
 	}
 	
 	if (g_Button1_Flag){
 		g_Button1_Flag = 0;
-		up_link->Drone_status = Standby;
+		outbound->Desired_status = Standby;
 	}
 }
 
@@ -788,6 +788,6 @@ void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink_R
 	Print_Page(2, buffer[2], length_to_print, 0);
 	
 	// Printing on display 1 (left)
-	Print_Page(0, Dr_S_renums[up_link->Drone_status], strlen(Dr_S_renums[up_link->Drone_status]), 1);
+	Print_Page(0, Dr_S_renums[up_link->Desired_status], strlen(Dr_S_renums[up_link->Desired_status]), 1);
 	Print_Page(1, Dl_S_renums[Downlink_Status], strlen(Dl_S_renums[Downlink_Status]), 1);
 }

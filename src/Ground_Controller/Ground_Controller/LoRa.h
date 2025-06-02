@@ -76,7 +76,7 @@ typedef enum {
 } Downlink_Reponse_Codes;
 
 typedef struct {
-	FC_Status Drone_status;
+	FC_Status Desired_status;
 	float Desired_north;
 	float Desired_east;
 	float Desired_altitude;
@@ -85,7 +85,7 @@ typedef struct {
 
 typedef struct {
 	// Are we calibrated
-	unsigned char Calibration_Status;
+	FC_Status Flight_Controller_Status;
 	// Are we tracking the reference well
 	unsigned char Tracking_Status;
 } Downlink;
@@ -98,6 +98,6 @@ Downlink_Reponse_Codes Receive_Downlink(Downlink *inbound, unsigned char ID_inde
 
 unsigned char Check_For_Message();
 
-void Set_Status(Uplink *up_link);
+void Set_Desired_Status(Uplink *outbound, Downlink *inbound);
 
 #endif

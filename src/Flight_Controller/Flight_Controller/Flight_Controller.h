@@ -46,6 +46,8 @@ extern volatile unsigned char g_LoRa_Send_Flag;
 extern volatile unsigned char g_Attitude_Observer_Update_Flag;
 // Tracks when to use gyro data to make predictions
 extern volatile unsigned char g_Attitude_Observer_Predict_Flag;
+// Tracks when power is first applied to the motors
+extern volatile unsigned char g_Motor_Power_Flag;
 
 // Either sets or clears a bit within a bitmask depending on the input
 #define SET_BIT(current_val, position, val) ((val < 1) ? current_val&(~(val<<position)) : current_val|(val<<position))
@@ -61,5 +63,9 @@ extern volatile unsigned char g_Attitude_Observer_Predict_Flag;
 unsigned char Setup();
 // Initializes timers used to keep track events
 void Setup_Timers();
+// Initializes Analog to Digital Converter to sample motor battery voltage
+void Setup_ADC();
+
+unsigned int Sample_ADC();
 
 #endif

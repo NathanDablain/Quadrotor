@@ -21,10 +21,10 @@ volatile unsigned char g_BAR_Read_Flag = 0;
 unsigned char Setup_Bar(){
 	unsigned char BAR_status = 2;
 
-	BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_CTRL_REG2,0b00000100); // Resets device
+	BAR_status &= Write_SPI(&PORTA_OUT,CS_BAR,BAR_CTRL_REG2,0b00000100); // Resets device
 	Delay(10000);
-	BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_CTRL_REG1,0b01011100); // Sets ODR to 75Hz, enables LPF
-	BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_CTRL_REG2,0b00010010); // Enables low noise mode, maximum ODR for this mode is 75 Hz
+	BAR_status &= Write_SPI(&PORTA_OUT,CS_BAR,BAR_CTRL_REG1,0b01011100); // Sets ODR to 75Hz, enables LPF
+	BAR_status &= Write_SPI(&PORTA_OUT,CS_BAR,BAR_CTRL_REG2,0b00010010); // Enables low noise mode, maximum ODR for this mode is 75 Hz
 	//BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_FIFO_WTM,0b00010000); // Sets FIFO watermark level to 16
 	//BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_FIFO_CTRL,0b00000001); // Enables FIFO
 
@@ -58,7 +58,7 @@ unsigned char Read_Bar(States *Drone, Calibration_Data *cal_data, float base_alt
 	//}
 	//pressure_oversampled >>= 4;
 	unsigned char Data[3];
-	Read_SPI(PORT_BAR, CS_BAR, (BAR_DATA_START|0x80), Data, sizeof(Data));
+	Read_SPI(&PORTA_OUT, CS_BAR, (BAR_DATA_START|0x80), Data, sizeof(Data));
 	unsigned long pressure = Data[0] + (((unsigned int)Data[1])<<8) + (((unsigned long)Data[2])<<16);
 	Drone->Pressure_Altitude = Height_Bar(pressure);
 	Drone->Position_NED[2] = Drone->Position_NED[2]*0.9 - (Drone->Pressure_Altitude - (cal_data->altitude_bias + base_altitude))*0.1;
@@ -84,15 +84,15 @@ unsigned char Setup_IMU(){
 	// Configure IMU
 	unsigned char IMU_status = 2;
 	
-	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_CTRL3_C, 0b00000001); // Reboot
+	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_CTRL3_C, 0b00000001); // Reboot
 	Delay(1000);
-	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_FIFO_CTRL1, 2*3*8); // Sets FIFO watermark to 24
-	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_FIFO_CTRL3, 0b00000001); // Puts accelerometer in FIFO
-	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_FIFO_CTRL5, 0b00110001); // Sets FIFO ODR to 416Hz, enables FIFO
-	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_CTRL1_XL, 0b01100000); // Sets Accelerometer ODR to 416 Hz, range to +-2g
-	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_CTRL2_G, 0b01100100); // Sets Gyro ODR to 416 Hz, range to +-500dps
-	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_CTRL3_C, 0b01000100); // Sets block data update, auto increment address
-	IMU_status &= Write_SPI(PORT_IMU, CS_IMU, IMU_CTRL8_XL, 0b11001000); // Sets Accelerometer LPF to ODR/9, low noise
+	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_FIFO_CTRL1, 2*3*8); // Sets FIFO watermark to 24
+	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_FIFO_CTRL3, 0b00000001); // Puts accelerometer in FIFO
+	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_FIFO_CTRL5, 0b00110001); // Sets FIFO ODR to 416Hz, enables FIFO
+	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_CTRL1_XL, 0b01100000); // Sets Accelerometer ODR to 416 Hz, range to +-2g
+	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_CTRL2_G, 0b01100100); // Sets Gyro ODR to 416 Hz, range to +-500dps
+	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_CTRL3_C, 0b01000100); // Sets block data update, auto increment address
+	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_CTRL8_XL, 0b11001000); // Sets Accelerometer LPF to ODR/9, low noise
 	
 	return (IMU_status != 2)?(0):(1);
 }
@@ -114,11 +114,11 @@ unsigned char Read_Accel(States *Drone){
 	g_Accel_Read_Flag = 0;
 
 	unsigned char fifo_level = 0;
-	Read_SPI(PORT_IMU,CS_IMU,(IMU_FIFO_STATUS1|0x80),&fifo_level,1);
+	Read_SPI(&PORTA_OUT,CS_IMU,(IMU_FIFO_STATUS1|0x80),&fifo_level,1);
 	if (fifo_level < 6*ACCEL_WINDOW_SIZE) return 0;
 	
 	unsigned char Data[6*ACCEL_WINDOW_SIZE];
-	Read_SPI(PORT_IMU, CS_IMU, (IMU_FIFO_DATA_START|0x80), Data, 3*BAR_WINDOW_SIZE);
+	Read_SPI(&PORTA_OUT, CS_IMU, (IMU_FIFO_DATA_START|0x80), Data, 3*BAR_WINDOW_SIZE);
 	
 	signed long a_xyz_oversampled[3] = {0};
 	for (unsigned char i=0; i<ACCEL_WINDOW_SIZE; i++){
@@ -142,11 +142,11 @@ unsigned char Read_Gyro(States *Drone, Calibration_Data *cal_data){
 	g_Gyro_Read_Flag = 0;
 	
 	unsigned char gyro_status = 0;
-	Read_SPI(PORT_IMU, CS_IMU, (IMU_STATUS|0x80), &gyro_status, 1);
+	Read_SPI(&PORTA_OUT, CS_IMU, (IMU_STATUS|0x80), &gyro_status, 1);
 	if (!(gyro_status & GYRO_DRDY_bm)) return 0;
 	
 	unsigned char Data[6] = {0};
-	Read_SPI(PORT_IMU, CS_IMU, (GYRO_DATA_START|0x80), Data, sizeof(Data));
+	Read_SPI(&PORTA_OUT, CS_IMU, (GYRO_DATA_START|0x80), Data, sizeof(Data));
 	
 	Drone->w[0] = -((((signed int)Data[1])<<8) + Data[0]) - cal_data->w_bias[0];
 	Drone->w[1] = ((((signed int)Data[3])<<8) + Data[2]) - cal_data->w_bias[1];
@@ -161,11 +161,11 @@ volatile unsigned char g_MAG_Read_Flag = 0;
 
 unsigned char  Setup_Mag(){
 	unsigned char MAG_status = 2;
-	Write_SPI(PORT_MAG,CS_MAG,MAG_CFG_REG_A,0b01000000); // Reset device
+	Write_SPI(&PORTB_OUT,CS_MAG,MAG_CFG_REG_A,0b01000000); // Reset device
 	Delay(10000);
-	MAG_status &= Write_SPI(PORT_MAG, CS_MAG, MAG_CFG_REG_C, 0b00110100); // Enables 4 wire SPI, disables I2C
-	MAG_status &= Write_SPI(PORT_MAG, CS_MAG, MAG_CFG_REG_A, 0b10001000); // Sets continuous mode, 50 Hz ODR, temp compensation enabled
-	MAG_status &= Write_SPI(PORT_MAG, CS_MAG, MAG_CFG_REG_B, 0b00000001); // Enables LPF
+	MAG_status &= Write_SPI(&PORTB_OUT, CS_MAG, MAG_CFG_REG_C, 0b00110100); // Enables 4 wire SPI, disables I2C
+	MAG_status &= Write_SPI(&PORTB_OUT, CS_MAG, MAG_CFG_REG_A, 0b10001000); // Sets continuous mode, 50 Hz ODR, temp compensation enabled
+	MAG_status &= Write_SPI(&PORTB_OUT, CS_MAG, MAG_CFG_REG_B, 0b00000001); // Enables LPF
 	
 	return (MAG_status != 2)?(0):(1);
 }
@@ -204,11 +204,11 @@ unsigned char Read_Mag(States *Drone, Calibration_Data *cal_data){
 	g_MAG_Read_Flag = 0;
 	unsigned char Mag_drdy = 0;
 	
-	Read_SPI(PORT_MAG,CS_MAG,(MAG_STATUS|0x80),&Mag_drdy,1);
+	Read_SPI(&PORTB_OUT,CS_MAG,(MAG_STATUS|0x80),&Mag_drdy,1);
 	if (!(Mag_drdy & MAG_DRDY_bm)) return 0;
 	
 	unsigned char Data[6] = {0};
-	Read_SPI(PORT_MAG, CS_MAG, (MAG_DATA_START|0x80), Data, 6);
+	Read_SPI(&PORTB_OUT, CS_MAG, (MAG_DATA_START|0x80), Data, 6);
 	
 	for (unsigned char i=0;i<3;i++){
 		Drone->m_xyz_LSB[i] = (((signed int)Data[2*i+1])<<8) + Data[2*i];

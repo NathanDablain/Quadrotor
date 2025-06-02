@@ -53,6 +53,9 @@ typedef struct{
 	// Reference_Position_ecef -> Earth Centered Earth Fixed coordinates of initial reference position which NED offset is based on
 	unsigned char gps_cal_status;
 	float Reference_Position_ecef[3];
+	// Motor cal data
+	unsigned char motor_cal_status;
+	unsigned char motor_cal_flags[4];
 } Calibration_Data;
 
 void Delay(unsigned long long length);

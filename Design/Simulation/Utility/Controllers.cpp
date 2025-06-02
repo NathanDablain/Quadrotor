@@ -16,7 +16,27 @@ float Height_LQR(float h, float h_ref){
     return thrust; 
 }
 
-void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desired_moments[3]){
+void Angular_Rate_Control(States &MCU, States &Reference, float desired_moments[3]){
+    // const float I[3] = {0.00149, 0.00262, 0.00149};
+    const float d_t = 0.0025;
+    const float c1 = 0.9;
+    const float c2 = 1.0-c1;
+    const float K_i = 0.001;
+    float K[3][2] = {{123.7, -1483.8},{223.9,-2687.2},{27.1, -3250.9}};
+    static float Euler_last[3];
+    static float Euler_dot[3];
+    static float e_int[3];
+    for (uint8_t i = 0; i < 3; i++){
+        float e = Reference.Euler[i]-MCU.Euler[i];
+        e_int[i] += e;
+        Euler_dot[i] = Euler_dot[i]*c1 + ((MCU.Euler[i]-Euler_last[i])/d_t)*c2;
+        Euler_last[i] = MCU.Euler[i];
+        desired_moments[i] = K[i][0]*e - K[i][1]*Euler_dot[i] - K_i*e_int[i];
+    }
+    
+}
+
+void Set_throttles(uint16_t motor_throttles[4], float desired_base_speed, float desired_delta[3]){
     // -> Back motor (0) produces negative pitching torque and negative yawing torque
     // -> Left motor (1) produces positive rolling torque and positive yawing torque
     // -> Right motor (2) produces negative rolling torque and positive yawing torque
@@ -42,10 +62,15 @@ void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desi
     // w_l: (2*Mx*kt + Mz*kf*lrl + T*kt*lrl)/(4*kf*kt*lrl)
     // w_b: -(2*My*kt + Mz*kf*lfb - T*kt*lfb)/(4*kf*kt*lfb)
 
-    float omega_front = ((c3*desired_moments[1]) - (c1*desired_moments[2]) + (c2*desired_thrust))/denom_1;
-    float omega_right = ((c4*desired_moments[2]) - (c3*desired_moments[0]) + (c5*desired_thrust))/denom_2;
-    float omega_left = ((c3*desired_moments[0]) + (c4*desired_moments[2]) + (c5*desired_thrust))/denom_2;
-    float omega_back = -((c3*desired_moments[1]) + (c1*desired_moments[2]) - (c2*desired_thrust))/denom_1;
+    // float omega_front = ((c3*desired_moments[1]) - (c1*desired_moments[2]) + (c2*desired_thrust))/denom_1;
+    // float omega_right = ((c4*desired_moments[2]) - (c3*desired_moments[0]) + (c5*desired_thrust))/denom_2;
+    // float omega_left = ((c3*desired_moments[0]) + (c4*desired_moments[2]) + (c5*desired_thrust))/denom_2;
+    // float omega_back = -((c3*desired_moments[1]) + (c1*desired_moments[2]) - (c2*desired_thrust))/denom_1;
+    float omega_front = desired_base_speed + desired_delta[0] - desired_delta[2];
+    float omega_right = desired_base_speed - desired_delta[1] + desired_delta[2];
+    float omega_left = desired_base_speed + desired_delta[1] + desired_delta[2];
+    float omega_back = desired_base_speed - desired_delta[0] - desired_delta[2];
+
 
     float omega[4] = {omega_back, omega_left, omega_right, omega_front};
 
@@ -91,18 +116,4 @@ void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desi
         motor_throttles[i] = first*100 + (uint16_t)temp;
         if (motor_throttles[i]  < 310) motor_throttles[i] = 0;
     }
-}
-
-void Angular_Rate_Control(States &MCU, States &Reference, float desired_moments[3]){
-    // const float I[3] = {0.00149, 0.00262, 0.00149};
-    const float d_t = 0.0025;
-    float K[3][2] = {{1.0, 0.1},{1.0, 0.4},{0.1, 0.4}};
-    static float Euler_last[3];
-    for (uint8_t i = 0; i < 3; i++){
-        float e = Reference.Euler[i]-MCU.Euler[i];
-        float Euler_dot = (MCU.Euler[i]-Euler_last[i])/d_t;
-        Euler_last[i] = MCU.Euler[i];
-        desired_moments[i] = K[i][0]*e - K[i][1]*Euler_dot;
-    }
-    
 }

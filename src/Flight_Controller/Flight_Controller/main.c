@@ -2,6 +2,10 @@
 
 volatile unsigned long g_seconds = 0;
 volatile unsigned char print_flag_2 = 0;
+volatile unsigned int g_Counter = 0;
+// Motor_Throttles-> Values from 0-1000 with 1000 being max throttle, motor order is: back, left, right, front
+unsigned int g_Motor_Throttles[4] = {0};
+
 unsigned char Setup(){
 	if (RSTCTRL_RSTFR & RSTCTRL_PORF_bm){Delay(100000);} // Necessary to stabilize IC's on a cold start
 	unsigned char Setup_Bitmask = 0;
@@ -13,6 +17,7 @@ unsigned char Setup(){
 	//unsigned char GPS_setup_status = Setup_GPS();
 	Setup_SPI();
 	Setup_TWI();
+	Setup_ADC();
 	unsigned char LoRa_setup_status = Setup_LoRa();
 	unsigned char MAG_setup_status = Setup_Mag();
 	unsigned char IMU_setup_status = Setup_IMU();
@@ -25,23 +30,52 @@ unsigned char Setup(){
 	return Setup_Bitmask;
 }
 
+void Setup_ADC(){
+	// Setup Pin D6 to trigger interrupt when brought high for the first time
+	PORTD_PIN6CTRL |= PORT_ISC_RISING_gc;
+	// Set VDD as ADC voltage reference
+	VREF_ADC0REF |= VREF_REFSEL_VDD_gc;
+	// Set GND as negative ADC input
+	ADC0_MUXNEG |= ADC_MUXNEG_GND_gc;
+	// Set oversampling to 16
+	ADC0_CTRLB |= ADC_SAMPNUM_ACC64_gc;
+	// Set extended sampling time
+	ADC0_SAMPCTRL = 100;
+	// Set Mux position to AIN6
+	ADC0_MUXPOS |= ADC_MUXPOS_AIN6_gc;
+	// Enable ADC
+	ADC0_CTRLA |= ADC_ENABLE_bm;
+}
+
+unsigned int Sample_ADC(){
+	// Returns the voltage read in milli volts
+	// Begin conversion
+	ADC0_COMMAND |= ADC_STCONV_bm;
+	// Wait for conversion to finish
+	while (!(ADC0_INTFLAGS & ADC_RESRDY_bm));
+	unsigned int ADC_result = ADC0_RES;
+	ADC_result >>= 6;
+	unsigned int voltage_mv = (ADC_result*15) + ADC_result;
+	voltage_mv = voltage_mv + (((voltage_mv*7)/10)/5);
+	return voltage_mv;
+}
+
 void Setup_Timers(){
 	//-Setup Real Time Clock for keeping track of total run time-//
 	RTC_CTRLA |= RTC_CORREN_bm | RTC_RTCEN_bm;
 	RTC_INTCTRL |= RTC_CMP_bm;
 	RTC_CMP = 32768;
 	//----------------------------------------------------------//
-	//--------Setup Timer/Counter A0 for output compare---------//
+	//--------Setup Timer/Counter A0 and A1 for output compare---------//
 	// Is triggered every 10 ms, is used by:
 	//  -> Motors
-	TCA0_SINGLE_CTRLA |= TCA_SINGLE_CLKSEL_DIV8_gc;
+	TCA0_SINGLE_CTRLA |= TCA_SINGLE_CLKSEL_DIV2_gc;
 	TCA0_SINGLE_INTCTRL |= TCA_SINGLE_CMP0_bm | TCA_SINGLE_CMP1_bm | TCA_SINGLE_CMP2_bm;
-	TCA1_SINGLE_CTRLA |= TCA_SINGLE_CLKSEL_DIV8_gc;
+	TCA1_SINGLE_CTRLA |= TCA_SINGLE_CLKSEL_DIV2_gc;
 	TCA1_SINGLE_INTCTRL |= TCA_SINGLE_CMP0_bm;
 	//---------------------------------------------------------//
 	//-------Setup Timer/Counter B0 for output compare---------//
 	// Generates an interrupt every 5 ms, is used by:
-	//  -> Motors running at 100 Hz
 	//	-> Magnetometer running at 100 Hz
 	//  -> Barometer running at 75 Hz
 	//	-> Attitude observer running at 25 Hz
@@ -64,6 +98,12 @@ void Setup_Timers(){
 	TCB2_INTCTRL |= TCB_CAPT_bm;
 	TCB2_CCMP = 14405;
 	//-------------------------------------------------------//
+	//-------Setup Timer/Counter B3 for output compare-------//
+	// Generates an interrupt every 286 us (3500 Hz), is used by:
+	//  -> Oneshot protocol setting motor speed
+	TCB3_CTRLA |= TCB_ENABLE_bm | TCB_CLKSEL_DIV1_gc;
+	TCB3_INTCTRL |= TCB_CAPT_bm;
+	TCB3_CCMP = 5900;
 }
 
 int main(){
@@ -72,32 +112,23 @@ int main(){
 	if ((Setup_Bitmask & NAV_SENSORS_bm) == NAV_SENSORS_bm){
 		// Initialize data structures
 		// Drone-> tracks the current drone states
-		States Drone;
-		memset(&Drone, 0, sizeof(Drone));
+		States Drone = {0};
 		// Desired-> tracks the desired drone states issued by the ground controller
-		Reference Desired_States;
-		memset(&Desired_States, 0, sizeof(Desired_States));
+		Reference Desired_States = {0};
 		// Commanded-> tracks the states the autopilot is tracking too after the desired states are fed through the guidance functions
-		Reference Commanded_States;
-		memset(&Commanded_States, 0, sizeof(Commanded_States));
+		Reference Commanded_States = {0};
 		// up_link-> contains the last information sent to the drone via LoRa uplink
-		Uplink up_link;
-		memset(&up_link, 0, sizeof(up_link));
+		Uplink up_link = {0};
 		// down_link-> contains the flight controller calibration status and how well the drone is tracking references
-		Downlink down_link;
-		memset(&down_link, 0, sizeof(down_link));
+		Downlink down_link = {0};
 		// Flight_Controller_Status-> Controls the mode of operation the drone is in, changed by uplinks from the ground controller
 		FC_Status Flight_Controller_Status = Standby;
 		// Holds sensor calibration data 
-		Calibration_Data cal_data;
-		memset(&cal_data, 0, sizeof(cal_data));
-		//const Calibration_Data reset_cal_data = {.bar_cal_status = 0, .mag_cal_status = 0, .imu_cal_status = 0};
-		// Motor_Throttles-> Values from 0-1000 with 1000 being max throttle, motor order is: back, left, right, front
-		unsigned int Motor_Throttles[4];
-		// Desired_Thrust-> Controlled by a Model Reference Adaptive Controller (MRAC), in units of N
+		Calibration_Data cal_data = {0};
+		// Desired_Thrust-> Controlled by state feedback, in units of N
 		float Desired_Thrust = 0.0;
-		// Desired_Moments-> Controlled by 3 PIDs, moment order is: body x, body y, body z, in units of N-m
-		float Desired_Moments[3];
+		// Desired_Moments-> Controlled by PID, moment order is: body x, body y, body z, in units of N-m
+		float Desired_Moments[3] = {0};
 		unsigned char reset = 0;
 		while(1){
 			//--------------Common code--------------//
@@ -109,19 +140,23 @@ int main(){
 			// Printing
 			if (g_Print_Flag >= 50 &&(Setup_Bitmask & (1<<SU_SSD_bp))){
 				g_Print_Flag = 0;
-				 //Print_Output(&Drone, &cal_data, &up_link);
+				//Print_Output(&Drone, &cal_data, &up_link);
 			}
 			if (print_flag_2){
+				volatile unsigned int volatage_motors = Sample_ADC();
 				print_flag_2 = 0;
 				char buffer[4][20] = {0};
-				unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%7.7f", Desired_Moments[2]);
+				//unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%d", g_Counter);
+				//unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%7.7f", Desired_Moments[2]);
+				unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%d", volatage_motors);
 				Print_Page(2, buffer[0], length_to_print);
 				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%4.2f , %4.2f",-Drone.Position_NED[2],Desired_Thrust);
 				Print_Page(0, buffer[1], length_to_print);
 				length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%5.5f,%5.5f",Desired_Moments[0], Desired_Moments[1]);
 				Print_Page(1, buffer[2], length_to_print);
-				length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "%d,%d,%d,%d", Motor_Throttles[0],Motor_Throttles[1],Motor_Throttles[2],Motor_Throttles[3]);
+				length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "%d,%d,%d,%d", g_Motor_Throttles[0],g_Motor_Throttles[1],g_Motor_Throttles[2],g_Motor_Throttles[3]);
 				Print_Page(3, buffer[3], length_to_print);
+				g_Counter = 0;
 			}
 
 			// Barometer -> check 100Hz, samples at 75Hz
@@ -149,6 +184,7 @@ int main(){
 					memset(&cal_data, 0, sizeof(cal_data));
 					Drone.Latitude = -1;
 					Drone.Longitude = -1;
+					memset(g_Motor_Throttles, 0, sizeof(g_Motor_Throttles));
 					reset++;
 				}
 			}
@@ -160,15 +196,13 @@ int main(){
 				if (cal_data.mag_cal_status == 0) Calibrate_Mag(&Drone, &cal_data);
 				
 				if (cal_data.imu_cal_status == 0) Calibrate_IMU(&Drone, &cal_data);
+				
+				if (cal_data.motor_cal_status == 0) Calibrate_Motors(&cal_data, g_Motor_Throttles);
 
-				if (cal_data.bar_cal_status && cal_data.mag_cal_status && cal_data.imu_cal_status) Flight_Controller_Status = Ready;
+				if (cal_data.bar_cal_status && cal_data.mag_cal_status && cal_data.imu_cal_status && cal_data.motor_cal_status) Flight_Controller_Status = Ready;
 	
 			}
 			else if (Flight_Controller_Status == Ready){
-				//Motor_Throttles[0] = 50+(up_link.Desired_altitude*200);
-				//Motor_Throttles[1] = 50+(up_link.Desired_altitude*200);
-				//Motor_Throttles[2] = 50+(up_link.Desired_altitude*200);
-				//Motor_Throttles[3] = 50+(up_link.Desired_altitude*200);
 			}
 			else {
 			//------------Guidance and Control functions-------------//
@@ -193,19 +227,11 @@ int main(){
 
 				// Euler angle controller and ESCs run at 400 Hz, updates desired motor speeds
 				if (g_Motor_Run_Flag){
+					g_Motor_Run_Flag = 0;
 					Euler_Control(Drone.Euler, Commanded_States.Euler, Desired_Moments);
-					Set_throttles(Motor_Throttles, Desired_Thrust, Desired_Moments);
-					//Safety_Check(&Drone, Motor_Throttles, &Flight_Controller_Status);
-					//Run_Motors(Motor_Throttles);
+					Set_throttles(g_Motor_Throttles, Desired_Thrust, Desired_Moments);
+					Safety_Check(&Drone, g_Motor_Throttles, &Flight_Controller_Status);
 				}
-			}
-			// Euler angle controller and ESCs run at 400 Hz, updates desired motor speeds
-			if (g_Motor_Run_Flag>=2){
-				g_Motor_Run_Flag = 0;
-				//Euler_Control(Drone.Euler, Commanded_States.Euler, Desired_Moments);
-				//Set_throttles(Motor_Throttles, Desired_Thrust, Desired_Moments);
-				Safety_Check(&Drone, Motor_Throttles, &Flight_Controller_Status);
-				Run_Motors(Motor_Throttles);
 			}
 		}
 
@@ -242,4 +268,17 @@ ISR(TCB1_INT_vect){
 ISR(TCB2_INT_vect){
 	++g_Gyro_Read_Flag;
 	TCB2_INTFLAGS = TCB_CAPT_bm;
+}
+
+ISR(TCB3_INT_vect){
+	++g_Counter;
+	Run_Motors(g_Motor_Throttles);
+	TCB3_INTFLAGS = TCB_CAPT_bm;
+}
+
+ISR(PORTD_PORT_vect){
+	PORTD_INTFLAGS = PIN6_bm;
+	g_Motor_Power_Flag = 1;
+	// Disable future interrupts
+	PORTD_PIN6CTRL &= ~(PORT_ISC_RISING_gc);
 }

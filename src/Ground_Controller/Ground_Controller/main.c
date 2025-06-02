@@ -52,7 +52,7 @@ int main(void){
 			// Set LEDs
 		
 			// Check if a button has been pressed
-			if (g_Button_Read_Flag >= 5) Set_Status(&up_link);
+			if (g_Button_Read_Flag >= 5) Set_Desired_Status(&up_link, &down_link);
 		
 			// Read Barometer
 			if (g_BAR_Read_Flag >= 3) Read_Bar(&up_link.Pressure_altitude);	
@@ -60,12 +60,11 @@ int main(void){
 			// Write Displays
 			if (g_Print_Flag >= 40)	Print_Displays(&D_Height, &D_North, &D_East, &up_link, Downlink_Status);
 		
-			// Check LoRa downlink for drone calibration and tracking status
+			// Check LoRa downlink for flight controller and tracking status
 			if (g_LoRa_Check_Flag){
 				unsigned char data_available = Check_For_Message();
 				if (data_available >= DOWNLINK_SIZE){
 					Downlink_Status = Receive_Downlink(&down_link, ID_index, data_available);
-					if ((up_link.Drone_status == Calibrating)&&(down_link.Calibration_Status == 1)) up_link.Drone_status = Ready;
 				}
 			}
 	

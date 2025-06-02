@@ -1,7 +1,22 @@
 #include "Controllers.h"
 
+volatile unsigned char g_Motor_Power_Flag = 0;
+volatile Motors g_Motor_Pins = {.Pins = {PIN0_bm, PIN1_bm, PIN2_bm, PIN3_bm}, .index = 0};
+
+void Calibrate_Motors(Calibration_Data *cal_data, unsigned int Motor_Throttles[4]){
+	//unsigned long counter = 1000;
+	g_Motor_Power_Flag = 0;
+	//while (--counter){
+		//for (unsigned char i = 0; i < 4; i++){
+			//Motor_Throttles[i] = counter;
+		//}
+		//Delay(2000);
+	//}
+	memset(Motor_Throttles, 0, 8);
+	cal_data->motor_cal_status = 1;
+}
+
 void Safety_Check(States *Drone, unsigned int motor_throttles[4], FC_Status *Flight_Controller_Status){
-	static const unsigned int zero_vec[4];
 	unsigned char safety_switch = 0;
 	
 	if (fabs(Drone->Euler[0]) > MOTOR_CUTOFF_ANGLE) safety_switch = 1;
@@ -9,7 +24,7 @@ void Safety_Check(States *Drone, unsigned int motor_throttles[4], FC_Status *Fli
 	if (fabs(Drone->Position_NED[2]) > MOTOR_CUTOFF_ALTITUDE) safety_switch = 1;
 	
 	if (safety_switch){
-		memcpy(motor_throttles, zero_vec, sizeof(zero_vec));
+		memset(motor_throttles, 0, 8);
 		*Flight_Controller_Status = Standby;
 	}
 }
@@ -56,6 +71,8 @@ void Euler_Control(float Current_Euler[3], float Commanded_Euler[3], float desir
 	    float Euler_dot = (Current_Euler[i] - Euler_last[i])/d_t;
 	    Euler_last[i] = Current_Euler[i];
 	    desired_moments[i] = K[i][0]*e - K[i][1]*Euler_dot;
+		if (desired_moments[i] > 0.01) desired_moments[i] = 0.01;
+		else if (desired_moments[i] < -0.01) desired_moments[i] = -0.01;
     }
 }
 
@@ -136,7 +153,6 @@ void Set_throttles(unsigned int motor_throttles[4], float desired_thrust, float 
 		float temp = ((I - Current[first])/(Current[last]-Current[first]))*100;
 		float motor_throttle_iir = (float)motor_throttles[i]*0.9 +  (first*100 + temp)*0.1;
 		motor_throttles[i] = (unsigned int)motor_throttle_iir;
-		//if (motor_throttles[i]  < 310) motor_throttles[i] = 0;
 	}
 }
 
@@ -145,13 +161,13 @@ volatile unsigned char g_Motor_Run_Flag = 0;
 void Run_Motors(unsigned int Throttle_Commands[4]){
 // ESC Interface - PPM (OneShot) control
 // Inputs - Desired motor throttles (0-100)
-// Outputs - 100 Hz, 1-2us waveform to ESC
-	// We want to map 0:1000 to 3000:6000 (1000:2000 us)
+// Outputs - 3500 Hz, 125-250 us waveform to ESC
+	// We want to map 0:1000 to 1500:3000 (125:250 us)
 	static unsigned int motor_lookup[1001] = {0};
 	// Build the lookup table if it hasn't been built yet, enable pins for output
 	if (!(motor_lookup[0])){ 
 		for (unsigned int i=0;i<1001;i++){
-			motor_lookup[i] = 3*i + 3000;
+			motor_lookup[i] = ((3*i)/2) + 1500;
 		}
 		PORTD_DIR |= PIN0_bm | PIN1_bm | PIN2_bm | PIN3_bm; 
 	}
@@ -162,12 +178,12 @@ void Run_Motors(unsigned int Throttle_Commands[4]){
 		mapped_throttle_commands[i] = motor_lookup[Throttle_Commands[i]];
 	}
 	// Disable Timer
-	//TCA0_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
+	TCA0_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
 	// Set motor throttles
-	TCA0_SINGLE_CMP0 = mapped_throttle_commands[0] + 220*3; // Motor 1, back
+	TCA0_SINGLE_CMP0 = mapped_throttle_commands[0]; // Motor 1, back
 	TCA0_SINGLE_CMP1 = mapped_throttle_commands[1]; // Motor 2, left
 	TCA0_SINGLE_CMP2 = mapped_throttle_commands[2]; // Motor 3, right
-	TCA1_SINGLE_CMP0 = mapped_throttle_commands[3] + 185*3; // Motor 4, front
+	TCA1_SINGLE_CMP0 = mapped_throttle_commands[3]; // Motor 4, front
 	// Reset timer counts
 	TCA0_SINGLE_CNT = 0;
 	TCA1_SINGLE_CNT = 0;
@@ -205,5 +221,5 @@ ISR(TCA1_CMP0_vect){
 	// Clear int flag
 	TCA1_SINGLE_INTFLAGS = TCA_SINGLE_CMP0_bm;
 	// Only motor 4 uses TCA1, so disable timer
-	//TCA1_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
+	TCA1_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
 }

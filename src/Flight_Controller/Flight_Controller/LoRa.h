@@ -70,7 +70,7 @@ typedef struct {
 
 typedef struct {
 	// Are we calibrated
-	unsigned char Calibration_Status;
+	FC_Status Flight_Controller_Status;
 	// Are we tracking the reference well
 	unsigned char Tracking_Status;
 	char ID[3];
