@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <math.h>
 #include <cstdlib>
+#include <string.h>
 #include "Controllers.h"
 #include "Environment.h"
 #include "Sim_Time.h"
@@ -81,7 +82,7 @@ class MCU{
         void Calibrate_Mag();
         void Calibrate_Gyro();
     public:
-        FC_Status Flight_Controller_Status;
+        FC_Status Flight_Controller_Status = Standby;
         // Desired state of the drone, should mirror its counterpart in src/Flight_Controller
         States Reference = {0};
         // Current state of the drone according to the MCU, should mirror the performance in src/Flight_Controller

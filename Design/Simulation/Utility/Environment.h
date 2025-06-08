@@ -64,7 +64,7 @@ class Environment{
         Vec3 dv_dt = {0.0, 0.0, 0.0};
         Vec3 m_vec_Body;
         // Constant offsets in the magnetometer readings due to the local environment in (mgauss) 
-        Vec3 mag_hard_iron = {100, -175, 200};
+        Vec3 mag_hard_iron = {0}; //{100, -175, 200};
         // The below are TRUE variables, inaccessible directly by the MCU
         double gravity;
         double height;

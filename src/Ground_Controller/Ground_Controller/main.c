@@ -58,7 +58,7 @@ int main(void){
 			if (g_BAR_Read_Flag >= 3) Read_Bar(&up_link.Pressure_altitude);	
 			
 			// Write Displays
-			if (g_Print_Flag >= 40)	Print_Displays(&D_Height, &D_North, &D_East, &up_link, Downlink_Status);
+			if (g_Print_Flag >= 40)	Print_Displays(&D_Height, &D_North, &D_East, &up_link, &down_link, Downlink_Status);
 		
 			// Check LoRa downlink for flight controller and tracking status
 			if (g_LoRa_Check_Flag){

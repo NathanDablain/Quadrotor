@@ -12,7 +12,7 @@ class Magnetometer {
     // Sensitivity is in units of mgauss/LSB
     const double mag_sens = 1.5;
     // RMS magnetometer noise in (mgauss)
-    const double mag_max_noise = 3;
+    const double mag_max_noise = 30.0; //3;
     const double mag_noise_sens = mag_max_noise/32767.0;
     public:
         // Output data

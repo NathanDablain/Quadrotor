@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <fstream>
 #include <iomanip>
+#include <string.h>
 #include "Sim_Types.h"
 #include "Sim_Time.h"
 #include "Linear_Algebra.h"
@@ -18,14 +19,17 @@
 using namespace std;
 
 #define STANDARD_WIDTH 20
-#define LOG_SIM(data) (log_sim << setw(STANDARD_WIDTH) << data)
-#define LOG_MCU(data) (log_mcu << setw(STANDARD_WIDTH) << data)
+#define LOG_DATA(data,log_name) (log_name << setw(STANDARD_WIDTH) << data)
+#define LOG_VEC3(vec3,log_name) (log_name << setw(STANDARD_WIDTH) << vec3.data[0] << setw(STANDARD_WIDTH) << vec3.data[1] << setw(STANDARD_WIDTH) << vec3.data[2])
+#define LOG_ARR3(arr3,log_name) (log_name << setw(STANDARD_WIDTH) << arr3[0] << setw(STANDARD_WIDTH) << arr3[1] << setw(STANDARD_WIDTH) << arr3[2])
 
 class Quadrotor{
     private:
         ofstream log_sim;
         ofstream log_mcu;
         bool log_flag = true;
+        bool plot_flag = true;
+        bool error_flag = true;
         // Actual mass of drone in (kg)
         double mass = 0.441;
         // Distance from front and back motor thrust vectors to drone center of gravity in (m)
@@ -69,6 +73,8 @@ class Quadrotor{
         
         MCU AVR128DB48;
     public:
+        double Control_errors[6];
+        double Navigation_errors[6];
         Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf);
         void Run_Sensors(Environment &env);
         void Manage_FC_Status();
@@ -77,4 +83,5 @@ class Quadrotor{
         void Run_sim();
         void Log_data(Environment &env);
         Vec Differential_equation_momentum(Vec x_in);
+        void Calculate_errors();
 };

@@ -152,17 +152,17 @@ double Mat3::det3(){
 }
 //------------------------------------//
 //--------Vec Methods----------------//
-void Vec::operator=(vector<double> v1){
-    data.resize(v1.size(), 0.0);
-    for (uint32_t i = 0; i < v1.size(); i++){
-        data[i] = v1[i];
-    }
+Vec::Vec(size_t length){
+    data.resize(length, (double)0.0);
+}
+
+Vec::Vec(){
+    data.resize(4, (double)0.0);
 }
 
 Vec Vec::operator+(Vec v1){
-    Vec v2;
-    v2.data.resize(v1.data.size(), 0.0);
-    for (uint32_t i = 0; i < data.size(); i++){
+    Vec v2(v1.data.size());
+    for (size_t i = 0; i < data.size(); i++){
         v2.data[i] = data[i] + v1.data[i];
     }
 
@@ -170,9 +170,8 @@ Vec Vec::operator+(Vec v1){
 }
 
 Vec Vec::operator-(Vec v1){
-    Vec v2;
-    v2.data.resize(v1.data.size(), 0.0);
-    for (uint32_t i = 0; i < data.size(); i++){
+    Vec v2(v1.data.size());
+    for (size_t i = 0; i < data.size(); i++){
         v2.data[i] = data[i] - v1.data[i];
     }
 
@@ -180,9 +179,8 @@ Vec Vec::operator-(Vec v1){
 }
 
 Vec Vec::operator*(double c){
-    Vec v2;
-    v2.data.resize(data.size(), 0.0);
-    for (uint32_t i = 0; i < data.size(); i++){
+    Vec v2(data.size());
+    for (size_t i = 0; i < data.size(); i++){
         v2.data[i] = data[i] * c;
     }
 
@@ -190,8 +188,7 @@ Vec Vec::operator*(double c){
 }
 
 Vec Vec::operator/(double c){
-    Vec v2;
-    v2.data.resize(data.size(), 0.0);
+    Vec v2(data.size());
     for (uint32_t i = 0; i < data.size(); i++){
         v2.data[i] = data[i] / c;
     }
@@ -201,7 +198,7 @@ Vec Vec::operator/(double c){
 
 double Vec::dot(Vec v1){ // DOT PRODUCT
     double result = 0.0;
-    for (uint32_t i = 0; i < data.size(); i++){
+    for (size_t i = 0; i < data.size(); i++){
         result += data[i] * v1.data[i];
     }
 
@@ -210,7 +207,7 @@ double Vec::dot(Vec v1){ // DOT PRODUCT
 
 double Vec::magnitude(){
     double result = 0.0;
-    for (uint32_t i = 0; i < data.size(); i++){
+    for (size_t i = 0; i < data.size(); i++){
         result += data[i];
     }
     return result;
@@ -218,7 +215,7 @@ double Vec::magnitude(){
 //------------------------------------//
 //--------Mat Methods----------------//
 Mat::Mat(uint32_t height, uint32_t width){
-    data.resize(height, vector<double>(width, 0.0));
+    data.resize(height, vector<double>(width, (double)0.0));
 };
 
 Mat Mat::operator+(Mat m1){
@@ -257,8 +254,7 @@ Mat Mat::operator*(Mat m1){
 }
 
 Vec Mat::operator*(Vec v1){
-    Vec v2;
-    v2.data.resize(data.size(), 0.0);
+    Vec v2(data.size());
     for (uint32_t i = 0; i < data.size(); i++){
         for (uint32_t j = 0; j < data[0].size(); j++){
             v2.data[i] += data[i][j]*v1.data[j];

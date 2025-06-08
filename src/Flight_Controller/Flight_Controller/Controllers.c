@@ -34,7 +34,7 @@ volatile unsigned char g_Guidance_Flag = 0;
 void Run_Guidance(Reference *Desired_States, Reference *Commanded_States){
 	g_Guidance_Flag = 0;
 	// IIR to prevent large jumps in reference states
-	const float c1 = 0.999;
+	const float c1 = 0.99;
 	const float c2 = 1.0 - c1;
 	for (unsigned char i = 0; i < 3; i++){
 		Commanded_States->Euler[i] = Commanded_States->Euler[i]*c1 + Desired_States->Euler[i]*c2;
@@ -49,13 +49,16 @@ float Altitude_Control(float h, float h_ref){
 	// Gains K chosen through pole placement of double integrator
 	const float mass = 0.45;
 	const float d_t = 0.01;
-	const float K[2] = {3.0, 4.0};
+	const float IIR_c1 = 0.9;
+	const float IIR_c2 = 1.0 - IIR_c1;
+	const float K[2] = {3.0, 5.0};
 	const float K_int = 0.002;
 	static float e_int;
 	static float h_last;
-	static float h_dot;
+	static float h_dot_last;
 	e_int += (h_ref-h);
-	h_dot = h_dot*0.9 + ((h-h_last)/d_t)*0.1;
+	float h_dot = h_dot_last*IIR_c1 + ((h-h_last)/d_t)*IIR_c2;
+	h_dot_last = h_dot;
 	h_last = h;
 	float u = -K[0]*(h-h_ref) - K[1]*h_dot + K_int*e_int + 9.81;
 	float thrust = mass*u;
@@ -63,16 +66,23 @@ float Altitude_Control(float h, float h_ref){
 }
 
 void Euler_Control(float Current_Euler[3], float Commanded_Euler[3], float desired_moments[3]){
-    const float d_t = 0.005;
-    const float K[3][2] = {{1.0, 0.1},{1.0, 0.4},{0.1, 0.4}};
+    const float d_t = 0.0025;
+	const float I[3] = {0.00149, 0.00262, 0.00149};
+    const float K[3][2] = {{100, 200},{100, 200},{10, 20}};
+	const float K_int = 0.1;
+	const float IIR_c1 = 0.9;
+	const float IIR_c2 = 1.0 - IIR_c1;
     static float Euler_last[3];
+	static float Euler_dot_last[3];
+	static float e_int[3];
     for (unsigned char i = 0; i < 3; i++){
 	    float e = Commanded_Euler[i] - Current_Euler[i];
-	    float Euler_dot = (Current_Euler[i] - Euler_last[i])/d_t;
+		e_int[i] += e;
+	    float Euler_dot = Euler_dot_last[i]*IIR_c1 + ((Current_Euler[i]-Euler_last[i])/d_t)*IIR_c2;
 	    Euler_last[i] = Current_Euler[i];
-	    desired_moments[i] = K[i][0]*e - K[i][1]*Euler_dot;
-		if (desired_moments[i] > 0.01) desired_moments[i] = 0.01;
-		else if (desired_moments[i] < -0.01) desired_moments[i] = -0.01;
+		Euler_dot_last[i] = Euler_dot;
+		float u = K[i][0]*e - K[i][1]*Euler_dot + K_int*e_int[i];
+	    desired_moments[i] = u*I[i];
     }
 }
 
@@ -151,8 +161,8 @@ void Set_throttles(unsigned int motor_throttles[4], float desired_thrust, float 
 			}
 		}
 		float temp = ((I - Current[first])/(Current[last]-Current[first]))*100;
-		float motor_throttle_iir = (float)motor_throttles[i]*0.9 +  (first*100 + temp)*0.1;
-		motor_throttles[i] = (unsigned int)motor_throttle_iir;
+		//float motor_throttle_iir = (float)motor_throttles[i]*0.9 +  (first*100 + temp)*0.1;
+		motor_throttles[i] = (unsigned int)first*100 + (unsigned int)temp;
 	}
 }
 

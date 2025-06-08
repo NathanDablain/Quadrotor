@@ -3,13 +3,13 @@
 void MCU::Run(Environment &env, Sim_Time sim_t){
     // This method models the flight controller source code in src/flight_controller
     Run_Timers(sim_t);
-
+    // Bar samples at 75 Hz
     if (BAR_Read_Flag >= 2) Read_Bar();
-
+    // Mag samples at 50 Hz
     if (MAG_Read_Flag) Read_Mag();
-
+    // Gyro samples at 416 Hz
     if (Gyro_Read_Flag) Read_Gyro();
-
+    // Accel samples at 52 Hz
     if (Accel_Read_Flag) Read_Accel();
 
     // Observer update -> 50Hz
@@ -21,11 +21,16 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
     if (LoRa_Read_Flag) Read_LoRa(env);
 
     if (Flight_Controller_Status == Standby){
-        mcu.Latitude = -1;
-        mcu.Longitude = -1;
+        if (reset == 0){
+            memset(&cal_data, 0, sizeof(cal_data));
+            mcu.Latitude = -1;
+            mcu.Longitude = -1;
+            memset(motor_throttles, 0, sizeof(motor_throttles));
+            reset++;
+        }
     }
     else if (Flight_Controller_Status == Calibrating){ 
-        
+        reset = 0;
         if (cal_data.bar_cal_status == 0) Calibrate_Bar();
         
         if (cal_data.mag_cal_status == 0) Calibrate_Mag();
@@ -64,7 +69,12 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
             }
         }
         else if (Flight_Controller_Status == Landing){
-            Desired_Position_NED[2] = 1.0;
+            Desired_Position_NED[2] = 0.25;
+            if (mcu.Position_NED[2] >= 0){
+                Flight_Controller_Status = Standby;
+                Desired_Thrust = 0.0;
+                memset(Desired_Moments, 0, sizeof(Desired_Moments));
+            }
         }
         
         if (Guidance_Flag){
@@ -79,11 +89,13 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
 
         // PIDs and ESCs run at 400 Hz, updates desired motor speeds
         if (Motor_Run_Flag){
-            Motor_Run_Flag = 0;
             Angular_Rate_Control(mcu, Reference, Desired_Moments);
             Set_throttles(motor_throttles, Desired_Thrust, Desired_Moments);
-            Run_Motors(motor_throttles);
         }
+    }
+    if (Motor_Run_Flag){
+        Motor_Run_Flag = 0;
+        Run_Motors(motor_throttles);
     }
 }
 
@@ -180,6 +192,9 @@ void MCU::Calibrate_Mag(){
 	}
 
 	if ((seconds - initial_time) >= MAG_CAL_TIMEOUT){
+        for (uint8_t i = 0 ; i < 3; i++){
+            if (cal_data.hard_iron[i] == 0) cal_data.hard_iron[i] = 1;
+        }
 		cal_data.mag_cal_status = 1;
 	}
 }
@@ -193,9 +208,12 @@ void MCU::Read_Mag(){
     mcu.m_xyz_LSB[1] = magnetometer.magnetic_field_LSB[1]; 
 	mcu.m_xyz_LSB[2] = magnetometer.magnetic_field_LSB[2]; 
 
-	mcu.m_vec[0] = ((float)(mcu.m_xyz_LSB[1] - cal_data.hard_iron[1]))/((float)cal_data.hard_iron[1]*2.0);
-	mcu.m_vec[1] = -((float)(mcu.m_xyz_LSB[0]- cal_data.hard_iron[0]))/((float)cal_data.hard_iron[0]*2.0);
-	mcu.m_vec[2] = ((float)(mcu.m_xyz_LSB[2] - cal_data.hard_iron[2]))/((float)cal_data.hard_iron[2]*2.0);
+	// mcu.m_vec[0] = ((float)(mcu.m_xyz_LSB[1] - cal_data.hard_iron[1]))/((float)cal_data.hard_iron[1]*2.0);
+	// mcu.m_vec[1] = -((float)(mcu.m_xyz_LSB[0] - cal_data.hard_iron[0]))/((float)cal_data.hard_iron[0]*2.0);
+	// mcu.m_vec[2] = ((float)(mcu.m_xyz_LSB[2] - cal_data.hard_iron[2]))/((float)cal_data.hard_iron[2]*2.0);
+    mcu.m_vec[0] = (float)mcu.m_xyz_LSB[1];
+    mcu.m_vec[1] = -(float)mcu.m_xyz_LSB[0];
+	mcu.m_vec[2] = (float)mcu.m_xyz_LSB[2];
 }
 
 void MCU::Calibrate_Gyro(){
@@ -285,6 +303,7 @@ void MCU::Observer_Update(){
     mcu.Euler[1] = mcu.Euler[1] + OBSERVER_GAIN*(theta_m - mcu.Euler[1]);
     // Prevent yaw angle discontinuity at 2pi - 0 to cause the filter to slowly cycle between them
     mcu.Euler[2] = (abs(psi_m - mcu.Euler[2])>PI)?(psi_m):(mcu.Euler[2] + OBSERVER_GAIN*(psi_m - mcu.Euler[2]));
+
 }
 
 void MCU::Run_Motors(uint16_t motor_throttles[4]){
@@ -305,7 +324,7 @@ void MCU::Run_Motors(uint16_t motor_throttles[4]){
 void MCU::Run_Guidance(){
     // static float local_Desired_Position_NED[3];
     // static float local_Desired_Euler[3];
-    const float c1 = 0.999;
+    const float c1 = 0.99;
     const float c2 = 1.0 - c1;
     for (uint8_t i = 0; i < 3; i++){
         Reference.Euler[i] = Reference.Euler[i]*c1 + Desired_Euler[i]*c2;

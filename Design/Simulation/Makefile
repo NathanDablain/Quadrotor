@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -g -Wall -MMD -O2 -I Utility
+CXXFLAGS = -g -Wall -MMD -O0 -I Utility
 
 SOURCES = $(wildcard *.cpp) $(wildcard Utility/*.cpp)
 OBJECTS = $(SOURCES:.cpp=.o)
@@ -23,4 +23,4 @@ clean_dep:
 .PHONY: pristine
 
 pristine:
-	rm -rf $(DEPENDS) $(OBJECTS)
+	rm -rf sim.exe $(DEPENDS) $(OBJECTS)

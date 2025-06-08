@@ -773,7 +773,7 @@ unsigned char Print_Page(unsigned char page, char *to_print, unsigned char lengt
 	return Print_status;
 }
 
-void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink_Reponse_Codes Downlink_Status){
+void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink *down_link, Downlink_Reponse_Codes Downlink_Status){
 	char *Dl_S_renums[5] = {"NO RESPONSE","BAD FORMAT","BAD ID","BAD CHECKSUM","GOOD RESPONSE"};
 	char *Dr_S_renums[5] = {"STANDBY","CALIBRATING","READY","FLYING","LANDING"};
 	char buffer[3][20];
@@ -789,5 +789,6 @@ void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink_R
 	
 	// Printing on display 1 (left)
 	Print_Page(0, Dr_S_renums[up_link->Desired_status], strlen(Dr_S_renums[up_link->Desired_status]), 1);
-	Print_Page(1, Dl_S_renums[Downlink_Status], strlen(Dl_S_renums[Downlink_Status]), 1);
+	Print_Page(1, Dr_S_renums[down_link->Flight_Controller_Status], strlen(Dr_S_renums[down_link->Flight_Controller_Status]), 1);
+	Print_Page(2, Dl_S_renums[Downlink_Status], strlen(Dl_S_renums[Downlink_Status]), 1);
 }

@@ -4,12 +4,16 @@ float Height_LQR(float h, float h_ref){
     // u = -K*x -> x = h_int, h, h_dot
     const float mass = 0.45;
     const float d_t = 0.01;
-    float K[2] = {3.0, 4.0};
+    const float c1 = 0.9;
+    const float c2 = 1.0-c1;
+    float K[2] = {3.0, 5.0};
     float K_int = 0.002;
     static float e_int;
     static float h_last;
+    static float h_dot_last;
     e_int += (h_ref-h);
-    float h_dot = (h-h_last)/d_t;
+    float h_dot = h_dot_last*c1 + (c2*(h-h_last)/d_t);
+    h_dot_last = h_dot;
     h_last = h;
     float u = -K[0]*(h-h_ref) - K[1]*h_dot + K_int*e_int + 9.81;
     float thrust = mass*u;
@@ -17,26 +21,27 @@ float Height_LQR(float h, float h_ref){
 }
 
 void Angular_Rate_Control(States &MCU, States &Reference, float desired_moments[3]){
-    // const float I[3] = {0.00149, 0.00262, 0.00149};
+    const float I[3] = {0.00149, 0.00262, 0.00149};
     const float d_t = 0.0025;
     const float c1 = 0.9;
     const float c2 = 1.0-c1;
-    const float K_i = 0.001;
-    float K[3][2] = {{123.7, -1483.8},{223.9,-2687.2},{27.1, -3250.9}};
+    const float K[3][2] = {{100, 200},{100, 200},{10, 20}};
+    const float K_int[3] = {0.1, 0.1, 0.1};
     static float Euler_last[3];
-    static float Euler_dot[3];
+    static float Euler_dot_last[3];
     static float e_int[3];
     for (uint8_t i = 0; i < 3; i++){
         float e = Reference.Euler[i]-MCU.Euler[i];
         e_int[i] += e;
-        Euler_dot[i] = Euler_dot[i]*c1 + ((MCU.Euler[i]-Euler_last[i])/d_t)*c2;
+        float Euler_dot = Euler_dot_last[i]*c1 + ((MCU.Euler[i]-Euler_last[i])/d_t)*c2;
         Euler_last[i] = MCU.Euler[i];
-        desired_moments[i] = K[i][0]*e - K[i][1]*Euler_dot[i] - K_i*e_int[i];
+        Euler_dot_last[i] = Euler_dot;
+        float u = K[i][0]*e - K[i][1]*Euler_dot + K_int[i]*e_int[i];
+        desired_moments[i] = u*I[i];
     }
-    
 }
 
-void Set_throttles(uint16_t motor_throttles[4], float desired_base_speed, float desired_delta[3]){
+void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desired_moments[3]){
     // -> Back motor (0) produces negative pitching torque and negative yawing torque
     // -> Left motor (1) produces positive rolling torque and positive yawing torque
     // -> Right motor (2) produces negative rolling torque and positive yawing torque
@@ -62,15 +67,10 @@ void Set_throttles(uint16_t motor_throttles[4], float desired_base_speed, float 
     // w_l: (2*Mx*kt + Mz*kf*lrl + T*kt*lrl)/(4*kf*kt*lrl)
     // w_b: -(2*My*kt + Mz*kf*lfb - T*kt*lfb)/(4*kf*kt*lfb)
 
-    // float omega_front = ((c3*desired_moments[1]) - (c1*desired_moments[2]) + (c2*desired_thrust))/denom_1;
-    // float omega_right = ((c4*desired_moments[2]) - (c3*desired_moments[0]) + (c5*desired_thrust))/denom_2;
-    // float omega_left = ((c3*desired_moments[0]) + (c4*desired_moments[2]) + (c5*desired_thrust))/denom_2;
-    // float omega_back = -((c3*desired_moments[1]) + (c1*desired_moments[2]) - (c2*desired_thrust))/denom_1;
-    float omega_front = desired_base_speed + desired_delta[0] - desired_delta[2];
-    float omega_right = desired_base_speed - desired_delta[1] + desired_delta[2];
-    float omega_left = desired_base_speed + desired_delta[1] + desired_delta[2];
-    float omega_back = desired_base_speed - desired_delta[0] - desired_delta[2];
-
+    float omega_front = ((c3*desired_moments[1]) - (c1*desired_moments[2]) + (c2*desired_thrust))/denom_1;
+    float omega_right = ((c4*desired_moments[2]) - (c3*desired_moments[0]) + (c5*desired_thrust))/denom_2;
+    float omega_left = ((c3*desired_moments[0]) + (c4*desired_moments[2]) + (c5*desired_thrust))/denom_2;
+    float omega_back = -((c3*desired_moments[1]) + (c1*desired_moments[2]) - (c2*desired_thrust))/denom_1;
 
     float omega[4] = {omega_back, omega_left, omega_right, omega_front};
 
@@ -114,6 +114,6 @@ void Set_throttles(uint16_t motor_throttles[4], float desired_base_speed, float 
         }
         float temp = ((I - Current[first])/(Current[last]-Current[first]))*100;
         motor_throttles[i] = first*100 + (uint16_t)temp;
-        if (motor_throttles[i]  < 310) motor_throttles[i] = 0;
+        // if (motor_throttles[i]  < 100) motor_throttles[i] = 0;
     }
 }
