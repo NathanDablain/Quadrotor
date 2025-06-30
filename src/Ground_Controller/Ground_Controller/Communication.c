@@ -321,7 +321,7 @@ unsigned char Send_Uplink(Uplink *outbound, Downlink_Reponse_Codes *Downlink_Sta
 	char north_south = (outbound->Desired_north >= 0)?('N'):('S');
 	sprintf(buffer[1], "%06.2f", fabs(outbound->Desired_east));
 	char east_west = (outbound->Desired_east >= 0)?('E'):('W');
-	sprintf(buffer[2], "%06.2f", fabs(outbound->Desired_altitude));
+	sprintf(buffer[2], "%06.2f", outbound->Desired_altitude);
 	sprintf(buffer[3], "%06.2f", fabs(outbound->Pressure_altitude));
 	sprintf(buffer[4], "%d", outbound->Desired_status);
 	// Build up link message
@@ -375,7 +375,7 @@ void Set_Desired_Status(Uplink *outbound, Downlink *inbound){
 				outbound->Desired_status = Standby;
 				break;
 			case Ready:
-				outbound->Desired_status = Flying;
+				outbound->Desired_status = (outbound->Desired_status == Calibrating)?Ready:Flying;
 				break;
 			case Flying:
 				outbound->Desired_status = Landing;

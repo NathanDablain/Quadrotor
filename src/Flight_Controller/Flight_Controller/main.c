@@ -111,6 +111,7 @@ int main(){
 	// If the sensors we need for navigation initialized successfully, enter main loop
 	if ((Setup_Bitmask & NAV_SENSORS_bm) == NAV_SENSORS_bm){
 		// Initialize data structures
+		const Drone_Constants Constants = Initialize_Drone_Constants();
 		// Drone-> tracks the current drone states
 		States Drone = {0};
 		// Desired-> tracks the desired drone states issued by the ground controller
@@ -134,8 +135,8 @@ int main(){
 			//--------------Common code--------------//
 			// LoRa
 			if (g_LoRa_Check_Flag>=2){
+				Receive_Uplink(&up_link, &down_link, &Flight_Controller_Status);
 				if (g_LoRa_Send_Flag) Send_Downlink(&down_link);
-				 Receive_Uplink(&up_link, &down_link, &Flight_Controller_Status);
 			}
 			// Printing
 			if (g_Print_Flag >= 50 &&(Setup_Bitmask & (1<<SU_SSD_bp))){
@@ -146,14 +147,14 @@ int main(){
 				volatile unsigned int volatage_motors = Sample_ADC();
 				print_flag_2 = 0;
 				char buffer[4][20] = {0};
-				//unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%d", g_Counter);
-				//unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%7.7f", Desired_Moments[2]);
-				unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%d", volatage_motors);
-				Print_Page(2, buffer[0], length_to_print);
+				unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%4.2f, %4.2f, %4.2f", Drone.Euler[0], Drone.Euler[1], Drone.Euler[2]);
+				Print_Page(0, buffer[0], length_to_print);
 				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%4.2f , %4.2f",-Drone.Position_NED[2],Desired_Thrust);
-				Print_Page(0, buffer[1], length_to_print);
+				//length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%d, %d, %d",Drone.w[0],Drone.w[1],Drone.w[2]);
+				Print_Page(1, buffer[1], length_to_print);
 				length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%5.5f,%5.5f",Desired_Moments[0], Desired_Moments[1]);
-				Print_Page(1, buffer[2], length_to_print);
+				//length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%d, %d, %d", Drone.g_vec[0], Drone.g_vec[1], Drone.g_vec[2]);
+				Print_Page(2, buffer[2], length_to_print);
 				length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "%d,%d,%d,%d", g_Motor_Throttles[0],g_Motor_Throttles[1],g_Motor_Throttles[2],g_Motor_Throttles[3]);
 				Print_Page(3, buffer[3], length_to_print);
 				g_Counter = 0;
@@ -197,7 +198,8 @@ int main(){
 				
 				if (cal_data.imu_cal_status == 0) Calibrate_IMU(&Drone, &cal_data);
 				
-				if (cal_data.motor_cal_status == 0) Calibrate_Motors(&cal_data, g_Motor_Throttles);
+				if ((cal_data.motor_cal_status == 0)) cal_data.motor_cal_status = 1;
+				//if ((cal_data.motor_cal_status == 0) && g_Motor_Power_Flag) Calibrate_Motors(&cal_data, g_Motor_Throttles);
 
 				if (cal_data.bar_cal_status && cal_data.mag_cal_status && cal_data.imu_cal_status && cal_data.motor_cal_status) Flight_Controller_Status = Ready;
 	
@@ -223,13 +225,13 @@ int main(){
 				if (g_Guidance_Flag) Run_Guidance(&Desired_States, &Commanded_States);
 				
 				// Altitude Controller Runs at 100 Hz, updates desired thrust
-				if (g_Altitude_Control_Flag >= 2) Desired_Thrust = Altitude_Control(-Drone.Position_NED[2], -Commanded_States.Position_NED[2]);
+				if (g_Altitude_Control_Flag >= 2) Desired_Thrust = Altitude_Control(-Drone.Position_NED[2], -Commanded_States.Position_NED[2], &Constants);
 
 				// Euler angle controller and ESCs run at 400 Hz, updates desired motor speeds
 				if (g_Motor_Run_Flag){
 					g_Motor_Run_Flag = 0;
-					Euler_Control(Drone.Euler, Commanded_States.Euler, Desired_Moments);
-					Set_throttles(g_Motor_Throttles, Desired_Thrust, Desired_Moments);
+					Euler_Control(Drone.Euler, Commanded_States.Euler, Desired_Moments, Desired_Thrust, &Constants);
+					Set_throttles(g_Motor_Throttles, Desired_Thrust, Desired_Moments, &Constants);
 					Safety_Check(&Drone, g_Motor_Throttles, &Flight_Controller_Status);
 				}
 			}
@@ -272,12 +274,13 @@ ISR(TCB2_INT_vect){
 
 ISR(TCB3_INT_vect){
 	++g_Counter;
-	Run_Motors(g_Motor_Throttles);
+	if (g_Motor_Power_Flag) Run_Motors(g_Motor_Throttles);
 	TCB3_INTFLAGS = TCB_CAPT_bm;
 }
 
 ISR(PORTD_PORT_vect){
 	PORTD_INTFLAGS = PIN6_bm;
+	Delay(1000000);
 	g_Motor_Power_Flag = 1;
 	// Disable future interrupts
 	PORTD_PIN6CTRL &= ~(PORT_ISC_RISING_gc);

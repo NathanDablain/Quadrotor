@@ -89,7 +89,7 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
 
         // PIDs and ESCs run at 400 Hz, updates desired motor speeds
         if (Motor_Run_Flag){
-            Angular_Rate_Control(mcu, Reference, Desired_Moments);
+            Angular_Rate_Control(mcu, Reference, Desired_Moments, Desired_Thrust);
             Set_throttles(motor_throttles, Desired_Thrust, Desired_Moments);
         }
     }

@@ -20,13 +20,31 @@ float Height_LQR(float h, float h_ref){
     return thrust; 
 }
 
-void Angular_Rate_Control(States &MCU, States &Reference, float desired_moments[3]){
+void Angular_Rate_Control(States &MCU, States &Reference, float desired_moments[3], float thrust){
     const float I[3] = {0.00149, 0.00262, 0.00149};
     const float d_t = 0.0025;
     const float c1 = 0.9;
     const float c2 = 1.0-c1;
     const float K[3][2] = {{100, 200},{100, 200},{10, 20}};
     const float K_int[3] = {0.1, 0.1, 0.1};
+    // The maximum moments allowed should be a function of the thrust commanded.
+    // This is to precent sending the motors into saturation because they can only rotate one direction
+    // Propeller thrust constant in N/(rad/s)^2 
+    const float k_f = 0.000001;
+    // Propeller torque constant in N-m/(rad/s)^2
+    const float k_t = 0.000000011;
+    // Distance from front and back motor thrust vectors to drone center of gravity in (m)
+    const float length_f_b =  0.117;
+    // Distance from left and right motor thrust vectors to drone center of gravity in (m)
+    const float length_l_r = 0.1205;
+    const float moment_split = 0.75;
+    float max_moment_phi = (thrust*length_l_r)/2.0;
+    max_moment_phi *= moment_split;
+    float max_moment_theta = (thrust*length_f_b)/2.0;
+    max_moment_theta *= moment_split;
+    float max_moment_psi = thrust*(k_t/k_f);
+    max_moment_psi *= (1.0-moment_split);
+
     static float Euler_last[3];
     static float Euler_dot_last[3];
     static float e_int[3];
@@ -38,6 +56,18 @@ void Angular_Rate_Control(States &MCU, States &Reference, float desired_moments[
         Euler_dot_last[i] = Euler_dot;
         float u = K[i][0]*e - K[i][1]*Euler_dot + K_int[i]*e_int[i];
         desired_moments[i] = u*I[i];
+    }
+    Saturate(desired_moments[0], max_moment_phi, -max_moment_phi);
+    Saturate(desired_moments[1], max_moment_theta, -max_moment_theta);
+    Saturate(desired_moments[2], max_moment_psi, -max_moment_psi);
+}
+
+void Saturate(float &desired_moment, float max, float min){
+    if (desired_moment > max){
+        desired_moment = max;
+    }
+    else if (desired_moment < min){
+        desired_moment = min;
     }
 }
 

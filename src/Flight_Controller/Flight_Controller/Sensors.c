@@ -102,9 +102,9 @@ void Calibrate_IMU(States *Drone, Calibration_Data *cal_data){
 	unsigned long w_magnitude = abs(Drone->w[0]) + abs(Drone->w[1]) + abs(Drone->w[2]);
 	
 	if (w_magnitude <= W_CAL_LIMIT){
-		cal_data->w_bias[0] = -Drone->w[0];
+		cal_data->w_bias[0] = Drone->w[0];
 		cal_data->w_bias[1] = Drone->w[1];
-		cal_data->w_bias[2] = -Drone->w[2];
+		cal_data->w_bias[2] = Drone->w[2];
 		cal_data->imu_cal_status = 1;
 	}
 	
@@ -118,7 +118,7 @@ unsigned char Read_Accel(States *Drone){
 	if (fifo_level < 6*ACCEL_WINDOW_SIZE) return 0;
 	
 	unsigned char Data[6*ACCEL_WINDOW_SIZE];
-	Read_SPI(&PORTA_OUT, CS_IMU, (IMU_FIFO_DATA_START|0x80), Data, 3*BAR_WINDOW_SIZE);
+	Read_SPI(&PORTA_OUT, CS_IMU, (IMU_FIFO_DATA_START|0x80), Data, 6*ACCEL_WINDOW_SIZE);
 	
 	signed long a_xyz_oversampled[3] = {0};
 	for (unsigned char i=0; i<ACCEL_WINDOW_SIZE; i++){

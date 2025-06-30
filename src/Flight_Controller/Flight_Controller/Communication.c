@@ -248,13 +248,13 @@ void Send_Downlink(Downlink *outbound){
 	(void)Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_PAYLOAD_LENGTH|0x80),sizeof(message)-1);
 	(void)Write_SPI_Stream(&PORTA_OUT, CS_LORA, (LORA_REG_FIFO|0x80), message, sizeof(message)-1);
 	(void)Write_SPI(&PORTA_OUT, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_TX);
-	unsigned char LoRa_TX_Status = 0;
-	while(1){
-		Read_SPI(&PORTA_OUT, CS_LORA, LORA_REG_IRQ_FLAGS, &LoRa_TX_Status, 1);
-		if (LoRa_TX_Status == LORA_IRQ_TX_DONE){
-			break;
-		}
-	}
+	//unsigned char LoRa_TX_Status = 0;
+	//while(1){
+		//Read_SPI(&PORTA_OUT, CS_LORA, LORA_REG_IRQ_FLAGS, &LoRa_TX_Status, 1);
+		//if (LoRa_TX_Status == LORA_IRQ_TX_DONE){
+			//break;
+		//}
+	//}
 	
 }
 
