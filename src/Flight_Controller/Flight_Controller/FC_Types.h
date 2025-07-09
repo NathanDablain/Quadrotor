@@ -1,6 +1,9 @@
 #ifndef FC_TYPES
 #define FC_TYPES
 
+// Change device to change compilation related to various peripherals - AVR128DB48 and AVR64DA28
+#define AVR64DA28
+//#define AVR128DB48
 // Global variables
 extern volatile unsigned long g_seconds;
 

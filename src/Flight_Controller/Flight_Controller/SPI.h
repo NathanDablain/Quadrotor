@@ -3,15 +3,7 @@
 
 // Macros
 #define SPI_TIMEOUT_THRESHOLD 100000
-#define CS_LORA 5 // PA5
-#define CS_IMU 6 // PA6
-#define CS_BAR 7 // PA7
-#define CS_DGW 2 // PB2
-#define CS_MAG 3 // PB3
-#define PORT_LORA 'A'
-#define PORT_IMU 'A'
-#define PORT_BAR 'A'
-#define PORT_MAG 'B'
+
 #define MOSI 0 // PC0
 #define SCK 2 // PC2
 

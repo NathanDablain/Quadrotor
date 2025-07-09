@@ -13,16 +13,39 @@
 #include "FC_Types.h"
 
 // SERIAL PERIPHERAL INTERFACE (SPI) CODE
+#if defined(AVR128DB48)
+static unsigned char g_Pin_MOSI = 0;
+static unsigned char g_Pin_SCK = 2;
+static volatile unsigned char *g_Port_Dir_SPI = &PORTC_DIR;
+static volatile unsigned char *g_SPI_CTRLA = &SPI1_CTRLA;
+volatile unsigned char *g_SPI_CTRLB = &SPI1_CTRLB;
+static volatile unsigned char *g_SPI_DATA = &SPI1_DATA;
+static volatile unsigned char *g_SPI_INTFLAGS = &SPI1_INTFLAGS;
+static unsigned char g_CS_Lora = 5;
+#elif defined(AVR64DA28)
+static unsigned char g_Pin_MOSI = 4;
+static unsigned char g_Pin_SCK = 6;
+volatile unsigned char *g_Port_Dir_SPI = &PORTA_DIR;
+volatile unsigned char *g_SPI_CTRLA = &SPI0_CTRLA;
+volatile unsigned char *g_SPI_CTRLB = &SPI0_CTRLB;
+volatile unsigned char *g_SPI_DATA = &SPI0_DATA;
+volatile unsigned char *g_SPI_INTFLAGS = &SPI0_INTFLAGS;
+static unsigned char g_CS_Lora = 3;
+#endif
+
+volatile unsigned char g_LoRa_Check_Flag = 0;
+volatile unsigned char g_LoRa_Send_Flag = 0;
+static volatile unsigned char *g_Port_Lora = &PORTA_OUT;
+
+volatile unsigned char g_Print_Flag = 0;
+
 void Setup_SPI(){
 	// Set SCK, MOSI, and CS pins as outputs and put CS pins high
 	// Here we are using SPI1 on its default pins
-	PORTA_DIR |= (1<<CS_LORA) | (1<<CS_IMU) | (1<<CS_BAR);
-	PORTB_DIR |= (1<<CS_DGW) | (1<<CS_MAG);
-	PORTC_DIR |= (1<<MOSI) | (1<<SCK);
-	PORTA_OUT |= (1<<CS_LORA) | (1<<CS_IMU) | (1<<CS_BAR);
-	PORTB_OUT |= (1<<CS_DGW) | (1<<CS_MAG);
+	*g_Port_Dir_SPI |= (1<<g_Pin_MOSI) | (1<<g_Pin_SCK);
 	// Enable Master mode
-	SPI1_CTRLA |= SPI_MASTER_bm | SPI_ENABLE_bm;
+	*g_SPI_CTRLB |= SPI_SSD_bm;
+	*g_SPI_CTRLA |= (SPI_MASTER_bm | SPI_PRESC_DIV4_gc | SPI_ENABLE_bm);
 }
 
 void Read_SPI(volatile unsigned char *Port, unsigned char Pin, unsigned char Register, unsigned char *Data, unsigned int Data_Length){
@@ -30,14 +53,14 @@ void Read_SPI(volatile unsigned char *Port, unsigned char Pin, unsigned char Reg
 	
 	*Port &= ~(1<<Pin);
 		
-	SPI1_DATA = Register;
-	while (!(SPI1_INTFLAGS & SPI_IF_bm));
-	SPI1_INTFLAGS &= ~SPI_IF_bm;
+	*g_SPI_DATA = Register;
+	while (!(*g_SPI_INTFLAGS & SPI_IF_bm));
+	*g_SPI_INTFLAGS &= ~SPI_IF_bm;
 	
 	while (i++<Data_Length){
-		SPI1_DATA = 0;
-		while (!(SPI1_INTFLAGS & SPI_IF_bm));
-		*Data++ = SPI1_DATA;
+		*g_SPI_DATA = 0;
+		while (!(*g_SPI_INTFLAGS & SPI_IF_bm));
+		*Data++ = *g_SPI_DATA;
 	}
 	
 	*Port |= (1<<Pin);
@@ -48,54 +71,54 @@ void Read_SPI_c(volatile unsigned char *Port, unsigned char Pin, unsigned char R
 	
 	*Port &= ~(1<<Pin);
 
-	SPI1_DATA = Register;
-	while (!(SPI1_INTFLAGS & SPI_IF_bm));
-	SPI1_INTFLAGS &= ~SPI_IF_bm;
+	*g_SPI_DATA = Register;
+	while (!(*g_SPI_INTFLAGS & SPI_IF_bm));
+	*g_SPI_INTFLAGS &= ~SPI_IF_bm;
 	
 	while (i++<Data_Length){
-		SPI1_DATA = 0;
-		while (!(SPI1_INTFLAGS & SPI_IF_bm));
-		*Data++ = SPI1_DATA;
+		*g_SPI_DATA = 0;
+		while (!(*g_SPI_INTFLAGS & SPI_IF_bm));
+		*Data++ = *g_SPI_DATA;
 	}
 	
 	*Port |= (1<<Pin);
 }
 
 unsigned char Write_SPI(volatile unsigned char *Port, unsigned char Pin, unsigned char Register, unsigned char Data){
-	// Returns 2 if successful, 0 if port assignment not valid, and 1 if a timeout occurs while waiting for data
+	// Returns 1 if successful and 0 if a timeout occurs while waiting for data
 	unsigned long timeout = 0;
 	
 	*Port &= ~(1<<Pin);
 	
-	SPI1_DATA = Register;
-	while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
-	SPI1_DATA = Data;
-	while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
+	*g_SPI_DATA = Register;
+	while (!(*g_SPI_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
+	*g_SPI_DATA = Data;
+	while (!(*g_SPI_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
 	
 	*Port |= (1<<Pin);
 	
-	return 2;
+	return 1;
 }
 
 unsigned char Write_SPI_Stream(volatile unsigned char *Port, unsigned char Pin, unsigned char Register, char *Data, unsigned char Data_Length){
-	// Returns 2 if successful, 0 if port assignment not valid, and 1 if a timeout occurs while waiting for data
+	// Returns 1 if successful and 0 if a timeout occurs while waiting for data
 	unsigned char i = 0;
 	unsigned long timeout = 0;
 	
 	*Port &= ~(1<<Pin);
 
-	SPI1_DATA = Register;
-	while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
-	SPI1_INTFLAGS &= ~SPI_IF_bm;
+	*g_SPI_DATA = Register;
+	while (!(*g_SPI_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
+	*g_SPI_INTFLAGS &= ~SPI_IF_bm;
 	
 	while (i++<Data_Length){
-		SPI1_DATA = *Data++;
-		while (!(SPI1_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
+		*g_SPI_DATA = *Data++;
+		while (!(*g_SPI_INTFLAGS & SPI_IF_bm)){if (++timeout > SPI_TIMEOUT_THRESHOLD){return 1;}};
 	}
 
 	*Port |= (1<<Pin);
 	
-	return 2;
+	return 1;
 }
 
 // TWO WIRE INTERFACE (TWI) CODE
@@ -106,13 +129,19 @@ void Setup_TWI(){
 	TWI0_MBAUD = 25; //109;
 	TWI0_MCTRLA |= TWI_ENABLE_bm | TWI_SMEN_bm | TWI_QCEN_bm; // Enables quick command, smart mode, and master mode
 	TWI0_MSTATUS |= TWI_BUSSTATE_IDLE_gc; // Set to idle on startup
+#if defined(AVR128DB48)
 	PORTA_PIN2CTRL |= PORT_PULLUPEN_bm;
 	PORTA_PIN3CTRL |= PORT_PULLUPEN_bm;
+#elif defined(AVR64DA28)
+	PORTC_PIN2CTRL |= PORT_PULLUPEN_bm;
+	PORTC_PIN3CTRL |= PORT_PULLUPEN_bm;
+	PORTMUX_TWIROUTEA |= PORTMUX_TWI0_ALT2_gc;
+#endif
 	//TWI0_DBGCTRL |= TWI_DBGRUN_bm;
 }
 
 unsigned char Write_TWI(unsigned char Slave_Address, unsigned char Address_Byte, unsigned char *Data, unsigned char Data_Length){
-	// Returns 3 if successful, lower numbers indicate stage of failure
+	// Returns 4 if successful, lower numbers indicate stage of failure
 	unsigned char i = 0;
 	unsigned long timeout = 0;
 	TWI0_MADDR = Slave_Address<<1;
@@ -131,30 +160,31 @@ unsigned char Write_TWI(unsigned char Slave_Address, unsigned char Address_Byte,
 }
 
 // LONG RANGE (LORA) CODE
-volatile unsigned char g_LoRa_Check_Flag = 0;
-volatile unsigned char g_LoRa_Send_Flag = 0;
 
 unsigned char Setup_LoRa(){
-	unsigned char LoRa_status = 2;
+	unsigned char LoRa_status = 1;
 	
-	LoRa_status &= Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_OP_MODE|0x80),LORA_MODE_SLEEP); // Set LoRa mode, still in sleep
-	LoRa_status &= Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_F_MSB|0x80),LORA_FREQ_915_HB); // Set frequency to 915 MHz
-	LoRa_status &= Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_F_MIDB|0x80),LORA_FREQ_915_MB);
-	LoRa_status &= Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_F_LSB|0x80),LORA_FREQ_915_LB);
-	LoRa_status &= Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_IRQ_FLAGS_MASK|0x80),LORA_MASK_TX); // Masks all interrupt flags except TX complete
-	LoRa_status &= Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_OP_MODE|0x80),LORA_MODE_RXCONTINUOUS); // Set to continuously receive
-	LoRa_status &= Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_PA_CONFIG|0x80),LORA_PA_20dBm); // Set power to 20 dBm
-	LoRa_status &= Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_OCP|0x80),0b00100001); // Set maximum current to 50 mA
-	LoRa_status &= Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_PA_RAMP|0x80),0b00000010); // Set PA ramp time to 1ms
+	PORTA_DIR |= (1<<g_CS_Lora);
+	*g_Port_Lora |= (1<<g_CS_Lora);
 	
-	return (LoRa_status == 2) ? 1 : 0;
+	LoRa_status &= Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_OP_MODE|0x80), LORA_MODE_SLEEP); // Set LoRa mode, still in sleep
+	LoRa_status &= Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_F_MSB|0x80), LORA_FREQ_915_HB); // Set frequency to 915 MHz
+	LoRa_status &= Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_F_MIDB|0x80), LORA_FREQ_915_MB);
+	LoRa_status &= Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_F_LSB|0x80), LORA_FREQ_915_LB);
+	LoRa_status &= Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_IRQ_FLAGS_MASK|0x80), LORA_MASK_TX); // Masks all interrupt flags except TX complete
+	LoRa_status &= Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_OP_MODE|0x80), LORA_MODE_RXCONTINUOUS); // Set to continuously receive
+	LoRa_status &= Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_PA_CONFIG|0x80), LORA_PA_20dBm); // Set power to 20 dBm
+	LoRa_status &= Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_OCP|0x80), 0b00100001); // Set maximum current to 50 mA
+	LoRa_status &= Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_PA_RAMP|0x80), 0b00000010); // Set PA ramp time to 1ms
+	
+	return (LoRa_status == 1) ? 1 : 0;
 }
 
 unsigned char Check_For_Message(){
 	// Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C*CS
 	// Underscores are for readability, not part of actual message
 	unsigned char data_available = 0;
-	Read_SPI(&PORTA_OUT,CS_LORA,LORA_REG_RX_N_BYTES,&data_available,1);
+	Read_SPI(g_Port_Lora,g_CS_Lora,LORA_REG_RX_N_BYTES,&data_available,1);
 	return data_available;
 }
 
@@ -162,7 +192,7 @@ void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Contr
 	// Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C*CS
 	// Underscores are for readability, not part of actual message
 	g_LoRa_Check_Flag = 0;
-	(void)Write_SPI(&PORTA_OUT, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_RXCONTINUOUS);
+	(void)Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_OP_MODE|0x80), LORA_MODE_RXCONTINUOUS);
 
 	unsigned char data_available = Check_For_Message();
 	if (data_available < UPLINK_SIZE) return;
@@ -170,9 +200,9 @@ void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Contr
 	unsigned char uplink_status = 1;
 	char buffer[50] = {0};
 	unsigned char RX_Adrs = 0;
-	(void)Read_SPI(&PORTA_OUT,CS_LORA,LORA_REG_RX_ADR,&RX_Adrs,1);
-	(void)Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),RX_Adrs); // Set FIFO ptr to current FIFO RX address
-	(void)Read_SPI_c(&PORTA_OUT,CS_LORA,LORA_REG_FIFO,buffer,data_available);
+	(void)Read_SPI(g_Port_Lora, g_CS_Lora, LORA_REG_RX_ADR, &RX_Adrs, 1);
+	(void)Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_FIFO_ADR_PTR|0x80), RX_Adrs); // Set FIFO ptr to current FIFO RX address
+	(void)Read_SPI_c(g_Port_Lora, g_CS_Lora, LORA_REG_FIFO, buffer, data_available);
 
 	// Keeps track of index in buffer
 	unsigned char i = 0;
@@ -231,7 +261,7 @@ void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Contr
 void Send_Downlink(Downlink *outbound){
 	// Downlink message format -> $ND_MM_C_T*CS
 	g_LoRa_Send_Flag = 0;
-	(void)Write_SPI(&PORTA_OUT, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_SLEEP);
+	(void)Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_OP_MODE|0x80), LORA_MODE_SLEEP);
 
 	// Build downlink message
 	char message[] = {'$', 'N', 'D', outbound->ID[0], outbound->ID[1], outbound->Flight_Controller_Status, outbound->Tracking_Status, '*', 0, 0, 0};
@@ -243,11 +273,11 @@ void Send_Downlink(Downlink *outbound){
 	
 	// Set FIFO pointer to TX base address, and write message
 	unsigned char TX_base_adr = 0;
-	(void)Read_SPI(&PORTA_OUT,CS_LORA,LORA_REG_TX_ADR,&TX_base_adr,1);
-	(void)Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),TX_base_adr);
-	(void)Write_SPI(&PORTA_OUT,CS_LORA,(LORA_REG_PAYLOAD_LENGTH|0x80),sizeof(message)-1);
-	(void)Write_SPI_Stream(&PORTA_OUT, CS_LORA, (LORA_REG_FIFO|0x80), message, sizeof(message)-1);
-	(void)Write_SPI(&PORTA_OUT, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_TX);
+	(void)Read_SPI(g_Port_Lora, g_CS_Lora, LORA_REG_TX_ADR, &TX_base_adr, 1);
+	(void)Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_FIFO_ADR_PTR|0x80), TX_base_adr);
+	(void)Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_PAYLOAD_LENGTH|0x80), sizeof(message)-1);
+	(void)Write_SPI_Stream(g_Port_Lora, g_CS_Lora, (LORA_REG_FIFO|0x80), message, sizeof(message)-1);
+	(void)Write_SPI(g_Port_Lora, g_CS_Lora, (LORA_REG_OP_MODE|0x80), LORA_MODE_TX);
 	//unsigned char LoRa_TX_Status = 0;
 	//while(1){
 		//Read_SPI(&PORTA_OUT, CS_LORA, LORA_REG_IRQ_FLAGS, &LoRa_TX_Status, 1);
@@ -346,8 +376,6 @@ FC_Status Manage_FC_Status(FC_Status Desired, FC_Status Current){
 }
 
 // SOLOMON SYSTECH DRIVER (SSD) 1306 CODE
-
-volatile unsigned char g_Print_Flag = 0;
 
 unsigned char Setup_SSD(){
 	unsigned char Setup_status = 1;

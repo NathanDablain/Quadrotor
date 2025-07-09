@@ -4,6 +4,7 @@
 #include <avr/io.h>
 #include <avr/xmega.h>
 #include <avr/interrupt.h>
+#include <util/atomic.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -18,7 +19,6 @@
 #include "SSD.h"
 #include "LoRa.h"
 #include "Utilities.h"
-#include "Motors.h"
 #include "Controllers.h"
 #include "FC_Types.h"
 
@@ -48,6 +48,8 @@ extern volatile unsigned char g_Attitude_Observer_Update_Flag;
 extern volatile unsigned char g_Attitude_Observer_Predict_Flag;
 // Tracks when power is first applied to the motors
 extern volatile unsigned char g_Motor_Power_Flag;
+// Motor_Throttles-> Values from 0-1000 with 1000 being max throttle, motor order is: back, left, right, front
+extern volatile unsigned int g_Motor_Throttles[4];
 
 // Either sets or clears a bit within a bitmask depending on the input
 #define SET_BIT(current_val, position, val) ((val < 1) ? current_val&(~(val<<position)) : current_val|(val<<position))

@@ -1,7 +1,7 @@
-// Includes - generic
 #include <avr/io.h>
 #include <avr/xmega.h>
 #include <avr/interrupt.h>
+#include <util/atomic.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -13,23 +13,56 @@
 #include "Observer.h"
 #include "FC_Types.h"
 #include "SPI.h"
+
+volatile unsigned char g_BAR_Read_Flag = 0;
+static volatile unsigned char *g_Port_BAR = &PORTA_OUT;
+
+volatile unsigned char g_Accel_Read_Flag = 0;
+volatile unsigned char g_Gyro_Read_Flag = 0;
+static volatile unsigned char *g_Port_IMU = &PORTA_OUT;
+
+volatile unsigned char g_MAG_Read_Flag = 0;
+
+static volatile char g_GPS_Data[256];
+static volatile unsigned char g_GPS_Data_Index;
+volatile unsigned char g_GPS_Read_Flag = 0;
+
+volatile unsigned char g_Attitude_Observer_Update_Flag = 0;
+volatile unsigned char g_Attitude_Observer_Predict_Flag = 0;
+volatile unsigned char g_Altitude_Observer_Update_Flag = 0;
+volatile unsigned char g_Altitude_Observer_Predict_Flag = 0;
+
+#if defined(AVR128DB48)
+static volatile unsigned char *g_Port_MAG = &PORTB_OUT;
+static volatile unsigned char *g_Port_Dir_MAG = &PORTB_DIR;
+static unsigned char g_CS_IMU = 6;
+static unsigned char g_CS_BAR = 7;
+static unsigned char g_CS_MAG = 3;
+#elif defined(AVR64DA28)
+static volatile unsigned char *g_Port_MAG = &PORTA_OUT;
+static volatile unsigned char *g_Port_Dir_MAG = &PORTA_DIR;
+static unsigned char g_CS_IMU = 1;
+static unsigned char g_CS_BAR = 0;
+static unsigned char g_CS_MAG = 2;
+#endif
+
 // BAROMETER CODE
 // Bar -> 0 is a write, 1 is a read
 
-volatile unsigned char g_BAR_Read_Flag = 0;
-
 unsigned char Setup_Bar(){
-	unsigned char BAR_status = 2;
+	unsigned char BAR_status = 1;
 
-	BAR_status &= Write_SPI(&PORTA_OUT,CS_BAR,BAR_CTRL_REG2,0b00000100); // Resets device
+	PORTA_DIR |= (1<<g_CS_BAR);
+	*g_Port_BAR |= (1<<g_CS_BAR);
+
+	BAR_status &= Write_SPI(g_Port_BAR,g_CS_BAR,BAR_CTRL_REG2,0b00000100); // Resets device
 	Delay(10000);
-	BAR_status &= Write_SPI(&PORTA_OUT,CS_BAR,BAR_CTRL_REG1,0b01011100); // Sets ODR to 75Hz, enables LPF
-	BAR_status &= Write_SPI(&PORTA_OUT,CS_BAR,BAR_CTRL_REG2,0b00010010); // Enables low noise mode, maximum ODR for this mode is 75 Hz
+	BAR_status &= Write_SPI(g_Port_BAR,g_CS_BAR,BAR_CTRL_REG1,0b01011100); // Sets ODR to 75Hz, enables LPF
+	BAR_status &= Write_SPI(g_Port_BAR,g_CS_BAR,BAR_CTRL_REG2,0b00010010); // Enables low noise mode, maximum ODR for this mode is 75 Hz
 	//BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_FIFO_WTM,0b00010000); // Sets FIFO watermark level to 16
 	//BAR_status &= Write_SPI(PORT_BAR,CS_BAR,BAR_FIFO_CTRL,0b00000001); // Enables FIFO
 
-	if (BAR_status != 2){return 0;}
-	return 1;
+	return (BAR_status != 1)?(0):(1);
 }
 
 void Calibrate_Bar(States *Drone, Calibration_Data *cal_data, float base_altitude){
@@ -58,7 +91,7 @@ unsigned char Read_Bar(States *Drone, Calibration_Data *cal_data, float base_alt
 	//}
 	//pressure_oversampled >>= 4;
 	unsigned char Data[3];
-	Read_SPI(&PORTA_OUT, CS_BAR, (BAR_DATA_START|0x80), Data, sizeof(Data));
+	Read_SPI(g_Port_BAR, g_CS_BAR, (BAR_DATA_START|0x80), Data, sizeof(Data));
 	unsigned long pressure = Data[0] + (((unsigned int)Data[1])<<8) + (((unsigned long)Data[2])<<16);
 	Drone->Pressure_Altitude = Height_Bar(pressure);
 	Drone->Position_NED[2] = Drone->Position_NED[2]*0.9 - (Drone->Pressure_Altitude - (cal_data->altitude_bias + base_altitude))*0.1;
@@ -77,24 +110,24 @@ float Height_Bar(unsigned long pressure_LSB){
 // IMU CODE
 // IMU -> 0 is a write, 1 is a read
 
-volatile unsigned char g_Accel_Read_Flag = 0;
-volatile unsigned char g_Gyro_Read_Flag = 0;
-
 unsigned char Setup_IMU(){
 	// Configure IMU
-	unsigned char IMU_status = 2;
+	unsigned char IMU_status = 1;
 	
-	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_CTRL3_C, 0b00000001); // Reboot
+	PORTA_DIR |= (1<<g_CS_IMU);
+	*g_Port_IMU |= (1<<g_CS_IMU);
+	
+	IMU_status &= Write_SPI(g_Port_IMU, g_CS_IMU, IMU_CTRL3_C, 0b00000001); // Reboot
 	Delay(1000);
-	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_FIFO_CTRL1, 2*3*8); // Sets FIFO watermark to 24
-	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_FIFO_CTRL3, 0b00000001); // Puts accelerometer in FIFO
-	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_FIFO_CTRL5, 0b00110001); // Sets FIFO ODR to 416Hz, enables FIFO
-	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_CTRL1_XL, 0b01100000); // Sets Accelerometer ODR to 416 Hz, range to +-2g
-	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_CTRL2_G, 0b01100100); // Sets Gyro ODR to 416 Hz, range to +-500dps
-	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_CTRL3_C, 0b01000100); // Sets block data update, auto increment address
-	IMU_status &= Write_SPI(&PORTA_OUT, CS_IMU, IMU_CTRL8_XL, 0b11001000); // Sets Accelerometer LPF to ODR/9, low noise
+	IMU_status &= Write_SPI(g_Port_IMU, g_CS_IMU, IMU_FIFO_CTRL1, 2*3*8); // Sets FIFO watermark to 24
+	IMU_status &= Write_SPI(g_Port_IMU, g_CS_IMU, IMU_FIFO_CTRL3, 0b00000001); // Puts accelerometer in FIFO
+	IMU_status &= Write_SPI(g_Port_IMU, g_CS_IMU, IMU_FIFO_CTRL5, 0b00110001); // Sets FIFO ODR to 416Hz, enables FIFO
+	IMU_status &= Write_SPI(g_Port_IMU, g_CS_IMU, IMU_CTRL1_XL, 0b01100000); // Sets Accelerometer ODR to 416 Hz, range to +-2g
+	IMU_status &= Write_SPI(g_Port_IMU, g_CS_IMU, IMU_CTRL2_G, 0b01100100); // Sets Gyro ODR to 416 Hz, range to +-500dps
+	IMU_status &= Write_SPI(g_Port_IMU, g_CS_IMU, IMU_CTRL3_C, 0b01000100); // Sets block data update, auto increment address
+	IMU_status &= Write_SPI(g_Port_IMU, g_CS_IMU, IMU_CTRL8_XL, 0b11001000); // Sets Accelerometer LPF to ODR/9, low noise
 	
-	return (IMU_status != 2)?(0):(1);
+	return (IMU_status != 1)?(0):(1);
 }
 
 void Calibrate_IMU(States *Drone, Calibration_Data *cal_data){
@@ -114,11 +147,11 @@ unsigned char Read_Accel(States *Drone){
 	g_Accel_Read_Flag = 0;
 
 	unsigned char fifo_level = 0;
-	Read_SPI(&PORTA_OUT,CS_IMU,(IMU_FIFO_STATUS1|0x80),&fifo_level,1);
+	Read_SPI(g_Port_IMU,g_CS_IMU,(IMU_FIFO_STATUS1|0x80),&fifo_level,1);
 	if (fifo_level < 6*ACCEL_WINDOW_SIZE) return 0;
 	
 	unsigned char Data[6*ACCEL_WINDOW_SIZE];
-	Read_SPI(&PORTA_OUT, CS_IMU, (IMU_FIFO_DATA_START|0x80), Data, 6*ACCEL_WINDOW_SIZE);
+	Read_SPI(g_Port_IMU, g_CS_IMU, (IMU_FIFO_DATA_START|0x80), Data, 6*ACCEL_WINDOW_SIZE);
 	
 	signed long a_xyz_oversampled[3] = {0};
 	for (unsigned char i=0; i<ACCEL_WINDOW_SIZE; i++){
@@ -142,11 +175,11 @@ unsigned char Read_Gyro(States *Drone, Calibration_Data *cal_data){
 	g_Gyro_Read_Flag = 0;
 	
 	unsigned char gyro_status = 0;
-	Read_SPI(&PORTA_OUT, CS_IMU, (IMU_STATUS|0x80), &gyro_status, 1);
+	Read_SPI(g_Port_IMU, g_CS_IMU, (IMU_STATUS|0x80), &gyro_status, 1);
 	if (!(gyro_status & GYRO_DRDY_bm)) return 0;
 	
 	unsigned char Data[6] = {0};
-	Read_SPI(&PORTA_OUT, CS_IMU, (GYRO_DATA_START|0x80), Data, sizeof(Data));
+	Read_SPI(g_Port_IMU, g_CS_IMU, (GYRO_DATA_START|0x80), Data, sizeof(Data));
 	
 	Drone->w[0] = -((((signed int)Data[1])<<8) + Data[0]) - cal_data->w_bias[0];
 	Drone->w[1] = ((((signed int)Data[3])<<8) + Data[2]) - cal_data->w_bias[1];
@@ -157,17 +190,19 @@ unsigned char Read_Gyro(States *Drone, Calibration_Data *cal_data){
 // MAGNETOMETER CODE
 // Mag -> 0 is a write, 1 is a read
 
-volatile unsigned char g_MAG_Read_Flag = 0;
-
 unsigned char  Setup_Mag(){
-	unsigned char MAG_status = 2;
-	Write_SPI(&PORTB_OUT,CS_MAG,MAG_CFG_REG_A,0b01000000); // Reset device
-	Delay(10000);
-	MAG_status &= Write_SPI(&PORTB_OUT, CS_MAG, MAG_CFG_REG_C, 0b00110100); // Enables 4 wire SPI, disables I2C
-	MAG_status &= Write_SPI(&PORTB_OUT, CS_MAG, MAG_CFG_REG_A, 0b10001000); // Sets continuous mode, 50 Hz ODR, temp compensation enabled
-	MAG_status &= Write_SPI(&PORTB_OUT, CS_MAG, MAG_CFG_REG_B, 0b00000001); // Enables LPF
+	unsigned char MAG_status = 1;
 	
-	return (MAG_status != 2)?(0):(1);
+	*g_Port_Dir_MAG |= (1<<g_CS_MAG);
+	*g_Port_MAG |= (1<<g_CS_MAG);
+	
+	Write_SPI(g_Port_MAG,g_CS_MAG,MAG_CFG_REG_A,0b01000000); // Reset device
+	Delay(10000);
+	MAG_status &= Write_SPI(g_Port_MAG, g_CS_MAG, MAG_CFG_REG_C, 0b00110100); // Enables 4 wire SPI, disables I2C
+	MAG_status &= Write_SPI(g_Port_MAG, g_CS_MAG, MAG_CFG_REG_A, 0b10001000); // Sets continuous mode, 50 Hz ODR, temp compensation enabled
+	MAG_status &= Write_SPI(g_Port_MAG, g_CS_MAG, MAG_CFG_REG_B, 0b00000001); // Enables LPF
+	
+	return (MAG_status != 1)?(0):(1);
 }
 
 void Calibrate_Mag(States *Drone, Calibration_Data *cal_data){
@@ -184,7 +219,9 @@ void Calibrate_Mag(States *Drone, Calibration_Data *cal_data){
 			calculate_hard_iron = 1;
 		}
 		if (calculate_hard_iron){
-			initial_time = g_seconds;
+			ATOMIC_BLOCK(ATOMIC_FORCEON){
+				initial_time = g_seconds;
+			}
 			if (abs(cal_data->m_max[i])<abs(cal_data->m_min[i])){
 				cal_data->hard_iron[i] = cal_data->m_min[i]-cal_data->m_max[i];
 			}
@@ -194,9 +231,11 @@ void Calibrate_Mag(States *Drone, Calibration_Data *cal_data){
 			cal_data->hard_iron[i] >>= 1;
 		}
 	}
-
-	if ((g_seconds - initial_time) >= MAG_CAL_TIMEOUT){
-		cal_data->mag_cal_status = 1;
+	
+	ATOMIC_BLOCK(ATOMIC_FORCEON){
+		if ((g_seconds - initial_time) >= MAG_CAL_TIMEOUT){
+			cal_data->mag_cal_status = 1;
+		}
 	}
 }
 
@@ -204,11 +243,11 @@ unsigned char Read_Mag(States *Drone, Calibration_Data *cal_data){
 	g_MAG_Read_Flag = 0;
 	unsigned char Mag_drdy = 0;
 	
-	Read_SPI(&PORTB_OUT,CS_MAG,(MAG_STATUS|0x80),&Mag_drdy,1);
+	Read_SPI(g_Port_MAG,g_CS_MAG,(MAG_STATUS|0x80),&Mag_drdy,1);
 	if (!(Mag_drdy & MAG_DRDY_bm)) return 0;
 	
 	unsigned char Data[6] = {0};
-	Read_SPI(&PORTB_OUT, CS_MAG, (MAG_DATA_START|0x80), Data, 6);
+	Read_SPI(g_Port_MAG, g_CS_MAG, (MAG_DATA_START|0x80), Data, 6);
 	
 	for (unsigned char i=0;i<3;i++){
 		Drone->m_xyz_LSB[i] = (((signed int)Data[2*i+1])<<8) + Data[2*i];
@@ -222,13 +261,11 @@ unsigned char Read_Mag(States *Drone, Calibration_Data *cal_data){
 }
 
 // GPS CODE
-static volatile char g_GPS_Data[256];
-static volatile unsigned char g_GPS_Data_Index;
-volatile unsigned char g_GPS_Read_Flag = 0;
 
 unsigned char Setup_GPS(){
+#if defined(AVR128DB48)
 	USART3_BAUD = 2500; // Corresponds to 38400 baud rate
-	PORTB_DIR |= (1<<0);
+	PORTB_DIR |= (1<<0); // TX line as output
 	USART3_CTRLA |= USART_RXCIE_bm;
 	USART3_CTRLB |= USART_RXEN_bm | USART_TXEN_bm;
 	//USART3_DBGCTRL |= 1;
@@ -242,6 +279,23 @@ unsigned char Setup_GPS(){
 		USART_Transmit(Increase_Baud, sizeof(Increase_Baud));
 		USART3_BAUD = 208; // Corresponds to 460800 baud rate
 	}
+#elif defined(AVR64DA28)
+	USART2_BAUD = 2500; // Corresponds to 38400 baud rate
+	PORTF_DIR |= (1<<0); // TX line as output
+	USART2_CTRLA |= USART_RXCIE_bm;
+	USART2_CTRLB |= USART_RXEN_bm | USART_TXEN_bm;
+	//USART2_DBGCTRL |= 1;
+	Delay(10);
+	if (USART2_RXDATAH & USART_FERR_bm){
+		USART2_BAUD = 208; // Corresponds to 460800 baud rate
+		USART2_RXDATAH = USART_FERR_bm;
+	}
+	else{
+		char Increase_Baud[] = {0xB5,0x62,0x06,0x00,0x14,0x00,0x01,0x00,0x00,0x00,0xD0,0x08,0x00,0x00,0x00,0x08,0x07,0x00,0x07,0x00,0x03,0x00,0x00,0x00,0x00,0x00,0x0C,0xBC};
+		USART_Transmit(Increase_Baud, sizeof(Increase_Baud));
+		USART2_BAUD = 208; // Corresponds to 460800 baud rate
+	}
+#endif
 	Delay(100000);
 	
 	// Disable all the messages we don't want
@@ -294,8 +348,12 @@ unsigned char Setup_GPS(){
 	USART_Transmit(Enable_BDS_8Hz, sizeof(Enable_BDS_8Hz));
 	char Enable_GAL_8Hz[] = {0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x7D, 0x00, 0x01, 0x00, 0x04, 0x00, 0x96, 0xAE};
 	USART_Transmit(Enable_GAL_8Hz, sizeof(Enable_GAL_8Hz));
-
+	
+#if defined(AVR128DB48)
 	return (USART3_RXDATAH & USART_FERR_bm) ? 0 : 1;
+#elif defined(AVR64DA28)
+	return (USART2_RXDATAH & USART_FERR_bm) ? 0 : 1;
+#endif
 }
 
 void Calibrate_GPS(States *Drone, Calibration_Data *cal_data){
@@ -460,6 +518,7 @@ void LLA_to_NED(signed long Latitude, signed long Longitude, float Position_NED[
 	
 }
 
+#if defined(AVR128DB48)
 void USART_Transmit(char* Message, unsigned char length){
 	for (unsigned char i=0;i<length;i++){
 		USART3_TXDATAL = *Message++;
@@ -476,13 +535,27 @@ ISR(USART3_RXC_vect){
 		g_GPS_Data[g_GPS_Data_Index++] = temp;
 	}
 }
+#elif defined(AVR64DA28)
+void USART_Transmit(char* Message, unsigned char length){
+	for (unsigned char i=0;i<length;i++){
+		USART2_TXDATAL = *Message++;
+		while(!(USART2_STATUS & USART_TXCIF_bm));
+		USART2_STATUS = USART_TXCIF_bm;
+	}
+	Delay(1000);
+}
+
+ISR(USART2_RXC_vect){
+	while(USART2_STATUS & USART_RXCIF_bm){
+		char temp = USART2_RXDATAL;
+		if (temp == 10){g_GPS_Read_Flag = 1;}
+		g_GPS_Data[g_GPS_Data_Index++] = temp;
+	}
+}
+#endif
+
 
 // OBSERVER CODE
-
-volatile unsigned char g_Attitude_Observer_Update_Flag = 0;
-volatile unsigned char g_Attitude_Observer_Predict_Flag = 0;
-volatile unsigned char g_Altitude_Observer_Update_Flag = 0;
-volatile unsigned char g_Altitude_Observer_Predict_Flag = 0;
 
 void Attitude_Observer_Update(States *Drone){
 	g_Attitude_Observer_Update_Flag = 0;
