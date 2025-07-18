@@ -2,28 +2,30 @@
 
 volatile unsigned long g_seconds = 0;
 volatile unsigned char print_flag_2 = 0;
+volatile unsigned char g_GPS_setup_status = 0;
 
 unsigned char Setup(){
 	if (RSTCTRL_RSTFR & RSTCTRL_PORF_bm){Delay(100000);} // Necessary to stabilize IC's on a cold start
-	//RSTCTRL_RSTFR = RSTCTRL_RSTFR;
 	unsigned char Setup_Bitmask = 0;
 	// [7]		[6]		[5]		[4]		[3]		[2]		[1]		[0]
 	//					SSD	   LoRa	    MAG		IMU		BAR		GPS
 	
 	_PROTECTED_WRITE (CLKCTRL_OSCHFCTRLA, (CLKCTRL_FRQSEL_24M_gc|CLKCTRL_AUTOTUNE_bm)); // Sets CPU clock to 24 MHz
 	while(!(CLKCTRL_MCLKSTATUS & CLKCTRL_OSCHFS_bm)); // Wait for clock to stabilize
-	//unsigned char GPS_setup_status = Setup_GPS();
+	g_GPS_setup_status = Setup_GPS();
 	Setup_SPI();
 	Setup_TWI();
 	Setup_ADC();
 	//unsigned char LoRa_setup_status = Setup_LoRa();
-	//unsigned char MAG_setup_status = Setup_Mag();
-	//unsigned char IMU_setup_status = Setup_IMU();
-	//unsigned char BAR_setup_status = Setup_Bar();
+	unsigned char LoRa_setup_status = 1;
+	unsigned char MAG_setup_status = Setup_Mag();
+	unsigned char IMU_setup_status = Setup_IMU();
+	unsigned char BAR_setup_status = Setup_Bar();
 	unsigned char SSD_setup_status = Setup_SSD();
-	//Setup_Bitmask |= (BAR_setup_status<<NAV_BAR_bp) | (IMU_setup_status<<NAV_IMU_bp) | (MAG_setup_status<<NAV_MAG_bp)
-	//| (LoRa_setup_status<<NAV_LORA_bp) | (SSD_setup_status<<SU_SSD_bp);
+	Setup_Bitmask |= (BAR_setup_status<<NAV_BAR_bp) | (IMU_setup_status<<NAV_IMU_bp) | (MAG_setup_status<<NAV_MAG_bp)
+	| (LoRa_setup_status<<NAV_LORA_bp) | (SSD_setup_status<<SU_SSD_bp);
 	Setup_Bitmask = NAV_SENSORS_bm;
+	Run_Motors(1);
 	Setup_Timers();
 	sei();
 	return Setup_Bitmask;
@@ -38,17 +40,10 @@ void Setup_ADC(){
 	ADC0_CTRLB |= ADC_SAMPNUM_ACC64_gc;
 	// Set extended sampling time
 	ADC0_SAMPCTRL = 100;
-#if defined(AVR128DB48)
-	// Set Mux position to AIN6
-	ADC0_MUXPOS |= ADC_MUXPOS_AIN6_gc;
-	// Setup Pin D6 to trigger interrupt when brought high for the first time
-	PORTD_PIN6CTRL |= PORT_ISC_RISING_gc;
-#elif defined(AVR64DA28)
-	// Set Mux position to AIN2
-	ADC0_MUXPOS |= ADC_MUXPOS_AIN2_gc;
-	// Setup Pin D2 to trigger interrupt when brought high for the first time
-	PORTD_PIN2CTRL |= PORT_ISC_RISING_gc;
-#endif
+	// Set MUX position
+	ADC0_MUXPOS |= ADC_MUX_ESC;
+	// Setup ESC voltage pin to trigger interrupt when brought high for the first time
+	ADC_PIN_CTRL |= PORT_ISC_RISING_gc;
 	// Enable ADC
 	ADC0_CTRLA |= ADC_ENABLE_bm;
 }
@@ -72,7 +67,7 @@ void Setup_Timers(){
 	RTC_INTCTRL |= RTC_CMP_bm;
 	RTC_CMP = 32768;
 	//----------------------------------------------------------//
-	//--------Setup Timer/Counter A0 and A1 for output compare---------//
+	//--------Setup Timer/Counter A0 for output compare---------//
 	// Is triggered every 10 ms, is used by:
 	//  -> Motors
 	TCA0_SINGLE_CTRLA |= TCA_SINGLE_CLKSEL_DIV2_gc;
@@ -113,23 +108,23 @@ void Setup_Timers(){
 #elif defined(AVR64DA28)
 	//-------------------------------------------------------//
 	//-------Setup Timer/Counter B2 for output compare-------//
-	// Is triggered every 10 ms, is used by:
+	// Is triggered every 2 ms, is used by:
 	//  -> Motors
 	TCB2_CTRLA |= TCB_CLKSEL_DIV2_gc;
 	TCB2_INTCTRL |= TCB_CAPT_bm;
 	//----------------------------------------------------------//
 	//--------Setup Timer/Counter D for output compare---------//
-	// Generates an interrupt every 286 us (3500 Hz), is used by:
+	// Generates an interrupt every 2 ms (500 Hz), is used by:
 	//  -> Oneshot protocol setting motor speed
 	// In one ramp mode goes CMPASET->CMPACLR->CMPBSET->COMPBCLR
-	TCD0_CTRLA |= TCD_CNTPRES_DIV4_gc;
-	TCD0_CMPBCLR = 1716;
+	TCD0_CTRLA |= TCD_CNTPRES_DIV32_gc;
+	TCD0_CMPBCLR = 1875;
 	TCD0_INTCTRL |= TCD_OVF_bm;
 	while(!(TCD0_STATUS & TCD_ENRDY_bm));
 	TCD0_CTRLA |= TCD_ENABLE_bm;
 #endif
 }
-
+volatile unsigned int g_counter = 0;
 int main(){
 	unsigned char Setup_Bitmask = Setup();
 	// If the sensors we need for navigation initialized successfully, enter main loop
@@ -145,9 +140,9 @@ int main(){
 		// up_link-> contains the last information sent to the drone via LoRa uplink
 		Uplink up_link = {0};
 		// down_link-> contains the flight controller calibration status and how well the drone is tracking references
-		Downlink down_link = {0};
+		//Downlink down_link = {0};
 		// Flight_Controller_Status-> Controls the mode of operation the drone is in, changed by uplinks from the ground controller
-		FC_Status Flight_Controller_Status = Standby;
+		FC_Status Flight_Controller_Status = Calibrating;
 		// Holds sensor calibration data 
 		Calibration_Data cal_data = {0};
 		// Desired_Thrust-> Controlled by state feedback, in units of N
@@ -168,15 +163,18 @@ int main(){
 				//Print_Output(&Drone, &cal_data, &up_link);
 			}
 			if (print_flag_2){
-				//volatile unsigned int volatage_motors = Sample_ADC();
+				unsigned int volatage_motors = Sample_ADC();
 				print_flag_2 = 0;
 				char buffer[4][20] = {0};
 				unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%4.2f, %4.2f, %4.2f", Drone.Euler[0], Drone.Euler[1], Drone.Euler[2]);
+				//unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%li", Drone.Latitude);
 				Print_Page(0, buffer[0], length_to_print);
-				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%4.2f , %4.2f",-Drone.Position_NED[2],Desired_Thrust);
-				//length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%d, %d, %d",Drone.w[0],Drone.w[1],Drone.w[2]);
+				//length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%4.2f , %4.2f",-Drone.Position_NED[2],Desired_Thrust);
+				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%li",Drone.Longitude);
 				Print_Page(1, buffer[1], length_to_print);
-				length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%5.5f,%5.5f",Desired_Moments[0], Desired_Moments[1]);
+				length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%ld , %d, %d",g_seconds,volatage_motors,g_counter);
+				g_counter = 0;
+				//length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%5.5f,%5.5f",Desired_Moments[0], Desired_Moments[1]);
 				//length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%d, %d, %d", Drone.g_vec[0], Drone.g_vec[1], Drone.g_vec[2]);
 				Print_Page(2, buffer[2], length_to_print);
 				ATOMIC_BLOCK(ATOMIC_FORCEON){
@@ -184,24 +182,27 @@ int main(){
 				}
 				Print_Page(3, buffer[3], length_to_print);
 			}
+			
+			// GPS -> Check when full message is received
+			if (g_GPS_Read_Flag && g_GPS_setup_status) Read_GPS(&Drone, &cal_data);
 
 			// Barometer -> check 100Hz, samples at 75Hz
-			//if (g_BAR_Read_Flag >= 2) Read_Bar(&Drone, &cal_data, up_link.Base_altitude);
-//
-			//// Magnetometer -> check at 200 Hz, samples at 50Hz
-			//if (g_MAG_Read_Flag) Read_Mag(&Drone, &cal_data);
-			//
-			//// Accelerometer -> check at 200 Hz, samples at 52Hz
-			//if (g_Accel_Read_Flag) Read_Accel(&Drone);
-//
-			//// Gyro -> Check at 1666Hz, samples at 416Hz
-			//if (g_Gyro_Read_Flag) Read_Gyro(&Drone, &cal_data); 
-//
-			//// Attitude Observer update -> 50Hz
-			//if (g_Attitude_Observer_Update_Flag >= 4) Attitude_Observer_Update(&Drone);
-				//
-			//// Attitude Observer predict -> 400Hz
-			//if (g_Attitude_Observer_Predict_Flag >= 4) Attitude_Observer_Predict(&Drone);
+			if (g_BAR_Read_Flag >= 2) Read_Bar(&Drone, &cal_data, up_link.Base_altitude);
+
+			// Magnetometer -> check at 200 Hz, samples at 50Hz
+			if (g_MAG_Read_Flag) Read_Mag(&Drone, &cal_data);
+			
+			// Accelerometer -> check at 200 Hz, samples at 52Hz
+			if (g_Accel_Read_Flag) Read_Accel(&Drone);
+
+			// Gyro -> Check at 1666Hz, samples at 416Hz
+			if (g_Gyro_Read_Flag) Read_Gyro(&Drone, &cal_data); 
+
+			// Attitude Observer update -> 50Hz
+			if (g_Attitude_Observer_Update_Flag >= 4) Attitude_Observer_Update(&Drone);
+				
+			// Attitude Observer predict -> 400Hz
+			if (g_Attitude_Observer_Predict_Flag >= 4) Attitude_Observer_Predict(&Drone);
 
 			//--------------Status code-------------//
 			if (Flight_Controller_Status == Standby){
@@ -226,6 +227,8 @@ int main(){
 				if (cal_data.imu_cal_status == 0) Calibrate_IMU(&Drone, &cal_data);
 				
 				//if ((cal_data.motor_cal_status == 0)) cal_data.motor_cal_status = 1;
+				if (PORTD_IN & ADC_PIN) g_Motor_Power_Flag = 1;
+				
 				if ((cal_data.motor_cal_status == 0) && g_Motor_Power_Flag) Calibrate_Motors(&cal_data);
 
 				if (cal_data.bar_cal_status && cal_data.mag_cal_status && cal_data.imu_cal_status && cal_data.motor_cal_status) Flight_Controller_Status = Ready;
@@ -297,28 +300,22 @@ ISR(TCB1_INT_vect){
 
 #if defined(AVR128DB48)
 ISR(TCB2_INT_vect){
-	if (g_Motor_Power_Flag) Run_Motors();
+	if (g_Motor_Power_Flag) Run_Motors(0);
 	TCB2_INTFLAGS = TCB_CAPT_bm;
 }
 #elif defined(AVR64DA28)
 ISR(TCD0_OVF_vect){
-	if (g_Motor_Power_Flag) Run_Motors();
+	++g_counter;
+	if (g_Motor_Power_Flag) Run_Motors(0);
+	g_Motor_Cal_Flag = 1;
 	TCD0_INTFLAGS = TCD_OVF_bm;
 }
 #endif
 
 ISR(PORTD_PORT_vect){
-#if defined(AVR128DB48)
-	PORTD_INTFLAGS = PIN6_bm;
+	PORTD_INTFLAGS = ADC_PIN;
 	Delay(1000000);
 	g_Motor_Power_Flag = 1;
 	// Disable future interrupts
-	PORTD_PIN6CTRL &= ~(PORT_ISC_RISING_gc);
-#elif defined(AVR64DA28)
-	PORTD_INTFLAGS = PIN2_bm;
-	Delay(1000000);
-	g_Motor_Power_Flag = 1;
-	// Disable future interrupts
-	PORTD_PIN2CTRL &= ~(PORT_ISC_RISING_gc);
-#endif
+	ADC_PIN_CTRL &= ~(PORT_ISC_RISING_gc);
 }

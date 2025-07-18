@@ -43,7 +43,7 @@ void Euler_Control(float Current_Euler[3], float Commanded_Euler[3], float desir
 
 void Set_throttles(float desired_thrust, float desired_moments[3], const Drone_Constants *Constants);
 
-void Run_Motors();
+void Run_Motors(unsigned char setup_flag);
 
 void Run_Guidance(Reference *Desired_States, Reference *Commanded_States);
 

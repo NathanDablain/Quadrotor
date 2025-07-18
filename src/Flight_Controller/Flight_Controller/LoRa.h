@@ -12,37 +12,54 @@
 
 // Ground Controller sends an uplink at 1Hz, Flight controller should respond with a downlink upon receiving the uplink
 // If the Flight controller misses three uplinks, it will enter a landing mode
+//#if defined(AVR128DB48)
+	#define LORA_REG_OP_MODE 0x01
+	#define LORA_REG_F_MSB 0x06
+	#define LORA_REG_F_MIDB 0x07
+	#define LORA_REG_F_LSB 0x08
+	#define LORA_REG_RX_N_BYTES 0x13
+	#define LORA_REG_FIFO_ADR_PTR 0x0D
+	#define LORA_REG_RX_ADR 0x10
+	#define LORA_REG_TX_ADR 0x0E
+	#define LORA_REG_FIFO 0x00
+	#define LORA_REG_PAYLOAD_LENGTH 0x22
+	#define LORA_REG_PA_CONFIG 0x09
+	#define LORA_REG_IRQ_FLAGS_MASK 0x11
+	#define LORA_REG_IRQ_FLAGS 0x12
+	#define LORA_REG_OCP 0x0B
+	#define LORA_REG_PA_RAMP 0x0A
 
-#define LORA_REG_OP_MODE 0x01
-#define LORA_REG_F_MSB 0x06
-#define LORA_REG_F_MIDB 0x07
-#define LORA_REG_F_LSB 0x08
-#define LORA_REG_RX_N_BYTES 0x13
-#define LORA_REG_FIFO_ADR_PTR 0x0D
-#define LORA_REG_RX_ADR 0x10
-#define LORA_REG_TX_ADR 0x0E
-#define LORA_REG_FIFO 0x00
-#define LORA_REG_PAYLOAD_LENGTH 0x22
-#define LORA_REG_PA_CONFIG 0x09
-#define LORA_REG_IRQ_FLAGS_MASK 0x11
-#define LORA_REG_IRQ_FLAGS 0x12
-#define LORA_REG_OCP 0x0B
-#define LORA_REG_PA_RAMP 0x0A
+	#define LORA_MODE_SLEEP 0b10000000
+	#define LORA_MODE_STDBY 0b10000001
+	#define LORA_MODE_RXCONTINUOUS 0b10000101
+	#define LORA_MODE_TX 0b10000011
 
-#define LORA_MODE_SLEEP 0b10000000
-#define LORA_MODE_STDBY 0b10000001
-#define LORA_MODE_RXCONTINUOUS 0b10000101
-#define LORA_MODE_TX 0b10000011
+	#define LORA_FREQ_915_HB 0b11100100
+	#define LORA_FREQ_915_MB 0b11000000
+	#define LORA_FREQ_915_LB 0b00000000
 
-#define LORA_FREQ_915_HB 0b11100100
-#define LORA_FREQ_915_MB 0b11000000
-#define LORA_FREQ_915_LB 0b00000000
+	#define LORA_PA_20dBm 0b11111111
+	#define LORA_PA_14dBm 0b01111111
 
-#define LORA_PA_20dBm 0b11111111
-#define LORA_PA_14dBm 0b01111111
-
-#define LORA_MASK_TX 0b11110111
-#define LORA_IRQ_TX_DONE 0b00001000
+	#define LORA_MASK_TX 0b11110111
+	#define LORA_IRQ_TX_DONE 0b00001000
+//#elif defined(AVR64DA28)
+	//#define LORA_SETSLEEP 0x84
+	//#define LORA_SETSTANDBY 0x80
+	//#define LORA_SETTX 0x83
+	//#define LORA_SETRX 0x82
+	//#define LORA_SETREGULATOR 0x96
+	//#define LORA_CALIBRATE_IMAGE 0x98
+	//#define LORA_SETPA 0x95
+	//
+	//#define LORA_WRITE_BUFFER 0x0E
+	//#define LORA_READ_BUFFER 0x1E
+	//
+	//#define LORA_SET_RF_FREQ 0x86
+	//#define LORA_SET_PACKET 0x8A
+	//#define LORA_SET_TX_PARAMS 0x8E
+	//#define LORA_SET_BUFFER_BASE_ADR 0x8F
+//#endif
 
 #define DOWNLINK_SIZE 10
 #define UPLINK_SIZE 35

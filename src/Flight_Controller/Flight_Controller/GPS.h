@@ -15,6 +15,6 @@ void Read_GPS(States *Drone, Calibration_Data *cal_data);
 
 void Calibrate_GPS(States *Drone, Calibration_Data *cal_data);
 
-void LLA_to_NED(signed long Latitude, signed long Longitude, float Position_NED[3], float Reference_Position_ecef[3]);
+void LLA_to_NED(States *Drone, float Reference_Position_ecef[3]);
 
 #endif

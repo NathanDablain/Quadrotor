@@ -4,6 +4,7 @@ volatile unsigned char g_Motor_Power_Flag = 0;
 volatile unsigned char g_Guidance_Flag = 0;
 volatile unsigned char g_Altitude_Control_Flag = 0;
 volatile unsigned char g_Motor_Run_Flag = 0;
+volatile unsigned char g_Motor_Cal_Flag = 0;
 volatile unsigned int g_Motor_Throttles[4] = {0};
 #if defined(AVR128DB48)
 static unsigned char g_Motor1_Pin = PIN0_bm;
@@ -11,10 +12,10 @@ static unsigned char g_Motor2_Pin = PIN1_bm;
 static unsigned char g_Motor3_Pin = PIN2_bm;
 static unsigned char g_Motor4_Pin = PIN3_bm;
 #elif defined(AVR64DA28)
-static unsigned char g_Motor1_Pin = PIN5_bm;
-static unsigned char g_Motor2_Pin = PIN4_bm;
-static unsigned char g_Motor3_Pin = PIN3_bm;
-static unsigned char g_Motor4_Pin = PIN2_bm;
+static unsigned char g_Motor1_Pin = PIN6_bm;
+static unsigned char g_Motor2_Pin = PIN5_bm;
+static unsigned char g_Motor3_Pin = PIN4_bm;
+static unsigned char g_Motor4_Pin = PIN3_bm;
 #endif
 
 Drone_Constants Initialize_Drone_Constants(){
@@ -41,19 +42,22 @@ void Calibrate_Motors(Calibration_Data *cal_data){
 		g_Motor_Throttles[3] = 1000;
 	}
 
-	Delay(200000);
+	Delay(4000);
 	while (--counter){
 		for (unsigned char i = 0; i < 4; i++){
 			ATOMIC_BLOCK(ATOMIC_FORCEON){
 				 g_Motor_Throttles[i] = counter;
 			}
 		}
-		Delay(2000);
+		while (!g_Motor_Cal_Flag);
+		g_Motor_Cal_Flag = 0;
+		//Delay(3000);
 	}
 	ATOMIC_BLOCK(ATOMIC_FORCEON){
 		 memset((unsigned int*)g_Motor_Throttles, 0, 8);
 	}
 	cal_data->motor_cal_status = 1;
+	Delay(400000);
 }
 
 void Safety_Check(States *Drone, FC_Status *Flight_Controller_Status){
@@ -232,19 +236,20 @@ void Set_throttles(float desired_thrust, float desired_moments[3], const Drone_C
 	}
 }
 
-void Run_Motors(){
+void Run_Motors(unsigned char setup_flag){
 // ESC Interface - PPM (OneShot) control
-// Inputs - Desired motor throttles (0-100)
-// Outputs - 3500 Hz, 125-250 us waveform to ESC
+// Inputs - Desired motor throttles (0-1000)
+// Outputs - 400 Hz, 1-2 ms waveform to ESC
 // Occurs within ISR, so don't need to worry about g_Motor_Throttles being changed while accessed
-	// We want to map 0:1000 to 1500:3000 (125:250 us)
+	// We want to map 0:1000 to 12000:24000 (1:2 ms)
 	static unsigned int motor_lookup[1001] = {0};
 	// Build the lookup table if it hasn't been built yet, enable pins for output
-	if (!(motor_lookup[0])){ 
+	if (setup_flag){ 
 		for (unsigned int i=0;i<1001;i++){
-			motor_lookup[i] = ((3*i)/2) + 1500;
+			motor_lookup[i] = 12*i + 12000;
 		}
 		PORTD_DIR |= g_Motor1_Pin | g_Motor2_Pin | g_Motor3_Pin | g_Motor4_Pin; 
+		return;
 	}
 	unsigned int mapped_throttle_commands[4] = {0};
 	// Map commands, saturate if out of bounds
@@ -254,12 +259,12 @@ void Run_Motors(){
 	}
 	// Disable Timer
 	TCA0_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
+	// Reset timer counts
+	TCA0_SINGLE_CNT = 0;
 	// Set motor throttles
 	TCA0_SINGLE_CMP0 = mapped_throttle_commands[0]; // Motor 1, back
 	TCA0_SINGLE_CMP1 = mapped_throttle_commands[1]; // Motor 2, left
 	TCA0_SINGLE_CMP2 = mapped_throttle_commands[2]; // Motor 3, right
-	// Reset timer counts
-	TCA0_SINGLE_CNT = 0;
 	// Set pins high
 	PORTD_OUT |= g_Motor1_Pin | g_Motor2_Pin | g_Motor3_Pin;
 	// Start Timers
@@ -270,8 +275,8 @@ void Run_Motors(){
 	PORTD_OUT |= g_Motor4_Pin;
 	TCA1_SINGLE_CTRLA |= TCA_SINGLE_ENABLE_bm;
 #elif defined(AVR64DA28)
-	TCB2_CCMP = mapped_throttle_commands[3]; // Motor 4, front
 	TCB2_CNT = 0;
+	TCB2_CCMP = mapped_throttle_commands[3]; // Motor 4, front
 	PORTD_OUT |= g_Motor4_Pin;
 	TCB2_CTRLA |= TCB_ENABLE_bm;
 #endif

@@ -15,6 +15,7 @@
 #include "IMU.h"
 #include "Mag.h"
 #include "Bar.h"
+#include "GPS.h"
 #include "Observer.h"
 #include "SSD.h"
 #include "LoRa.h"
@@ -50,6 +51,8 @@ extern volatile unsigned char g_Attitude_Observer_Predict_Flag;
 extern volatile unsigned char g_Motor_Power_Flag;
 // Motor_Throttles-> Values from 0-1000 with 1000 being max throttle, motor order is: back, left, right, front
 extern volatile unsigned int g_Motor_Throttles[4];
+
+extern volatile unsigned char g_Motor_Cal_Flag;
 
 // Either sets or clears a bit within a bitmask depending on the input
 #define SET_BIT(current_val, position, val) ((val < 1) ? current_val&(~(val<<position)) : current_val|(val<<position))
