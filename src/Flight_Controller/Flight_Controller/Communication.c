@@ -5,17 +5,16 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "FC_Types.h"
 #include "SPI.h"
 #include "TWI.h"
 #include "LoRa.h"
 #include "Utilities.h"
 #include "SSD.h"
-#include "FC_Types.h"
 
 // SERIAL PERIPHERAL INTERFACE (SPI) CODE
 
 volatile unsigned char g_LoRa_Check_Flag = 0;
-volatile unsigned char g_LoRa_Send_Flag = 0;
 volatile unsigned char g_Print_Flag = 0;
 
 void Setup_SPI(){
@@ -75,7 +74,7 @@ void Write_SPI(volatile register8_t *Port, unsigned char Pin, unsigned char Regi
 	
 }
 
-void Write_SPI_Stream(volatile register8_t *Port, unsigned char Pin, unsigned char Register, char *Data, unsigned char Data_Length){
+void Write_SPI_Stream(volatile register8_t *Port, unsigned char Pin, unsigned char Register, unsigned char *Data, unsigned char Data_Length){
 	unsigned char i = 0;
 	
 	*Port &= ~Pin;
@@ -93,6 +92,21 @@ void Write_SPI_Stream(volatile register8_t *Port, unsigned char Pin, unsigned ch
 	
 }
 
+void SPI_Transfer(volatile register8_t *Port, unsigned char Pin, unsigned char *Data_in, char *Data_out, unsigned char Data_length){
+	unsigned char i = 0;
+		
+	*Port &= ~Pin;
+		
+	while (i<Data_length){
+		PRIMARY_SPI.DATA = Data_in[i];
+		while (!(PRIMARY_SPI.INTFLAGS & SPI_IF_bm));
+		//PRIMARY_SPI.INTFLAGS &= ~SPI_IF_bm;
+		Data_out[i] = PRIMARY_SPI.DATA;
+		i++;
+	}
+		
+	*Port |= Pin;
+}
 // TWO WIRE INTERFACE (TWI) CODE
 void Setup_TWI(){
 	TWI0_CTRLA |= TWI_SDAHOLD_500NS_gc;
@@ -129,57 +143,151 @@ unsigned char Write_TWI(unsigned char Slave_Address, unsigned char Address_Byte,
 }
 
 // LONG RANGE (LORA) CODE
+void Run_LORA(Uplink *uplink, FC_Status *Flight_Controller_Status){
+	static LORA_Status radio_status;
+	static Downlink downlink = {0};
+	unsigned char rx_timeout[3];
+	unsigned char lora_irq_clear[2] = {0};
+	unsigned char uplink_status;
+	
+	switch (radio_status){
+		case LORA_Standby:
+			// Put LORA in RXContinuous mode
+			memset(rx_timeout, 0xFF, sizeof(rx_timeout));
+			Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_SETRX, rx_timeout, sizeof(rx_timeout));
+			radio_status = LORA_Receiving;
+			break;
+			
+		case LORA_Receiving:				
+			uplink_status = Receive_Uplink(uplink, &downlink, Flight_Controller_Status);
+			if (uplink_status) radio_status = LORA_Ready_to_Transmit;
+			break;
+			
+		case LORA_Ready_to_Transmit:
+			Send_Downlink(&downlink);
+			radio_status = LORA_Transmitting;
+			break;
+			
+		case LORA_Transmitting:
+			// LORA busy pin goes low when the chip has reached a stable state
+			if (!(LORA_BUSY_PORT.OUT & LORA_BUSY_PIN)){
+				// LORA IRQ status will indicate if the transmission is complete yet
+				unsigned char lora_irq_status[4] = {0};
+				Read_SPI(&PORT_LORA.OUT, CS_LORA, LORA_GET_IRQ_STATUS, lora_irq_status, sizeof(lora_irq_status));
+				if (lora_irq_status[2] & LORA_TX_DONE_IRQ){
+					radio_status = LORA_Standby;
+					lora_irq_clear[1] = LORA_TX_DONE_IRQ;
+					Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_CLEAR_IRQ_STATUS, lora_irq_clear, sizeof(lora_irq_clear));
+				}
+			}
+			break;
+			
+	}
+
+	g_LoRa_Check_Flag = 0;
+
+}
 
 unsigned char Setup_LoRa(){
-	unsigned char LoRa_status = 1;
 	
 	PORT_LORA.DIR |= CS_LORA;
 	PORT_LORA.OUT |= CS_LORA;
-	PORTD.DIR |= PIN0_bm;
-	PORTC.DIR &= ~PIN0_bm;
-	PORTD.OUT &= ~PIN0_bm;
-	Delay(100000);
-	PORTD.OUT |= PIN0_bm;
-	Delay(100000);
-	unsigned char current_address = 0;
-	Read_SPI(&PORT_LORA.OUT, CS_LORA, LORA_REG_TX_ADR, &current_address, 1);
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_SLEEP); // Set LoRa mode, still in sleep
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_F_MSB|0x80), LORA_FREQ_915_HB); // Set frequency to 915 MHz
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_F_MIDB|0x80), LORA_FREQ_915_MB);
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_F_LSB|0x80), LORA_FREQ_915_LB);
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_IRQ_FLAGS_MASK|0x80), LORA_MASK_TX); // Masks all interrupt flags except TX complete
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_RXCONTINUOUS); // Set to continuously receive
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_PA_CONFIG|0x80), LORA_PA_20dBm); // Set power to 20 dBm
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_OCP|0x80), 0b00100001); // Set maximum current to 50 mA
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_PA_RAMP|0x80), 0b00000010); // Set PA ramp time to 1ms
+	// Take CS pin low, wait for busy to go low to indicate LORA modem is out of sleep mode
+	LORA_BUSY_PORT.DIR &= ~LORA_BUSY_PIN;
+	PORT_LORA.OUT &= ~CS_LORA;
+	LORA_Delay(50000);
+	PORT_LORA.OUT |= CS_LORA;
+	// Put LORA in standby mode
+	Write_SPI(&PORT_LORA.OUT, CS_LORA, LORA_SETSTANDBY, 0);
+	LORA_Delay(50000);
+	float frequency_sensitivity = (pow(2,25))/(32000000.0);
+	unsigned long frequency = (unsigned long)(910000000.0*frequency_sensitivity); // Corresponds to 915MHz -> frequency = freq_Hz * (2^25/32e6)
+	unsigned char freq_data[4] = {(unsigned char)(frequency>>24), (unsigned char)(frequency>>16), (unsigned char)(frequency>>8), (unsigned char)(frequency)};
+	// Set frequency to 915MHz	
+	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_SET_RF_FREQ, freq_data, sizeof(freq_data)); 
+	LORA_Delay(10000);
+	// Set packet type to LORA
+	Write_SPI(&PORT_LORA.OUT, CS_LORA, LORA_SET_PACKET, 0x01);
+	LORA_Delay(10000);
+	unsigned char packet_type[2] = {0};
+	// Confirm packet type was set to LORA
+	Read_SPI(&PORT_LORA.OUT, CS_LORA, 0x11, packet_type, sizeof(packet_type)); 
+	if (packet_type[1] != 1) return 0;
+	// Set power to 15dBm and ramp time to 80 us
+	unsigned char tx_params[2] = {0x12, 0x07};
+	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_SET_TX_PARAMS, tx_params, sizeof(tx_params));
+	LORA_Delay(10000);
+	// Set PA duty cycle and HP max
+	unsigned char pa_config[4] = {0x02, 0x03, 0x00, 0x01};
+	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_SETPA, pa_config, sizeof(pa_config));
+	LORA_Delay(10000);
+	// Change LORA sync word to match up with 127x series
+	unsigned char sync_word_lsb[3] = {(unsigned char)(0x0741>>8), (unsigned char)(0x0741), (unsigned char)(LORA_SYNC_WORD)};
+	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_WRITE_REGISTER, sync_word_lsb, sizeof(sync_word_lsb));
+	LORA_Delay(10000);
+	unsigned char sync_word_msb[3] = {(unsigned char)(0x0740>>8), (unsigned char)(0x0740), (unsigned char)(LORA_SYNC_WORD>>8)};
+	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_WRITE_REGISTER, sync_word_msb, sizeof(sync_word_msb));
+	LORA_Delay(50000);
+	// Set preamble length
+	unsigned char packet_params[6] = {0, 8, 0, 12, 0, 0};
+	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_SET_PACKET_PARAMS, packet_params, sizeof(packet_params));
+	LORA_Delay(10000);
+	// Set LORA modulation parameters, Spreading factor: 11, 500kHz BW, CR48
+	unsigned char mod_params[4] = {0x0B, 0x06, 0x04, 0x01};
+	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_SET_MOD_PARAMS, mod_params, sizeof(mod_params));
+	LORA_Delay(10000);
+	// Set LORA IRQ parameters
+	unsigned char irq_params[2] = {0, 0b00000011};
+	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_SET_DIO_IRQ_PARAMS, irq_params, sizeof(irq_params));
+	LORA_Delay(10000);
+	// Set Buffer base addresses
+	unsigned char base_addresses[2] = {TX_BASE_ADR, RX_BASE_ADR};
+	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_SET_BUFFER_BASE_ADR, base_addresses, sizeof(base_addresses));
+	LORA_Delay(10000);
+	// Set LORA in FS Mode
+	Write_SPI(&PORT_LORA.OUT, CS_LORA, LORA_SETFS, 0);
 	
-	return (LoRa_status == 1) ? 1 : 0;
+	return 1;
 }
 
-unsigned char Check_For_Message(){
-	// Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C*CS
-	// Underscores are for readability, not part of actual message
-	unsigned char data_available = 0;
-	Read_SPI(&PORT_LORA.OUT,CS_LORA,LORA_REG_RX_N_BYTES,&data_available,1);
-	return data_available;
+void LORA_Delay(unsigned long length){
+	Delay(length);
+	while(LORA_BUSY_PORT.OUT & LORA_BUSY_PIN);
 }
 
-void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Controller_Status){
+unsigned char Check_For_Message(unsigned char *rx_offset){
 	// Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C*CS
 	// Underscores are for readability, not part of actual message
-	g_LoRa_Check_Flag = 0;
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_RXCONTINUOUS);
+	unsigned char lora_irq_status[4] = {0};
+	Read_SPI(&PORT_LORA.OUT, CS_LORA, LORA_GET_IRQ_STATUS, lora_irq_status, sizeof(lora_irq_status));
+	if (!(lora_irq_status[2] & LORA_RX_DONE_IRQ)) return 0;
+	unsigned char lora_rx_status[3] = {0};
+	Read_SPI(&PORT_LORA.OUT, CS_LORA, LORA_GET_RX_BUFFER_STATUS, lora_rx_status, sizeof(lora_rx_status));
+	unsigned char payload_length = lora_rx_status[1];
+	unsigned char lora_irq_clear[2] = {0, LORA_RX_DONE_IRQ};
+	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_CLEAR_IRQ_STATUS, lora_irq_clear, sizeof(lora_irq_clear));
+	*rx_offset = lora_rx_status[2];
 
-	unsigned char data_available = Check_For_Message();
-	if (data_available < UPLINK_SIZE) return;
+	
+	return payload_length;
+	
+}
+
+unsigned char Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Controller_Status){
+	// Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C*CS
+	// Underscores are for readability, not part of actual message
+	unsigned char rx_offset = 0;
+	
+	unsigned char data_available = Check_For_Message(&rx_offset);
+	if (data_available < UPLINK_SIZE) return 0;
 	
 	unsigned char uplink_status = 1;
+	unsigned char buffer_in[255] = {0};
+	buffer_in[0] = LORA_READ_BUFFER;
+	buffer_in[1] = rx_offset;
 	char buffer[255] = {0};
-	unsigned char RX_Adrs = 0;
-	Read_SPI(&PORT_LORA.OUT, CS_LORA, LORA_REG_RX_ADR, &RX_Adrs, 1);
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_FIFO_ADR_PTR|0x80), RX_Adrs); // Set FIFO ptr to current FIFO RX address
-	Read_SPI_c(&PORT_LORA.OUT, CS_LORA, LORA_REG_FIFO, buffer, data_available);
-
+	SPI_Transfer(&PORT_LORA.OUT, CS_LORA, buffer_in, buffer, data_available+3);
+	Write_SPI(&PORT_LORA.OUT, CS_LORA, LORA_SETSTANDBY, 1);
 	// Keeps track of index in buffer
 	unsigned char i = 0;
 	// Index in buffer where '$' is, signifies start of message
@@ -189,7 +297,7 @@ void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Contr
 	// Populate with uplink message checksum characters
 	char Check_Sum[2] = {0};
 
-	while(i != data_available){
+	while(i != data_available+3){
 		if (buffer[i] == '$'){
 			start_index = i;
 		}
@@ -202,10 +310,13 @@ void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Contr
 		i++;
 	}
 
-	if ((start_index == -1)||(end_index == -1)) uplink_status = 0;
+	if ((start_index == -1)||(end_index == -1)){
+		uplink_status = 0;
+		return 0;
+	}
 	// Compare checksum in message to calculated checksum
 	char checksum_hex[3] = {0};
-	Xor_Checksum(buffer, (end_index-start_index), start_index+1, checksum_hex);
+	Xor_Checksum(buffer, UPLINK_DATA_SIZE, start_index+1, checksum_hex);
 	// If checksum passes, read uplink
 	if ((checksum_hex[0] == Check_Sum[0])&&(checksum_hex[1] == Check_Sum[1])&&uplink_status){
 		outbound->ID[0] = buffer[start_index+3];
@@ -229,39 +340,28 @@ void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Contr
 		inbound->Drone_status = atoi(Requested_Drone_Status_c);
 		*Flight_Controller_Status = Manage_FC_Status(inbound->Drone_status, *Flight_Controller_Status);
 		outbound->Flight_Controller_Status = *Flight_Controller_Status;
-		
-		g_LoRa_Send_Flag = 1;
+
+		return 1;		
 	}
+	return 0;
 }
 
 void Send_Downlink(Downlink *outbound){
 	// Downlink message format -> $ND_MM_C_T*CS
-	g_LoRa_Send_Flag = 0;
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_SLEEP);
-
-	// Build downlink message
-	char message[] = {'$', 'N', 'D', outbound->ID[0], outbound->ID[1], outbound->Flight_Controller_Status, outbound->Tracking_Status, '*', 0, 0, 0};
+	// Need to attach TX_offset in LORA data buffer to start of message
+	char message[] = {TX_BASE_ADR, '$', 'N', 'D', outbound->ID[0], outbound->ID[1], outbound->Flight_Controller_Status, outbound->Tracking_Status, '*', 0, 0, 0};
 	// Build checksum
 	char checksum_hex[3] = {0};
-	Xor_Checksum(message, (sizeof(message)-5), 1, checksum_hex);
+	Xor_Checksum(message, DOWNLINK_DATA_SIZE, 2, checksum_hex);
 	message[sizeof(message)-2] = checksum_hex[1];
 	message[sizeof(message)-3] = checksum_hex[0];
 	
-	// Set FIFO pointer to TX base address, and write message
-	unsigned char TX_base_adr = 0;
-	Read_SPI(&PORT_LORA.OUT, CS_LORA, LORA_REG_TX_ADR, &TX_base_adr, 1);
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_FIFO_ADR_PTR|0x80), TX_base_adr);
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_PAYLOAD_LENGTH|0x80), sizeof(message)-1);
-	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, (LORA_REG_FIFO|0x80), message, sizeof(message)-1);
-	Write_SPI(&PORT_LORA.OUT, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_TX);
-	unsigned char LoRa_TX_Status = 0;
-	while(1){
-		Read_SPI(&PORT_LORA.OUT, CS_LORA, LORA_REG_IRQ_FLAGS, &LoRa_TX_Status, 1);
-		if (LoRa_TX_Status == LORA_IRQ_TX_DONE){
-			break;
-		}
-	}
-	
+	// Write message into buffer
+	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_WRITE_BUFFER, (unsigned char*)message, sizeof(message));
+	// Start ramping and transmission
+	unsigned long timeout = 0;
+	unsigned char tx_timeout[3] = {(unsigned char)(timeout>>16), (unsigned char)(timeout>>8), (unsigned char)timeout};
+	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_SETTX, tx_timeout, sizeof(tx_timeout));
 }
 
 FC_Status Manage_FC_Status(FC_Status Desired, FC_Status Current){
@@ -703,17 +803,4 @@ unsigned char Print_Page(unsigned char page, char *to_print, unsigned char lengt
 		counter++;
 	}
 	return Print_status;
-}
-
-void Print_Output(States *Drone, Calibration_Data *cal_data, Uplink *uplink){
-	g_Print_Flag = 0;
-	char buffer[4][20] = {0};
-	unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%2.1f , %2.1f, %2.1f", Drone->Euler[0], Drone->Euler[1], Drone->Euler[2]);
-	Print_Page(0, buffer[0], length_to_print);
-	length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%d, %d, %d", cal_data->w_bias[0], cal_data->w_bias[1], cal_data->w_bias[2]);
-	Print_Page(1, buffer[1], length_to_print);
-	length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%d, %d, %d", cal_data->hard_iron[0], cal_data->hard_iron[1], cal_data->hard_iron[2]);
-	Print_Page(2, buffer[2], length_to_print);
-	length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "%3.1f,%3.1f,%3.1f", cal_data->altitude_bias, uplink->Base_altitude, -Drone->Position_NED[2]);
-	Print_Page(3, buffer[3], length_to_print);
 }

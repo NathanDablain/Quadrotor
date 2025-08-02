@@ -29,16 +29,26 @@
 #define LORA_REG_IRQ_FLAGS 0x12
 #define LORA_REG_OCP 0x0B
 #define LORA_REG_PA_RAMP 0x0A
+#define LORA_REG_MODEM_CONFIG1 0x1D
+#define LORA_REG_MODEM_CONFIG2 0x1E
+#define LORA_REG_MODEM_CONFIG3 0x26
 #define LORA_REG_RX_PACKET_CNT 0x17
+#define LORA_SYNC_WORD 0x39
 
 #define LORA_MODE_SLEEP 0b10000000
 #define LORA_MODE_STDBY 0b10000001
 #define LORA_MODE_RXCONTINUOUS 0b10000101
 #define LORA_MODE_TX 0b10000011
 
-#define LORA_FREQ_915_HB 0b11100100
-#define LORA_FREQ_915_MB 0b11000000
-#define LORA_FREQ_915_LB 0b00000000
+// Desired carrier frequency in Hz
+#define LORA_FREQ 910000000.0
+// Lora module internal oscillator frequency in Hz
+#define LORA_FOSC 32000000.0
+// Value to write into frequency control registers
+#define LORA_FREQ_LSB ((unsigned long)(LORA_FREQ/(LORA_FOSC/pow(2,19))))
+#define LORA_FREQ_915_HB (unsigned char)(LORA_FREQ_LSB>>16) //0b11100100
+#define LORA_FREQ_915_MB (unsigned char)(LORA_FREQ_LSB>>8) //0b11000000
+#define LORA_FREQ_915_LB (unsigned char)(LORA_FREQ_LSB) //0b00000000
 
 #define LORA_PA_20dBm 0b11111111
 #define LORA_PA_14dBm 0b01111111

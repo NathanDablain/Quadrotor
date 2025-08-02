@@ -9,6 +9,8 @@ void Read_SPI(volatile register8_t *Port, unsigned char Pin, unsigned char Regis
 
 void Write_SPI(volatile register8_t *Port, unsigned char Pin, unsigned char Register, unsigned char Data);
 	
-void Write_SPI_Stream(volatile register8_t *Port, unsigned char Pin, unsigned char Register, char *Data, unsigned char Data_Length);
+void Write_SPI_Stream(volatile register8_t *Port, unsigned char Pin, unsigned char Register, unsigned char *Data, unsigned char Data_Length);
+
+void SPI_Transfer(volatile register8_t *Port, unsigned char Pin, unsigned char *Data_in, char *Data_out, unsigned char Data_length);
 
 #endif

@@ -208,6 +208,10 @@ unsigned char Setup_LoRa(){
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_MSB|0x80),LORA_FREQ_915_HB); // Set frequency to 915 MHz
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_MIDB|0x80),LORA_FREQ_915_MB);
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_F_LSB|0x80),LORA_FREQ_915_LB);
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_MODEM_CONFIG1|0x80),0b10011000); // Set 48 Coding Rate, 500 kHz BW
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_MODEM_CONFIG2|0x80),0b10110000); // Set Spread Factor of 11
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_MODEM_CONFIG3|0x80),0b00001000); // Enable low data rate optimization
+	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_SYNC_WORD|0x80),0x69); // Set sync word
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_IRQ_FLAGS_MASK|0x80),LORA_MASK_TX); // Masks all interrupt flags except TX complete
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_OP_MODE|0x80),LORA_MODE_RXCONTINUOUS); // Set LoRa mode into continuous receive
 	LoRa_status &= Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_PA_CONFIG|0x80),LORA_PA_20dBm); // Set output gain
@@ -245,7 +249,7 @@ Downlink_Reponse_Codes Receive_Downlink(Downlink *inbound, unsigned char ID_inde
 	// Downlink message format -> $ND_ID_C_T*CS
 	// Underscores are for readability, not part of actual message
 	g_LoRa_Check_Flag = 0;
-	char buffer[20] = {0};
+	char buffer[255] = {0};
 	unsigned char RX_Adrs = 0;
 	(void)Read_SPI(PORT_LORA,CS_LORA,LORA_REG_RX_ADR,&RX_Adrs,1);
 	(void)Write_SPI(PORT_LORA,CS_LORA,(LORA_REG_FIFO_ADR_PTR|0x80),RX_Adrs); // Set FIFO ptr to current FIFO RX address

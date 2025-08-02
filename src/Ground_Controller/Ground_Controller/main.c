@@ -63,7 +63,7 @@ int main(void){
 			// Check LoRa downlink for flight controller and tracking status
 			if (g_LoRa_Check_Flag){
 				unsigned char data_available = Check_For_Message();
-				if (data_available >= DOWNLINK_SIZE){
+				if (data_available > DOWNLINK_SIZE){
 					Downlink_Status = Receive_Downlink(&down_link, ID_index, data_available);
 				}
 			}

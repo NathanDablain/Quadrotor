@@ -12,7 +12,7 @@
 
 // Ground Controller sends an uplink at 1Hz, Flight controller should respond with a downlink upon receiving the uplink
 // If the Flight controller misses three uplinks, it will enter a landing mode
-//#if defined(AVR128DB48)
+#if defined(AVR128DB48)
 	#define LORA_REG_OP_MODE 0x01
 	#define LORA_REG_F_MSB 0x06
 	#define LORA_REG_F_MIDB 0x07
@@ -43,26 +43,50 @@
 
 	#define LORA_MASK_TX 0b11110111
 	#define LORA_IRQ_TX_DONE 0b00001000
-//#elif defined(AVR64DA28)
-	//#define LORA_SETSLEEP 0x84
-	//#define LORA_SETSTANDBY 0x80
-	//#define LORA_SETTX 0x83
-	//#define LORA_SETRX 0x82
-	//#define LORA_SETREGULATOR 0x96
-	//#define LORA_CALIBRATE_IMAGE 0x98
-	//#define LORA_SETPA 0x95
-	//
-	//#define LORA_WRITE_BUFFER 0x0E
-	//#define LORA_READ_BUFFER 0x1E
-	//
-	//#define LORA_SET_RF_FREQ 0x86
-	//#define LORA_SET_PACKET 0x8A
-	//#define LORA_SET_TX_PARAMS 0x8E
-	//#define LORA_SET_BUFFER_BASE_ADR 0x8F
-//#endif
-
+#elif defined(AVR64DA28)
+	#define LORA_SETSLEEP 0x84
+	#define LORA_SETSTANDBY 0x80
+	#define LORA_SETFS 0xC1
+	#define LORA_SETTX 0x83
+	#define LORA_SETRX 0x82
+	#define LORA_SETREGULATOR 0x96
+	#define LORA_CALIBRATE_IMAGE 0x98
+	#define LORA_SETPA 0x95
+	
+	#define LORA_WRITE_REGISTER 0x0D
+	#define LORA_WRITE_BUFFER 0x0E
+	#define LORA_READ_BUFFER 0x1E
+	
+	#define LORA_SET_RF_FREQ 0x86
+	#define LORA_SET_PACKET 0x8A
+	#define LORA_SET_MOD_PARAMS 0x8B
+	#define LORA_SET_PACKET_PARAMS 0x8C
+	#define LORA_SET_TX_PARAMS 0x8E
+	#define LORA_SET_BUFFER_BASE_ADR 0x8F
+	#define LORA_SET_DIO_IRQ_PARAMS 0x08
+	#define LORA_CLEAR_IRQ_STATUS 0x02
+	
+	#define LORA_GET_STATUS 0xC0
+	#define LORA_GET_IRQ_STATUS 0x12
+	#define LORA_GET_RX_BUFFER_STATUS 0x13
+	#define LORA_GET_PACKET_STATUS 0x14
+	
+	#define LORA_BUSY_PIN PIN0_bm
+	#define LORA_BUSY_PORT PORTC
+	#define LORA_RST_PIN PIN0_bm
+	#define LORA_RST_PORT PORTD
+#endif
+#define LORA_RX_DONE_IRQ (1<<1)
+#define LORA_TX_DONE_IRQ (1<<0)
+// Includes $, *, and checksum
 #define DOWNLINK_SIZE 10
+#define DOWNLINK_DATA_SIZE 6
+// Includes $, *, and checksum
 #define UPLINK_SIZE 35
+#define UPLINK_DATA_SIZE 31
+#define RX_BASE_ADR 0
+#define TX_BASE_ADR 100
+#define LORA_SYNC_WORD 0x6494
 
 typedef enum {
 	// Drone systems initialized, awaiting calibration
@@ -76,6 +100,17 @@ typedef enum {
 	// Drone is following landing procedure, will automatically proceed to ready once complete
 	Landing
 } FC_Status;
+
+typedef enum {
+	// LORA is ready to transition modes
+	LORA_Standby,
+	// LORA is actively listening for uplinks
+	LORA_Receiving,
+	// LORA has built a downlink, ready to send
+	LORA_Ready_to_Transmit,
+	// LORA is ramping power and transmitting downlink
+	LORA_Transmitting
+} LORA_Status;
 
 typedef struct {
 	FC_Status Drone_status;
@@ -93,15 +128,19 @@ typedef struct {
 	char ID[3];
 } Downlink;
 
-// Set radio frequency, antenna power, and interrupt flag bit mask
+// Set radio frequency, antenna power, packet parameters, and interrupt flag bit mask
 unsigned char Setup_LoRa();
 // Receive and parse uplink
-void Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Controller_Status);
+unsigned char Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Controller_Status);
 // Respond to uplink with downlink
 void Send_Downlink(Downlink *outbound);
 // State machine to transition drone state
 FC_Status Manage_FC_Status(FC_Status Desired, FC_Status Current);
 // Get payload length in LoRa FIFO
-unsigned char Check_For_Message();
+unsigned char Check_For_Message(unsigned char *rx_offset);
+// Delay and check LORA busy pin
+void LORA_Delay(unsigned long length);
+// Manage LORA state
+void Run_LORA(Uplink *uplink, FC_Status *Flight_Controller_Status);
 
 #endif

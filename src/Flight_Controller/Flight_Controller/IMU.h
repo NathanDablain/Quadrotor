@@ -19,6 +19,7 @@
 #define ACCEL_WINDOW_SIZE 8 // Size of FIR window for accelerometer
 #define GYRO_SENS 500.0/32768.0
 #define GYRO_DRDY_bm (1<<1)
+#define ACCEL_DRDY_bm (1<<0)
 #define IMU_STATUS 0x1E
 #define ACCEL_SENS 2.0/32768.0
 

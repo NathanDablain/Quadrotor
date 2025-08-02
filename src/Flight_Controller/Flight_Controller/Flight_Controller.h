@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "FC_Types.h"
 #include "SPI.h"
 #include "TWI.h"
 #include "IMU.h"
@@ -21,12 +22,9 @@
 #include "LoRa.h"
 #include "Utilities.h"
 #include "Controllers.h"
-#include "FC_Types.h"
 
 // Tracks when to check LoRa for uplink, incremented at 200 Hz
 extern volatile unsigned char g_LoRa_Check_Flag;
-// Tracks when to print output to SSD display
-extern volatile unsigned char g_Print_Flag;
 // Tracks when to sample magnetometer
 extern volatile unsigned char g_MAG_Read_Flag;
 // Tracks when to sample imu
@@ -41,8 +39,6 @@ extern volatile unsigned char g_Motor_Run_Flag;
 extern volatile unsigned char g_Altitude_Control_Flag;
 // Tracks how often to run guidance function
 extern volatile unsigned char g_Guidance_Flag;
-// Tracks when to send downlink
-extern volatile unsigned char g_LoRa_Send_Flag;
 // Tracks when to use accelerometer and magnetometer data to include measurements
 extern volatile unsigned char g_Attitude_Observer_Update_Flag;
 // Tracks when to use gyro data to make predictions

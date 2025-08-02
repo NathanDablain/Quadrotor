@@ -13,6 +13,7 @@
 #include "Observer.h"
 #include "FC_Types.h"
 #include "SPI.h"
+#include "Utilities.h"
 
 volatile unsigned char g_BAR_Read_Flag = 0;
 
@@ -30,24 +31,28 @@ volatile unsigned char g_Attitude_Observer_Predict_Flag = 0;
 volatile unsigned char g_Altitude_Observer_Update_Flag = 0;
 volatile unsigned char g_Altitude_Observer_Predict_Flag = 0;
 
+void Setup_Pins(){
+	PORT_BAR.DIR |= CS_BAR;
+	PORT_BAR.OUT |= CS_BAR;
+	PORT_IMU.DIR |= CS_IMU;
+	PORT_IMU.OUT |= CS_IMU;
+	PORT_MAG.DIR |= CS_MAG;
+	PORT_MAG.OUT |= CS_MAG;
+}
+
 // BAROMETER CODE
 // Bar -> 0 is a write, 1 is a read
 
 unsigned char Setup_Bar(){
 	unsigned char BAR_id = 0;
 	
-	PORT_BAR.DIR |= CS_BAR;
-	PORT_BAR.OUT |= CS_BAR;
-	
+	Write_SPI(&PORT_BAR.OUT,CS_BAR,BAR_CTRL_REG2,0b00000100); // Resets device
+	Delay(10000);
 	Read_SPI(&PORT_BAR.OUT, CS_BAR, (BAR_WHO_AM_I|0x80), &BAR_id, 1);
 	if (BAR_id != BAR_ID) return 0;
 	
-	Write_SPI(&PORT_BAR.OUT,CS_BAR,BAR_CTRL_REG2,0b00000100); // Resets device
-	Delay(10000);
 	Write_SPI(&PORT_BAR.OUT,CS_BAR,BAR_CTRL_REG1,0b01011100); // Sets ODR to 75Hz, enables LPF
 	Write_SPI(&PORT_BAR.OUT,CS_BAR,BAR_CTRL_REG2,0b00010010); // Enables low noise mode, maximum ODR for this mode is 75 Hz
-	//Write_SPI(&PORT_BAR.OUT,CS_BAR,BAR_FIFO_WTM,0b00010000); // Sets FIFO watermark level to 16
-	//Write_SPI(&PORT_BAR.OUT,CS_BAR,BAR_FIFO_CTRL,0b00000001); // Enables FIFO
 
 	return 1;
 }
@@ -62,21 +67,6 @@ void Calibrate_Bar(States *Drone, Calibration_Data *cal_data, float base_altitud
 unsigned char Read_Bar(States *Drone, Calibration_Data *cal_data, float base_altitude){
 	g_BAR_Read_Flag = 0;
 
-	//unsigned char fifo_level = 0;
-	//Read_SPI(&PORT_BAR.OUT,CS_BAR,(BAR_FIFO_STATUS1|0x80),&fifo_level,1);
-	//if (fifo_level < BAR_WINDOW_SIZE) return 0;
-	
-	//unsigned char Data[5*BAR_WINDOW_SIZE];
-	//Read_SPI_Stream(&PORT_BAR.OUT, CS_BAR, (BAR_FIFO_DATA_START|0x80), Data, 5*BAR_WINDOW_SIZE);
-	// Read in data, average samples, skip over temperature measurements
-	//unsigned long pressure_oversampled = 0;
-	//for (unsigned char i = 0; i < BAR_WINDOW_SIZE; i++){
-		//unsigned char p_LSB = Data[5*i];
-		//unsigned int p_MSB = ((unsigned int)Data[5*i + 1])<<8;
-		//unsigned long p_HSB = ((unsigned long)Data[5*i + 2])<<16;
-		//pressure_oversampled += p_HSB + p_MSB + p_LSB;
-	//}
-	//pressure_oversampled >>= 4;
 	unsigned char Data[3];
 	Read_SPI(&PORT_BAR.OUT, CS_BAR, (BAR_DATA_START|0x80), Data, sizeof(Data));
 	unsigned long pressure = Data[0] + (((unsigned int)Data[1])<<8) + (((unsigned long)Data[2])<<16);
@@ -101,17 +91,12 @@ unsigned char Setup_IMU(){
 	// Configure IMU
 	unsigned char IMU_id = 0;
 	
-	PORT_IMU.DIR |= CS_IMU;
-	PORT_IMU.OUT |= CS_IMU;
 	Write_SPI(&PORT_IMU.OUT, CS_IMU, IMU_CTRL3_C, 0b00000001); // Reboot
 	Delay(1000);
 	Read_SPI(&PORT_IMU.OUT, CS_IMU, (IMU_WHO_AM_I|0x80), &IMU_id, 1);
 	if (IMU_id != IMU_ID) return 0;
 	
-	Write_SPI(&PORT_IMU.OUT, CS_IMU, IMU_FIFO_CTRL1, 2*3*8); // Sets FIFO watermark to 24
-	Write_SPI(&PORT_IMU.OUT, CS_IMU, IMU_FIFO_CTRL3, 0b00000001); // Puts accelerometer in FIFO
-	Write_SPI(&PORT_IMU.OUT, CS_IMU, IMU_FIFO_CTRL5, 0b00110001); // Sets FIFO ODR to 416Hz, enables FIFO
-	Write_SPI(&PORT_IMU.OUT, CS_IMU, IMU_CTRL1_XL, 0b01100000); // Sets Accelerometer ODR to 416 Hz, range to +-2g
+	Write_SPI(&PORT_IMU.OUT, CS_IMU, IMU_CTRL1_XL, 0b01000000); // Sets Accelerometer ODR to 104 Hz, range to +-2g
 	Write_SPI(&PORT_IMU.OUT, CS_IMU, IMU_CTRL2_G, 0b01100100); // Sets Gyro ODR to 416 Hz, range to +-500dps
 	Write_SPI(&PORT_IMU.OUT, CS_IMU, IMU_CTRL3_C, 0b01000100); // Sets block data update, auto increment address
 	Write_SPI(&PORT_IMU.OUT, CS_IMU, IMU_CTRL8_XL, 0b11001000); // Sets Accelerometer LPF to ODR/9, low noise
@@ -135,27 +120,20 @@ void Calibrate_IMU(States *Drone, Calibration_Data *cal_data){
 unsigned char Read_Accel(States *Drone){
 	g_Accel_Read_Flag = 0;
 
-	unsigned char fifo_level = 0;
-	Read_SPI(&PORT_IMU.OUT,CS_IMU,(IMU_FIFO_STATUS1|0x80),&fifo_level,1);
-	if (fifo_level < 6*ACCEL_WINDOW_SIZE) return 0;
+	unsigned char accel_status = 0;
+	Read_SPI(&PORT_IMU.OUT, CS_IMU, (IMU_STATUS|0x80), &accel_status, 1);
+	if (!(accel_status & ACCEL_DRDY_bm)) return 0;
 	
-	unsigned char Data[6*ACCEL_WINDOW_SIZE];
-	Read_SPI(&PORT_IMU.OUT, CS_IMU, (IMU_FIFO_DATA_START|0x80), Data, 6*ACCEL_WINDOW_SIZE);
-	
-	signed long a_xyz_oversampled[3] = {0};
-	for (unsigned char i=0; i<ACCEL_WINDOW_SIZE; i++){
-		a_xyz_oversampled[0] += (((signed int)Data[6*i + 1])<<8) + Data[6*i + 0];
-		a_xyz_oversampled[1] += (((signed int)Data[6*i + 3])<<8) + Data[6*i + 2];
-		a_xyz_oversampled[2] += (((signed int)Data[6*i + 5])<<8) + Data[6*i + 4];
-	}
-	a_xyz_oversampled[0] >>= 3;
-	a_xyz_oversampled[1] >>= 3;
-	a_xyz_oversampled[2] >>= 3;
+	unsigned char Data[6];
+	Read_SPI(&PORT_IMU.OUT, CS_IMU, (ACCEL_DATA_START|0x80), Data, 6);
 
-	// Flip positive directions on Accelerometer y axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
-	Drone->g_vec[0] = -a_xyz_oversampled[0];
-	Drone->g_vec[1] = a_xyz_oversampled[1];
-	Drone->g_vec[2] = a_xyz_oversampled[2];
+	// Flip positive directions on Accelerometer x axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
+	Drone->g_vec[0] = -(((signed int)Data[1])<<8) - (signed int)Data[0];
+	Drone->g_vec[0] = -(((signed int)Data[1])<<8) - Data[0];
+	Drone->g_vec[1] = (((signed int)Data[3])<<8) + (signed int)Data[2];
+	Drone->g_vec[1] = (((signed int)Data[3])<<8) + Data[2];
+	Drone->g_vec[2] = (((signed int)Data[5])<<8) + (signed int)Data[4];
+	Drone->g_vec[2] = (((signed int)Data[5])<<8) + Data[4];
 	return 1;
 	
 }
@@ -170,9 +148,9 @@ unsigned char Read_Gyro(States *Drone, Calibration_Data *cal_data){
 	unsigned char Data[6] = {0};
 	Read_SPI(&PORT_IMU.OUT, CS_IMU, (GYRO_DATA_START|0x80), Data, sizeof(Data));
 	
-	Drone->w[0] = ((((signed int)Data[1])<<8) + Data[0]) - cal_data->w_bias[0];
-	Drone->w[1] = -((((signed int)Data[3])<<8) + Data[2]) - cal_data->w_bias[1];
-	Drone->w[2] = -((((signed int)Data[5])<<8) + Data[4]) - cal_data->w_bias[2];
+	Drone->w[0] = ((((signed int)Data[1])<<8) + (signed int)Data[0]) - cal_data->w_bias[0];
+	Drone->w[1] = -((((signed int)Data[3])<<8) + (signed int)Data[2]) - cal_data->w_bias[1];
+	Drone->w[2] = -((((signed int)Data[5])<<8) + (signed int)Data[4]) - cal_data->w_bias[2];
 	
 	return 1;
 }
@@ -181,8 +159,7 @@ unsigned char Read_Gyro(States *Drone, Calibration_Data *cal_data){
 
 unsigned char  Setup_Mag(){
 	unsigned char MAG_id = 0;
-	PORT_MAG.DIR |= CS_MAG;
-	PORT_MAG.OUT |= CS_MAG;
+
 	Write_SPI(&PORT_MAG.OUT, CS_MAG, MAG_CFG_REG_A, 0b01000000); // Reset device
 	Delay(10000);
 	Write_SPI(&PORT_MAG.OUT, CS_MAG, MAG_CFG_REG_C, 0b00110100); // Enables 4 wire SPI, disables I2C
@@ -254,23 +231,10 @@ unsigned char Read_Mag(States *Drone, Calibration_Data *cal_data){
 // GPS CODE
 
 unsigned char Setup_GPS(){
-	//PORTD.DIR |= PIN1_bm;
-	//PORTD.OUT &= ~PIN1_bm;
 	PRIMARY_USART.BAUD = 833; // Corresponds to 115200 baud rate
 	PRIMARY_USART_PORT.DIR |= PRIMARY_USART_TX_PIN; // TX line as output
 	PRIMARY_USART.CTRLA |= USART_RXCIE_bm;
 	PRIMARY_USART.CTRLB |= USART_RXEN_bm | USART_TXEN_bm;
-	//PRIMARY_USART.DBGCTRL |= 1;
-	//Delay(1000);
-	//if (PRIMARY_USART.RXDATAH & USART_FERR_bm){
-		//PRIMARY_USART.BAUD = 208; // Corresponds to 460800 baud rate
-		//PRIMARY_USART.RXDATAH = USART_FERR_bm;
-	//}
-	//else{
-		//char Increase_Baud[] = {0xB5,0x62,0x06,0x00,0x14,0x00,0x01,0x00,0x00,0x00,0xD0,0x08,0x00,0x00,0x00,0x08,0x07,0x00,0x07,0x00,0x03,0x00,0x00,0x00,0x00,0x00,0x0C,0xBC};
-		//USART_Transmit(Increase_Baud, sizeof(Increase_Baud));
-		//PRIMARY_USART.BAUD = 208; // Corresponds to 460800 baud rate
-	//}
 	Delay(100000);
 	
 	// Disable all the messages we don't want
@@ -310,19 +274,6 @@ unsigned char Setup_GPS(){
 	USART_Transmit(Disable_VTG, sizeof(Disable_VTG));
 	char Disable_ZDA[] = {0xB5,0x62,0x06,0x01,0x08,0x00,0xF0,0x08,0x00,0x00,0x00,0x00,0x00,0x00,0x07,0x5B};
 	USART_Transmit(Disable_ZDA, sizeof(Disable_ZDA));
-
-	
-	// Increase the update rate to 8Hz
-	//char Enable_UTC_8Hz[] = {0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x7D, 0x00, 0x01, 0x00, 0x00, 0x00, 0x92, 0xA6};
-	//USART_Transmit(Enable_UTC_8Hz, sizeof(Enable_UTC_8Hz));
-	//char Enable_GPS_8Hz[] = {0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x7D, 0x00, 0x01, 0x00, 0x01, 0x00, 0x93, 0xA8};
-	//USART_Transmit(Enable_GPS_8Hz, sizeof(Enable_GPS_8Hz));
-	//char Enable_GLO_8Hz[] = {0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x7D, 0x00, 0x01, 0x00, 0x02, 0x00, 0x94, 0xAA};
-	//USART_Transmit(Enable_GLO_8Hz, sizeof(Enable_GLO_8Hz));
-	//char Enable_BDS_8Hz[] = {0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x7D, 0x00, 0x01, 0x00, 0x03, 0x00, 0x95, 0xAC};
-	//USART_Transmit(Enable_BDS_8Hz, sizeof(Enable_BDS_8Hz));
-	//char Enable_GAL_8Hz[] = {0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x7D, 0x00, 0x01, 0x00, 0x04, 0x00, 0x96, 0xAE};
-	//USART_Transmit(Enable_GAL_8Hz, sizeof(Enable_GAL_8Hz));
 	
 	return (PRIMARY_USART.RXDATAH & USART_FERR_bm) ? 0 : 1;
 }
@@ -345,23 +296,15 @@ void Calibrate_GPS(States *Drone, Calibration_Data *cal_data){
 }
 
 void Read_GPS(States *Drone, Calibration_Data *cal_data){
-	static signed long 
-		Latitude_window[GPS_WINDOW_SIZE],
-		Longitude_window[GPS_WINDOW_SIZE];
-    char GPS_Position_Status;
-	char GPS_Position_Mode;
-	static unsigned char 
-		window_counter;
-	unsigned char 
-		i = 0,
-		j = 0;
-	signed char 
-		start_index = -1,
-		end_index = -1,
-		comma_indices[13] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
-	char 
-		GPS_Data[255] = {0},
-		Check_Sum[2] = {0};
+    char GPS_Position_Status = 0;
+	char GPS_Position_Mode = 0;
+	unsigned char i = 0;
+	unsigned char j = 0;
+	signed char start_index = -1;
+	signed char end_index = -1;
+	signed char comma_indices[13] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1};
+	char GPS_Data[255] = {0};
+	char Check_Sum[2] = {0};
 			
 	g_GPS_Read_Flag = 0;
 	
