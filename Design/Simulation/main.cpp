@@ -3,7 +3,7 @@
 
 int main(){
     Sim_Time Sim_time_step = {.Seconds = 0, .MicroSeconds = 500};
-    Sim_Time Sim_finish_time = {.Seconds = 100, .MicroSeconds = 0};
+    Sim_Time Sim_finish_time = {.Seconds = 70, .MicroSeconds = 0};
 
     Quadrotor Drone(Sim_time_step, Sim_finish_time);
     

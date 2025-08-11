@@ -12,11 +12,11 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
     // Accel samples at 52 Hz
     if (Accel_Read_Flag) Read_Accel();
 
-    // Observer update -> 50Hz
+    // Observer update -> 50 Hz
     if (Attitude_Observer_Update_Flag >= 4) Observer_Update();
         
-    // Observer predict -> 400Hz
-    if (Attitude_Observer_Predict_Flag) Observer_Predict();
+    // Observer predict -> 400 Hz
+    if (Attitude_Observer_Predict_Flag >= 4) Observer_Predict();
 
     if (LoRa_Read_Flag) Read_LoRa(env);
 
@@ -45,10 +45,10 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
     }
     else if (Flight_Controller_Status == Ready){
         if (sim_t.Seconds - ready_time.Seconds > 2){
-            Desired_Position_NED[2] = -5;
-            Desired_Euler[0] = 0;
-            Desired_Euler[1] = 0;
-            Desired_Euler[2] = 0;
+            Desired_States.Position_NED[2] = -5;
+            Desired_States.Euler[0] = 0;
+            Desired_States.Euler[1] = 0;
+            Desired_States.Euler[2] = 0;
             Flight_Controller_Status = Flying;
         }
     }
@@ -56,12 +56,11 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
     //------------Guidance and Control functions-------------//
         if (Flight_Controller_Status == Flying){
             if (sim_t.Seconds - ready_time.Seconds > 15){
-                Desired_Position_NED[2] = -5.5;
-                //Desired_Euler[1] = 1*D2R; //15*D2R;
+                Desired_States.Position_NED[2] = -5.5;
             }
     
             if (sim_t.Seconds - ready_time.Seconds > 25){
-                Desired_Position_NED[2] = -4.5;
+                Desired_States.Position_NED[2] = -4.5;
             }
     
             if (sim_t.Seconds - ready_time.Seconds > 40){
@@ -69,7 +68,7 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
             }
         }
         else if (Flight_Controller_Status == Landing){
-            Desired_Position_NED[2] = 0.25;
+            Desired_States.Position_NED[2] = 1.0;
             if (mcu.Position_NED[2] >= 0){
                 Flight_Controller_Status = Standby;
                 Desired_Thrust = 0.0;
@@ -79,24 +78,23 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
         
         if (Guidance_Flag){
             Guidance_Flag = 0;
-            Run_Guidance();
+            Run_Guidance(&Desired_States, &Commanded_States);
         }
         // Altitude Controller Runs at 100 Hz, updates desired thrust
         if (Altitude_Control_Flag>=2){
             Altitude_Control_Flag = 0;
-            Desired_Thrust = Height_LQR(-mcu.Position_NED[2], -Reference.Position_NED[2]);
+            Desired_Thrust = Altitude_Control(-mcu.Position_NED[2], -Commanded_States.Position_NED[2], &Constants);
         }
 
-        // PIDs and ESCs run at 400 Hz, updates desired motor speeds
+        // PIDs and ESCs run at 200 Hz, updates desired motor speeds
         if (Motor_Run_Flag){
-            Angular_Rate_Control(mcu, Reference, Desired_Moments, Desired_Thrust);
-            Set_throttles(motor_throttles, Desired_Thrust, Desired_Moments);
+            Motor_Run_Flag = 0;
+            Euler_Control(mcu.Euler, Commanded_States.Euler, Desired_Moments, Desired_Thrust, &Constants);
+            Set_throttles(motor_throttles, Desired_Thrust, Desired_Moments, &Constants);
+            Safety_Check(motor_throttles, &mcu, &Flight_Controller_Status);
         }
     }
-    if (Motor_Run_Flag){
-        Motor_Run_Flag = 0;
-        Run_Motors(motor_throttles);
-    }
+
 }
 
 void MCU::Run_Timers(Sim_Time sim_t){
@@ -109,24 +107,24 @@ void MCU::Run_Timers(Sim_Time sim_t){
     // 200Hz timer
     if (sim_t - tcb0_timelast >= tcb0_rate){
         ++Altitude_Control_Flag;
-        ++LQR_Flag;
         ++BAR_Read_Flag;
         ++Attitude_Observer_Update_Flag;
         ++MAG_Read_Flag;
         ++Accel_Read_Flag;
         ++Guidance_Flag;
+        ++Motor_Run_Flag;
         tcb0_timelast = sim_t;
     }
-    // 416Hz timer
-    if (sim_t - tcb1_timelast >= tcb1_rate){
-        ++Motor_Run_Flag;
-        ++Attitude_Observer_Predict_Flag;
-        tcb1_timelast = sim_t;
+    // 500Hz timer
+    if (sim_t - tcd0_timelast >= tcd0_rate){
+        Run_Motors(motor_throttles);
+        tcd0_timelast = sim_t;
     }
     // 1666Hz timer
-    if (sim_t - tcb2_timelast >= tcb2_rate){
+    if (sim_t - tcb1_timelast >= tcb1_rate){
         ++Gyro_Read_Flag;
-        tcb2_timelast = sim_t;
+        ++Attitude_Observer_Predict_Flag;
+        tcb1_timelast = sim_t;
     }
 }
 
@@ -141,19 +139,10 @@ void MCU::Read_Bar(){
     BAR_Read_Flag = 0;
     if (barometer.drdy_flag == false) return;
     barometer.drdy_flag = false;
-    // MRAC_Flag = 1;
-    // if (barometer.FIFO_index < BAR_WINDOW_SIZE) return;
-	
-	// uint32_t Data[BAR_WINDOW_SIZE];
-    // barometer.Read_FIFO(Data);
-	// uint32_t pressure_oversampled = 0;
-	// for (uint8_t i = 0; i < BAR_WINDOW_SIZE; i++){
-	// 	pressure_oversampled += Data[i];
-	// }
-	// pressure_oversampled >>= 4;
-    uint32_t pressure_oversampled = barometer.Pressure_Out_LSB;
-    mcu.pressure = static_cast<double>(pressure_oversampled)*BAR_SENS;
-	mcu.pressure_altitude = Height_Bar(pressure_oversampled);
+
+    uint32_t pressure_LSB = barometer.Pressure_Out_LSB;
+    mcu.pressure = static_cast<double>(pressure_LSB)*BAR_SENS;
+	mcu.pressure_altitude = Height_Bar(pressure_LSB);
 	mcu.Position_NED[2] = -(mcu.pressure_altitude - (cal_data.altitude_bias + up_link.Base_altitude));
 }
 
@@ -316,18 +305,8 @@ void MCU::Run_Motors(uint16_t motor_throttles[4]){
 	}
 	// Map commands, saturate if out of bounds
 	for (uint8_t i=0;i<4;i++){
+        if ((motor_throttles[i] > 225) && (motor_throttles[i] < 300)) motor_throttles[i] = 301;
 		motor_throttles[i] = (motor_throttles[i]>1000)?1000:motor_throttles[i];
 		mapped_throttle_commands[i] = motor_lookup[motor_throttles[i]];
 	}
-}
-
-void MCU::Run_Guidance(){
-    // static float local_Desired_Position_NED[3];
-    // static float local_Desired_Euler[3];
-    const float c1 = 0.99;
-    const float c2 = 1.0 - c1;
-    for (uint8_t i = 0; i < 3; i++){
-        Reference.Euler[i] = Reference.Euler[i]*c1 + Desired_Euler[i]*c2;
-        Reference.Position_NED[i] = Reference.Position_NED[i]*c1 + Desired_Position_NED[i]*c2;
-    }
 }

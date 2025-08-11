@@ -13,14 +13,14 @@ Quadrotor::Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf){
     inertia.data[2][2] = Izz;
     q.data.resize(4, (double)0.0);
     q.data = {1.0, 0.0, 0.0, 0.0};
-    Motors[0].deadzone = 100;
-    Motors[1].deadzone = 100;
-    Motors[2].deadzone = 100;
-    Motors[3].deadzone = 100;
+    Motors[0].deadzone = 200;
+    Motors[1].deadzone = 300;
+    Motors[2].deadzone = 200;
+    Motors[3].deadzone = 275;
     AVR128DB48.barometer.Initialize(75, 1, Bar_Mode_Bypass);
     AVR128DB48.magnetometer.Initialize(50);
     AVR128DB48.imu.Initialize(416, 52, 8);
-    AVR128DB48.Reference.Position_NED[2] = -5.0;
+    AVR128DB48.Desired_States.Position_NED[2] = -5.0;
 
     if (log_flag){
         // log_sim.open("Sim_log.txt");
@@ -32,8 +32,8 @@ Quadrotor::Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf){
 void Quadrotor::Calculate_errors(){
     if ((AVR128DB48.Flight_Controller_Status == Flying)||(AVR128DB48.Flight_Controller_Status == Landing)){
         for (uint8_t i = 0; i < 3; i++){
-            Control_errors[i] += fabs(AVR128DB48.Desired_Euler[i] - Euler.data[i])*sim_dt.Time_fp();
-            Control_errors[3+i] += fabs(AVR128DB48.Desired_Position_NED[i] - Position_NED.data[i])*sim_dt.Time_fp();
+            Control_errors[i] += fabs(AVR128DB48.Desired_States.Euler[i] - Euler.data[i])*sim_dt.Time_fp();
+            Control_errors[3+i] += fabs(AVR128DB48.Desired_States.Position_NED[i] - Position_NED.data[i])*sim_dt.Time_fp();
             Navigation_errors[i] += fabs(Euler.data[i] - AVR128DB48.mcu.Euler[i])*sim_dt.Time_fp();
             Navigation_errors[3+i] += fabs(Position_NED.data[i] - AVR128DB48.mcu.Position_NED[i])*sim_dt.Time_fp();
         }
@@ -176,10 +176,10 @@ void Quadrotor::Log_data(Environment &env){
         LOG_DATA(AVR128DB48.mcu.pressure, log_mcu);
         LOG_ARR3(AVR128DB48.mcu.Euler, log_mcu);
         LOG_ARR3(AVR128DB48.mcu.w, log_mcu);
-        LOG_ARR3(AVR128DB48.Desired_Euler, log_mcu);
+        LOG_ARR3(AVR128DB48.Desired_States.Euler, log_mcu);
         LOG_ARR3(AVR128DB48.Desired_Moments, log_mcu);
         LOG_DATA(AVR128DB48.Desired_Thrust, log_mcu);
-        LOG_ARR3(AVR128DB48.Desired_Position_NED, log_mcu);
+        LOG_ARR3(AVR128DB48.Desired_States.Position_NED, log_mcu);
         log_mcu << endl;
         log_mcu.close();
     }
@@ -202,7 +202,7 @@ void Quadrotor::Update_drone_forces_moments(Environment &env){
         Motors[i].Update_speed();
     }
     motor_thrusts.data = {Motors[0].Get_motor_thrust(), Motors[1].Get_motor_thrust(),
-                     Motors[2].Get_motor_thrust(), Motors[3].Get_motor_thrust()};
+                          Motors[2].Get_motor_thrust(), Motors[3].Get_motor_thrust()};
     Vec3 motor_force_Body = {0.0, 0.0, -motor_thrusts.magnitude()};
     // Assume that:
     // -> Back motor (0) produces negative pitching torque and negative yawing torque
@@ -267,8 +267,8 @@ void Quadrotor::Update_drone_states(){
 }
 
 Vec Quadrotor::Differential_equation_momentum(Vec x_in){
-    // Rigid body momentum equations in a rotating coordinate frame, feedback
-    // incorporated in quaternion equation to maintain magnitude 1
+    // Rigid body momentum equations in a rotating coordinate frame, 
+    // feedback incorporated in quaternion equation to maintain magnitude 1
     // v_dot = F/m - w x v
     // w_dot = I^-1*(M - w x I*w)
     // q_dot = (omega*q)+(0.5*(1-dot(q,q))*q);

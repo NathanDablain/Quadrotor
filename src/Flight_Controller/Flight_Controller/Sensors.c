@@ -45,12 +45,11 @@ void Setup_Pins(){
 
 unsigned char Setup_Bar(){
 	unsigned char BAR_id = 0;
-	
-	Write_SPI(&PORT_BAR.OUT,CS_BAR,BAR_CTRL_REG2,0b00000100); // Resets device
-	Delay(10000);
+
 	Read_SPI(&PORT_BAR.OUT, CS_BAR, (BAR_WHO_AM_I|0x80), &BAR_id, 1);
 	if (BAR_id != BAR_ID) return 0;
-	
+	Write_SPI(&PORT_BAR.OUT,CS_BAR,BAR_CTRL_REG2,0b00000100); // Resets device
+	Delay(10000);
 	Write_SPI(&PORT_BAR.OUT,CS_BAR,BAR_CTRL_REG1,0b01011100); // Sets ODR to 75Hz, enables LPF
 	Write_SPI(&PORT_BAR.OUT,CS_BAR,BAR_CTRL_REG2,0b00010010); // Enables low noise mode, maximum ODR for this mode is 75 Hz
 

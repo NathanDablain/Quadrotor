@@ -3,7 +3,6 @@
 volatile unsigned long g_seconds = 0;
 volatile unsigned char g_print_flag = 0;
 volatile unsigned char g_GPS_setup_status = 0;
-
 unsigned char Setup(){
 	Setup_Pins();
 	if (RSTCTRL_RSTFR & RSTCTRL_PORF_bm){Delay(100000);} // Necessary to stabilize IC's on a cold start
@@ -40,7 +39,7 @@ int main(){
 		States Drone = {0};
 		// Desired-> tracks the desired drone states issued by the ground controller
 		Reference Desired_States = {0};
-		// Commanded-> tracks the states the autopilot is tracking too after the desired states are fed through the guidance functions
+		// Commanded-> tracks the states the autopilot is tracking to after the desired states are fed through the guidance functions
 		Reference Commanded_States = {0};
 		// up_link-> contains the last information sent to the drone via LoRa uplink
 		Uplink up_link = {0};
@@ -53,6 +52,7 @@ int main(){
 		// Desired_Moments-> Controlled by PID, moment order is: body x, body y, body z, in units of N-m
 		float Desired_Moments[3] = {0};
 		unsigned char reset = 0;
+		//unsigned int motor_voltage = 0;
 		while(1){
 			//--------------Common code--------------//
 			// LoRa
@@ -60,19 +60,21 @@ int main(){
 
 			// Printing
 			if (g_print_flag &&(Setup_Bitmask & (1<<SU_SSD_bp))){
-				if (PORTD_IN & ADC_PIN) g_Motor_Power_Flag = 1;
 				g_print_flag = 0;
 				char buffer[4][20] = {0};
 				unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%4.2f, %4.2f, %4.2f", Drone.Euler[0], Drone.Euler[1], Drone.Euler[2]);
 				Print_Page(0, buffer[0], length_to_print);
 				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%4.2f , %4.2f",-Drone.Position_NED[2],Desired_Thrust);
 				Print_Page(1, buffer[1], length_to_print);
-				length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%5.5f,%5.5f",Desired_Moments[0], Desired_Moments[1]);
-				Print_Page(2, buffer[2], length_to_print);
 				ATOMIC_BLOCK(ATOMIC_FORCEON){
-					length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "%d,%d,%d,%d", g_Motor_Throttles[0],g_Motor_Throttles[1],g_Motor_Throttles[2],g_Motor_Throttles[3]);
-				}
+				//length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%5.5f,%5.5f",Desired_Moments[0], Desired_Moments[1]);
+					length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "B %d L %d", g_Motor_Throttles[0],g_Motor_Throttles[1]);
+				Print_Page(2, buffer[2], length_to_print);
+				//ATOMIC_BLOCK(ATOMIC_FORCEON){
+					length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "R %d F %d",g_Motor_Throttles[2],g_Motor_Throttles[3]);
+				//}
 				Print_Page(3, buffer[3], length_to_print);
+				}
 			}
 			
 			// GPS -> Check when full message is received
@@ -117,13 +119,31 @@ int main(){
 				if (cal_data.mag_cal_status == 0) Calibrate_Mag(&Drone, &cal_data);
 				
 				if (cal_data.imu_cal_status == 0) Calibrate_IMU(&Drone, &cal_data);
-								
-				if ((cal_data.motor_cal_status == 0) && g_Motor_Power_Flag) Calibrate_Motors(&cal_data);
+				
+				if (Sample_ADC() > MOTOR_VOLTAGE_THRESHOLD){
+					cal_data.motor_cal_status = 1;
+					g_Motor_Power_Flag = 1;
+				}
+				//if ((cal_data.motor_cal_status == 0) && (Sample_ADC() > MOTOR_VOLTAGE_THRESHOLD)) Calibrate_Motors(&cal_data);
 
 				if (cal_data.bar_cal_status && cal_data.mag_cal_status && cal_data.imu_cal_status && cal_data.motor_cal_status) Flight_Controller_Status = Ready;
 	
 			}
+			// 200 - b , 280 - l , 250 - r, 200 - f
 			else if (Flight_Controller_Status == Ready){
+				//static unsigned char motor_checkout_index;
+				//static unsigned int motor_checkout_throttle = 10;
+				//static unsigned long motor_checkout_timelast;
+				//if (g_seconds - motor_checkout_timelast > 1){
+					//motor_checkout_throttle -= 1;
+					//motor_checkout_timelast = g_seconds;
+				//}
+				//if (motor_checkout_throttle == 0){
+					//motor_checkout_throttle = 10;
+					//motor_checkout_index++;
+					//if (motor_checkout_index > 3) Flight_Controller_Status = Standby;
+				//}
+				//g_Motor_Throttles[motor_checkout_index] = motor_checkout_throttle;
 			}
 			else {
 			//------------Guidance and Control functions-------------//
@@ -198,7 +218,7 @@ void Setup_Timers(){
 	RTC_CMP = 32768;
 	//----------------------------------------------------------//
 	//--------Setup Timer/Counter A0 for output compare---------//
-	// Is triggered every 10 ms, is used by:
+	// Is triggered every 2.5 ms, is used by:
 	//  -> Motors
 	TCA0_SINGLE_CTRLA |= TCA_SINGLE_CLKSEL_DIV2_gc;
 	TCA0_SINGLE_INTCTRL |= TCA_SINGLE_CMP0_bm | TCA_SINGLE_CMP1_bm | TCA_SINGLE_CMP2_bm;
@@ -214,14 +234,14 @@ void Setup_Timers(){
 	TCB0_INTCTRL |= TCB_CAPT_bm; // Enables interrupt on capture
 	TCB0_CCMP = 60000; // Value at which timer generates interrupt and resets
 	//-------------------------------------------------------//
-	//-------Setup Timer/Counter B2 for output compare--------//
+	//-------Setup Timer/Counter B1 for output compare--------//
 	// Generates an interrupt every 0.6002 ms, is used by:
 	//	-> Gyro running at 1666 Hz
 	//  -> Observer running at 416 Hz
 	TCB1_CTRLA |= TCB_ENABLE_bm | TCB_CLKSEL_DIV1_gc;
 	TCB1_INTCTRL |= TCB_CAPT_bm;
 	TCB1_CCMP = 14405;
-	#if defined(AVR128DB48)
+#if defined(AVR128DB48)
 	//-------------------------------------------------------//
 	//-------Setup Timer/Counter B3 for output compare-------//
 	// Generates an interrupt every 286 us (3500 Hz), is used by:
@@ -231,20 +251,20 @@ void Setup_Timers(){
 	TCB2_CCMP = 5900;
 	//----------------------------------------------------------//
 	//--------Setup Timer/Counter A1 for output compare---------//
-	// Is triggered every 10 ms, is used by:
+	// Is triggered every 2.5 ms, is used by:
 	//  -> Motors
 	TCA1_SINGLE_CTRLA |= TCA_SINGLE_CLKSEL_DIV2_gc;
 	TCA1_SINGLE_INTCTRL |= TCA_SINGLE_CMP0_bm;
-	#elif defined(AVR64DA28)
+#elif defined(AVR64DA28)
 	//-------------------------------------------------------//
 	//-------Setup Timer/Counter B2 for output compare-------//
-	// Is triggered every 2 ms, is used by:
+	// Is triggered every 2.5 ms, is used by:
 	//  -> Motors
 	TCB2_CTRLA |= TCB_CLKSEL_DIV2_gc;
 	TCB2_INTCTRL |= TCB_CAPT_bm;
 	//----------------------------------------------------------//
 	//--------Setup Timer/Counter D for output compare---------//
-	// Generates an interrupt every 2 ms (500 Hz), is used by:
+	// Generates an interrupt every 2.5 ms (400 Hz), is used by:
 	//  -> Oneshot protocol setting motor speed
 	// In one ramp mode goes CMPASET->CMPACLR->CMPBSET->COMPBCLR
 	TCD0_CTRLA |= TCD_CNTPRES_DIV32_gc;
@@ -252,7 +272,7 @@ void Setup_Timers(){
 	TCD0_INTCTRL |= TCD_OVF_bm;
 	while(!(TCD0_STATUS & TCD_ENRDY_bm));
 	TCD0_CTRLA |= TCD_ENABLE_bm;
-	#endif
+#endif
 }
 
 ISR(RTC_CNT_vect){
@@ -292,11 +312,3 @@ ISR(TCD0_OVF_vect){
 	TCD0_INTFLAGS = TCD_OVF_bm;
 }
 #endif
-
-ISR(PORTD_PORT_vect){
-	PORTD_INTFLAGS = ADC_PIN;
-	Delay(1000000);
-	g_Motor_Power_Flag = 1;
-	// Disable future interrupts
-	ADC_PIN_CTRL &= ~(PORT_ISC_RISING_gc);
-}

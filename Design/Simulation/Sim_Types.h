@@ -21,6 +21,10 @@ struct States{
     float Position_ECEF[3];
 };
 
+struct Reference{
+	float Position_NED[3];
+	float Euler[3];
+};
 struct Calibration_Data{
 	// bar_cal_status -> flag with state of calibration, 0: uncalibrated, 1:ready
 	// altitude_bias -> offset to apply against bar reading, either from ground controller or last good reading

@@ -27,7 +27,11 @@
 	#define PRIMARY_USART_RXC_VECT		USART3_RXC_vect
 	#define PRIMARY_USART_PORT			PORTB
 	#define PRIMARY_USART_TX_PIN		PIN1_bm
-	#define PRIMARY_TWI_PORT			PORTA			
+	#define PRIMARY_TWI_PORT			PORTA
+	#define MOTOR1_PIN					PIN0_bm
+	#define MOTOR2_PIN					PIN1_bm
+	#define MOTOR3_PIN					PIN2_bm
+	#define MOTOR4_PIN					PIN3_bm	
 #elif defined(AVR64DA28)
 	#define ADC_MUX_ESC					ADC_MUXPOS_AIN2_gc
 	#define ADC_PIN_CTRL				PORTD_PIN2CTRL
@@ -49,6 +53,10 @@
 	#define PRIMARY_USART_PORT			PORTF
 	#define PRIMARY_USART_TX_PIN		PIN0_bm
 	#define PRIMARY_TWI_PORT			PORTC
+	#define MOTOR1_PIN					PIN3_bm
+	#define MOTOR2_PIN					PIN4_bm
+	#define MOTOR3_PIN					PIN5_bm
+	#define MOTOR4_PIN					PIN6_bm
 #endif
 
 // Global variables

@@ -31,15 +31,15 @@ class Quadrotor{
         bool plot_flag = true;
         bool error_flag = true;
         // Actual mass of drone in (kg)
-        double mass = 0.441;
+        double mass = 0.5885;
         // Distance from front and back motor thrust vectors to drone center of gravity in (m)
-        double length_f_b =  0.117;
+        double length_f_b =  0.127;
         // Distance from left and right motor thrust vectors to drone center of gravity in (m)
-        double length_l_r = 0.1205;
+        double length_l_r = 0.125;
         // Actual mass moments of drone in (kg-m^2)
-        double Ixx = 0.00149;
-        double Iyy = 0.00262;
-        double Izz = 0.00149;
+        double Ixx = 0.0018;
+        double Iyy = 0.00356;
+        double Izz = 0.00208;
         // Step time for simulation
         Sim_Time sim_dt;
         // Final time of simulation

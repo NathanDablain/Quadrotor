@@ -13,6 +13,9 @@
 #define INDEX_NOT_SET 100
 #define MOTOR_CUTOFF_ANGLE (45.0*D2R)
 #define MOTOR_CUTOFF_ALTITUDE 5.0f
+#define MOTOR_VOLTAGE_THRESHOLD 12000 // in milli volts
+#define DEADZONE_THROTTLE 275
+#define MAX_MOTOR_THROTTLE 1000
 
 typedef struct{
 	// Propeller thrust constant N/(rad/s)^2

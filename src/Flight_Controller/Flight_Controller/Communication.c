@@ -201,9 +201,9 @@ unsigned char Setup_LoRa(){
 	Write_SPI(&PORT_LORA.OUT, CS_LORA, LORA_SETSTANDBY, 0);
 	LORA_Delay(50000);
 	float frequency_sensitivity = (pow(2,25))/(32000000.0);
-	unsigned long frequency = (unsigned long)(910000000.0*frequency_sensitivity); // Corresponds to 915MHz -> frequency = freq_Hz * (2^25/32e6)
+	unsigned long frequency = (unsigned long)(910000000.0*frequency_sensitivity); // Corresponds to 910MHz -> frequency = freq_Hz * (2^25/32e6)
 	unsigned char freq_data[4] = {(unsigned char)(frequency>>24), (unsigned char)(frequency>>16), (unsigned char)(frequency>>8), (unsigned char)(frequency)};
-	// Set frequency to 915MHz	
+	// Set frequency to 910MHz	
 	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_SET_RF_FREQ, freq_data, sizeof(freq_data)); 
 	LORA_Delay(10000);
 	// Set packet type to LORA
@@ -213,7 +213,7 @@ unsigned char Setup_LoRa(){
 	// Confirm packet type was set to LORA
 	Read_SPI(&PORT_LORA.OUT, CS_LORA, 0x11, packet_type, sizeof(packet_type)); 
 	if (packet_type[1] != 1) return 0;
-	// Set power to 15dBm and ramp time to 80 us
+	// Set power to 18dBm and ramp time to 3.4 ms
 	unsigned char tx_params[2] = {0x12, 0x07};
 	Write_SPI_Stream(&PORT_LORA.OUT, CS_LORA, LORA_SET_TX_PARAMS, tx_params, sizeof(tx_params));
 	LORA_Delay(10000);
@@ -281,12 +281,19 @@ unsigned char Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Fli
 	unsigned char data_available = Check_For_Message(&rx_offset);
 	if (data_available < UPLINK_SIZE) return 0;
 	
+	unsigned char amount_to_read = data_available + 3;
 	unsigned char uplink_status = 1;
-	unsigned char buffer_in[255] = {0};
+	unsigned char *buffer_in = calloc(amount_to_read, sizeof(unsigned char));
+	if (buffer_in == NULL) return 0;
+	char *buffer_out = calloc(amount_to_read, sizeof(char));
+	if (buffer_out == NULL){
+		free(buffer_in);
+		return 0;
+	}
 	buffer_in[0] = LORA_READ_BUFFER;
 	buffer_in[1] = rx_offset;
-	char buffer[255] = {0};
-	SPI_Transfer(&PORT_LORA.OUT, CS_LORA, buffer_in, buffer, data_available+3);
+	SPI_Transfer(&PORT_LORA.OUT, CS_LORA, buffer_in, buffer_out, amount_to_read);
+	free(buffer_in);
 	Write_SPI(&PORT_LORA.OUT, CS_LORA, LORA_SETSTANDBY, 1);
 	// Keeps track of index in buffer
 	unsigned char i = 0;
@@ -297,14 +304,14 @@ unsigned char Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Fli
 	// Populate with uplink message checksum characters
 	char Check_Sum[2] = {0};
 
-	while(i != data_available+3){
-		if (buffer[i] == '$'){
+	while(i != amount_to_read){
+		if (buffer_out[i] == '$'){
 			start_index = i;
 		}
-		if ((start_index != -1)&&(buffer[i] == '*')){
+		if ((start_index != -1)&&(buffer_out[i] == '*')){
 			end_index = i;
-			Check_Sum[0] = buffer[++i];
-			Check_Sum[1] = buffer[++i];
+			Check_Sum[0] = buffer_out[++i];
+			Check_Sum[1] = buffer_out[++i];
 			break;
 		}
 		i++;
@@ -316,33 +323,36 @@ unsigned char Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Fli
 	}
 	// Compare checksum in message to calculated checksum
 	char checksum_hex[3] = {0};
-	Xor_Checksum(buffer, UPLINK_DATA_SIZE, start_index+1, checksum_hex);
+	Xor_Checksum(buffer_out, UPLINK_DATA_SIZE, start_index+1, checksum_hex);
 	// If checksum passes, read uplink
 	if ((checksum_hex[0] == Check_Sum[0])&&(checksum_hex[1] == Check_Sum[1])&&uplink_status){
-		outbound->ID[0] = buffer[start_index+3];
-		outbound->ID[1] = buffer[start_index+4];
+		outbound->ID[0] = buffer_out[start_index+3];
+		outbound->ID[1] = buffer_out[start_index+4];
 		// Get desired north/south position
-		char inbound_Desired_North[7] = {buffer[start_index+5],buffer[start_index+6],buffer[start_index+7],buffer[start_index+8],buffer[start_index+9],buffer[start_index+10],0};
-		float sign = (buffer[start_index+11]=='N')?(1.0):(-1.0);
+		char inbound_Desired_North[7] = {buffer_out[start_index+5],buffer_out[start_index+6],buffer_out[start_index+7],buffer_out[start_index+8],buffer_out[start_index+9],buffer_out[start_index+10],0};
+		float sign = (buffer_out[start_index+11]=='N')?(1.0):(-1.0);
 		inbound->Desired_north = sign*atof(inbound_Desired_North);
 		// Get desired east/west position
-		char inbound_Desired_East[7] = {buffer[start_index+12],buffer[start_index+13],buffer[start_index+14],buffer[start_index+15],buffer[start_index+16],buffer[start_index+17],0};
-		sign = (buffer[start_index+18]=='E')?(1.0):(-1.0);
+		char inbound_Desired_East[7] = {buffer_out[start_index+12],buffer_out[start_index+13],buffer_out[start_index+14],buffer_out[start_index+15],buffer_out[start_index+16],buffer_out[start_index+17],0};
+		sign = (buffer_out[start_index+18]=='E')?(1.0):(-1.0);
 		inbound->Desired_east = sign*atof(inbound_Desired_East);
 		// Get desired altitude
-		char inbound_Desired_Altitude[7] = {buffer[start_index+19],buffer[start_index+20],buffer[start_index+21],buffer[start_index+22],buffer[start_index+23],buffer[start_index+24],0};
+		char inbound_Desired_Altitude[7] = {buffer_out[start_index+19],buffer_out[start_index+20],buffer_out[start_index+21],buffer_out[start_index+22],buffer_out[start_index+23],buffer_out[start_index+24],0};
 		inbound->Desired_altitude = atof(inbound_Desired_Altitude);
 		// Get base altitude
-		char inbound_Base_Altitude[7] = {buffer[start_index+25],buffer[start_index+26],buffer[start_index+27],buffer[start_index+28],buffer[start_index+29],buffer[start_index+30],0};
+		char inbound_Base_Altitude[7] = {buffer_out[start_index+25],buffer_out[start_index+26],buffer_out[start_index+27],buffer_out[start_index+28],buffer_out[start_index+29],buffer_out[start_index+30],0};
 		inbound->Base_altitude = atof(inbound_Base_Altitude);
 		// Get requested drone status
-		char Requested_Drone_Status_c[2] = {buffer[start_index+31], 0};
+		char Requested_Drone_Status_c[2] = {buffer_out[start_index+31], 0};
 		inbound->Drone_status = atoi(Requested_Drone_Status_c);
 		*Flight_Controller_Status = Manage_FC_Status(inbound->Drone_status, *Flight_Controller_Status);
 		outbound->Flight_Controller_Status = *Flight_Controller_Status;
+		free(buffer_out);
 
 		return 1;		
 	}
+	free(buffer_out);
+
 	return 0;
 }
 
