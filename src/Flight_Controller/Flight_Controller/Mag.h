@@ -4,6 +4,7 @@
 #include "FC_Types.h"
 
 #define MAG_WHO_AM_I 0x4F
+#define MAG_ID 0b01000000
 #define MAG_CFG_REG_A 0x60
 #define MAG_CFG_REG_B 0x61
 #define MAG_CFG_REG_C 0x62

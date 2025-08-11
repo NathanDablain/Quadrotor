@@ -57,7 +57,7 @@ unsigned char Clear_Display(unsigned char Display);
 // Call this function to output text on the display, use pages 0-3
 unsigned char Print_Page(unsigned char page, char *to_print, unsigned char length_to_print, unsigned char Display);
 // Calls print page, converts values in call to characters for printing
-void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink_Reponse_Codes Downlink_Status);
+void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink *down_link, Downlink_Reponse_Codes Downlink_Status);
 
 
 #endif

@@ -37,14 +37,16 @@
 #define SSD_PAGE6 0xB6
 #define SSD_PAGE7 0xB7
 
-unsigned char
-	Setup_SSD(),
-	Write_Display(unsigned char Data_Byte),
-	Write_Display_Double(unsigned char Address_Byte, unsigned char Data_Byte),
-	Write_Character(char Character_to_write),
-	Clear_Display(),
-	Print_Page(unsigned char page, char *to_print, unsigned char number);
+unsigned char Setup_SSD();
+	
+unsigned char Write_Display(unsigned char Data_Byte);
 
-void Print_Output(States *Drone, Calibration_Data *cal_data, Uplink *uplink);
+unsigned char Write_Display_Double(unsigned char Address_Byte, unsigned char Data_Byte);
+
+unsigned char Write_Character(char Character_to_write);
+
+unsigned char Clear_Display();
+
+unsigned char Print_Page(unsigned char page, char *to_print, unsigned char number);
 
 #endif

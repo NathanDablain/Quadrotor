@@ -14,8 +14,8 @@ void IMU::Initialize(uint16_t gyro_odr, uint16_t accel_odr, uint16_t accel_water
     last_sample_time_accel.Seconds = 0;
     last_sample_time_accel.MicroSeconds = 0;
     FIFO_watermark = accel_watermark;
-    accel_max_noise = (sqrt(static_cast<double>(ODR_Accel)/2.0)*90.0)/1e6;
-    gyro_max_noise = (sqrt(static_cast<double>(ODR_Gyro)/2.0)*5.0/1000.0)*D2R;
+    accel_max_noise = 10.0*(sqrt(static_cast<double>(ODR_Accel)/2.0)*90.0)/1e6;
+    gyro_max_noise = 10.0*(sqrt(static_cast<double>(ODR_Gyro)/2.0)*5.0/1000.0)*D2R;
 }
 
 void IMU::Sample_Acc(Environment &env, Vec &quaternion, Sim_Time &sim_t){

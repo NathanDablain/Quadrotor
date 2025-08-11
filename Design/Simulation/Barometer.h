@@ -13,7 +13,7 @@ class Barometer{
     private:
         //------LPS22HH Barometer Parameters-----//
         const double sensitivity = 40.96;
-        const double max_noise = 0.65;
+        const double max_noise = 2.0; //0.65;
         const double noise_sensitivity = max_noise/32767.0;
         // Output Data Rate in Hz
         uint16_t ODR;

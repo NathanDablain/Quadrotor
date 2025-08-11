@@ -7,6 +7,7 @@
 #define IMU_FIFO_CTRL3 0x08
 #define IMU_FIFO_CTRL5 0x0A
 #define IMU_WHO_AM_I 0x0F
+#define IMU_ID 0x6A
 #define IMU_CTRL1_XL 0x10
 #define IMU_CTRL2_G 0x11
 #define IMU_CTRL3_C 0x12
@@ -18,6 +19,7 @@
 #define ACCEL_WINDOW_SIZE 8 // Size of FIR window for accelerometer
 #define GYRO_SENS 500.0/32768.0
 #define GYRO_DRDY_bm (1<<1)
+#define ACCEL_DRDY_bm (1<<0)
 #define IMU_STATUS 0x1E
 #define ACCEL_SENS 2.0/32768.0
 

@@ -10,7 +10,7 @@ Environment::Environment(double Longitude, double Latitude, double Altitude_MSL,
     R_mag.data[0] = {cos(mag_dec)*cos(mag_inc), -sin(mag_dec), -cos(mag_dec)*sin(mag_inc)};
     R_mag.data[1] = {cos(mag_inc)*sin(mag_dec),  cos(mag_dec), -sin(mag_dec)*sin(mag_inc)};
     R_mag.data[2] = {             sin(mag_inc),           0.0,               cos(mag_inc)};
-    m_vec_NED = R_mag*m_vec_true; 
+    m_vec_NED = m_vec_true; 
     sim_dt = Sim_dt;
 }
 

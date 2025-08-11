@@ -1,25 +1,74 @@
 #include "Controllers.h"
 
-void Safety_Check(States *Drone, unsigned int motor_throttles[4], FC_Status *Flight_Controller_Status){
-	static const unsigned int zero_vec[4];
+volatile unsigned char g_Motor_Power_Flag = 0;
+volatile unsigned char g_Guidance_Flag = 0;
+volatile unsigned char g_Altitude_Control_Flag = 0;
+volatile unsigned char g_Motor_Run_Flag = 0;
+volatile unsigned char g_Motor_Cal_Flag = 0;
+volatile unsigned int g_Motor_Throttles[4] = {0};
+
+Drone_Constants Initialize_Drone_Constants(){
+	Drone_Constants Constants = {
+	.k_f = 0.000001,
+	.k_t = 0.000000011,
+	.length_f_b =  0.127,
+	.length_l_r = 0.125, 
+	.I = {0.0018, 0.00356, 0.00208},
+	.mass = 0.5885,
+	.KT = 0.006366198,
+	.K = 0.006366198/0.000000011,
+	.Current = {0.0, 0.1, 0.7, 2.0, 4.1, 7.2, 10.9, 15.4, 20.5, 25.9, 31.8}};
+		
+	return Constants;
+}
+
+void Calibrate_Motors(Calibration_Data *cal_data){
+	g_Motor_Power_Flag = 1;
+	unsigned int counter = MAX_MOTOR_THROTTLE;
+	ATOMIC_BLOCK(ATOMIC_FORCEON){
+		g_Motor_Throttles[0] = MAX_MOTOR_THROTTLE;
+		g_Motor_Throttles[1] = MAX_MOTOR_THROTTLE;
+		g_Motor_Throttles[2] = MAX_MOTOR_THROTTLE;
+		g_Motor_Throttles[3] = MAX_MOTOR_THROTTLE;
+	}
+
+	Delay(1000000);
+	while (counter){
+		for (unsigned char i = 0; i < 4; i++){
+			ATOMIC_BLOCK(ATOMIC_FORCEON){
+				 g_Motor_Throttles[i] = counter;
+			}
+		}
+		while (!g_Motor_Cal_Flag);
+		g_Motor_Cal_Flag = 0;
+		counter -= 1;
+	}
+	ATOMIC_BLOCK(ATOMIC_FORCEON){
+		 memset((unsigned int*)g_Motor_Throttles, 0, 8);
+	}
+	cal_data->motor_cal_status = 1;
+	Delay(3000000);
+}
+
+void Safety_Check(States *Drone, FC_Status *Flight_Controller_Status){
 	unsigned char safety_switch = 0;
 	
 	if (fabs(Drone->Euler[0]) > MOTOR_CUTOFF_ANGLE) safety_switch = 1;
-	if (fabs(Drone->Euler[1]) > MOTOR_CUTOFF_ANGLE) safety_switch = 1;
-	if (fabs(Drone->Position_NED[2]) > MOTOR_CUTOFF_ALTITUDE) safety_switch = 1;
+	else if (fabs(Drone->Euler[1]) > MOTOR_CUTOFF_ANGLE) safety_switch = 1;
+	else if (fabs(Drone->Position_NED[2]) > MOTOR_CUTOFF_ALTITUDE) safety_switch = 1;
 	
 	if (safety_switch){
-		memcpy(motor_throttles, zero_vec, sizeof(zero_vec));
+		ATOMIC_BLOCK(ATOMIC_FORCEON){
+			memset((unsigned int*)g_Motor_Throttles, 0, 8);
+		}
 		*Flight_Controller_Status = Standby;
 	}
 }
 	
-volatile unsigned char g_Guidance_Flag = 0;
-
 void Run_Guidance(Reference *Desired_States, Reference *Commanded_States){
 	g_Guidance_Flag = 0;
 	// IIR to prevent large jumps in reference states
-	const float c1 = 0.999;
+	const float c1 = 0.99;
 	const float c2 = 1.0 - c1;
 	for (unsigned char i = 0; i < 3; i++){
 		Commanded_States->Euler[i] = Commanded_States->Euler[i]*c1 + Desired_States->Euler[i]*c2;
@@ -27,68 +76,100 @@ void Run_Guidance(Reference *Desired_States, Reference *Commanded_States){
 	}
 }
 
-volatile unsigned char g_Altitude_Control_Flag = 0;
-
-float Altitude_Control(float h, float h_ref){
+float Altitude_Control(float h, float h_ref, const Drone_Constants *Constants){
 	g_Altitude_Control_Flag = 0;
 	// Gains K chosen through pole placement of double integrator
-	const float mass = 0.45;
 	const float d_t = 0.01;
-	const float K[2] = {3.0, 4.0};
+	const float IIR_c1 = 0.9;
+	const float IIR_c2 = 1.0 - IIR_c1;
+	const float K[2] = {3.0, 5.0};
 	const float K_int = 0.002;
+	
 	static float e_int;
 	static float h_last;
-	static float h_dot;
+	static float h_dot_last;
+	
 	e_int += (h_ref-h);
-	h_dot = h_dot*0.9 + ((h-h_last)/d_t)*0.1;
+	float h_dot = h_dot_last*IIR_c1 + ((h-h_last)/d_t)*IIR_c2;
+	h_dot_last = h_dot;
 	h_last = h;
 	float u = -K[0]*(h-h_ref) - K[1]*h_dot + K_int*e_int + 9.81;
-	float thrust = mass*u;
+	float thrust = Constants->mass * u;
+	
     return thrust;
 }
 
-void Euler_Control(float Current_Euler[3], float Commanded_Euler[3], float desired_moments[3]){
-    const float d_t = 0.005;
-    const float K[3][2] = {{1.0, 0.1},{1.0, 0.4},{0.1, 0.4}};
+void Euler_Control(float Current_Euler[3], float Commanded_Euler[3], float desired_moments[3], float thrust, const Drone_Constants *Constants){
+    const float d_t = 0.0025;
+    const float K[3][2] = {{100.0, 200.0},{100.0, 200.0},{10.0, 20.0}};
+	const float K_int = 0.1;
+	const float IIR_c1 = 0.9;
+	const float IIR_c2 = 1.0 - IIR_c1;
+	const float moment_split = 0.75;
+
+	// Because motors cannot run backwards, there is a saturation point for how much moment can be applied that is a function of the thrust
+	// Compute the omega (speed^2) expected of each motor to reach this thrust, this becomes maximum control authority for euler control
+
     static float Euler_last[3];
+	static float Euler_dot_last[3];
+	static float e_int[3];
+	static unsigned char Saturation_Flag[3];
+	
+	float max_moment_phi = (thrust * Constants->length_l_r)/2.0;
+	max_moment_phi *= moment_split;
+	float max_moment_theta = (thrust * Constants->length_f_b)/2.0;
+	max_moment_theta *= moment_split;
+	float max_moment_psi = thrust*(Constants->k_t / Constants->k_f);
+	max_moment_psi *= (1.0 - moment_split);
+	
     for (unsigned char i = 0; i < 3; i++){
 	    float e = Commanded_Euler[i] - Current_Euler[i];
-	    float Euler_dot = (Current_Euler[i] - Euler_last[i])/d_t;
+		if ((Saturation_Flag[i] == 0) || ((Saturation_Flag[i] == 1) && (e < 0)) || ((Saturation_Flag[i] == 2) && (e > 0))){
+			e_int[i] += e;
+		}
+	    float Euler_dot = Euler_dot_last[i]*IIR_c1 + ((Current_Euler[i]-Euler_last[i])/d_t)*IIR_c2;
 	    Euler_last[i] = Current_Euler[i];
-	    desired_moments[i] = K[i][0]*e - K[i][1]*Euler_dot;
+		Euler_dot_last[i] = Euler_dot;
+		float u = K[i][0]*e - K[i][1]*Euler_dot + K_int*e_int[i];
+	    desired_moments[i] = u * Constants->I[i];
     }
+	
+	Saturate(&desired_moments[0], max_moment_phi, -max_moment_phi, &Saturation_Flag[0]);
+	Saturate(&desired_moments[1], max_moment_theta, -max_moment_theta, &Saturation_Flag[1]);
+	Saturate(&desired_moments[2], max_moment_psi, -max_moment_psi, &Saturation_Flag[2]);
 }
 
-void Set_throttles(unsigned int motor_throttles[4], float desired_thrust, float desired_moments[3]){
+void Saturate(float *desired_moment, float max, float min, unsigned char* Saturation_Flag){
+	if (*desired_moment > max){
+		*desired_moment = max;
+		*Saturation_Flag = 1;
+	}
+	else if (*desired_moment < min){
+		*desired_moment = min;
+		*Saturation_Flag = 2;
+	}
+	else{
+		*Saturation_Flag = 0;
+	}
+}
+
+void Set_throttles(float desired_thrust, float desired_moments[3], const Drone_Constants *Constants){
 // Motor mixer
 // Inputs - Desired thrust and body torques
 // Outputs - Desired throttle command on each of 4 BLDC motors
-    // -> Back motor (0) produces negative pitching torque and negative yawing torque
-    // -> Left motor (1) produces positive rolling torque and positive yawing torque
+    // -> Back motor  (0) produces negative pitching torque and negative yawing torque
+    // -> Left motor  (1) produces positive rolling torque and positive yawing torque
     // -> Right motor (2) produces negative rolling torque and positive yawing torque
     // -> Front motor (3) produces positive pitching torque and negative yawing torque
-	// Motor torque constant in N-m/A (1/KV)
-	const float KT = 0.006366198;
-	// This array holds the current produced by the motor for each 10% of throttle, starting at 0%
-	const float Current[11] = {0.0, 0.1, 0.7, 2.0, 4.1, 7.2, 10.9, 15.4, 20.5, 25.9, 31.8};
-    // Propeller thrust constant in N/(rad/s)^2 
-    const float k_f = 0.000001;
-    // Propeller torque constant in N-m/(rad/s)^2
-    const float k_t = 0.000000011;
-	// Gain to convert (rad/s)^2 to A
-	const float K = KT/k_t;
-    // Distance from front and back motor thrust vectors to drone center of gravity in (m)
-    const float length_f_b =  0.117;
-    // Distance from left and right motor thrust vectors to drone center of gravity in (m)
-	const float length_l_r = 0.1205;
-	const float denom_1 = 4.0*k_f*k_t*length_f_b;
-	const float denom_2 = 4.0*k_f*k_t*length_l_r;
-	const float c1 = k_f*length_f_b;
-	const float c2 = k_t*length_f_b;
-	const float c3 = 2.0*k_t;
-	const float c4 = k_f*length_l_r;
-	const float c5 = k_t*length_l_r;
 
+	const float denom_1 = 4.0 * Constants->k_f * Constants->k_t * Constants->length_f_b;
+	const float denom_2 = 4.0 * Constants->k_f * Constants->k_t * Constants->length_l_r;
+	const float c1 = Constants->k_f * Constants->length_f_b;
+	const float c2 = Constants->k_t * Constants->length_f_b;
+	const float c3 = 2.0 * Constants->k_t;
+	const float c4 = Constants->k_f * Constants->length_l_r;
+	const float c5 = Constants->k_t * Constants->length_l_r;
+		
 	// w_f: (2*My*kt - Mz*kf*lfb + T*kt*lfb)/(4*kf*kt*lfb)
 	// w_r: (Mz*kf*lrl - 2*Mx*kt + T*kt*lrl)/(4*kf*kt*lrl)
 	// w_l: (2*Mx*kt + Mz*kf*lrl + T*kt*lrl)/(4*kf*kt*lrl)
@@ -111,13 +192,17 @@ void Set_throttles(unsigned int motor_throttles[4], float desired_thrust, float 
 	for (unsigned char i = 0; i < 4; i++){
 		first = 0;
 		last = 10;
-		I = omega[i]/K;
+		I = omega[i]/Constants->K;
 		if (I < 0.0){
-			motor_throttles[i] = 0;
+			ATOMIC_BLOCK(ATOMIC_FORCEON){
+				g_Motor_Throttles[i] = 0;
+			}
 			continue;
 		}
-		if (I > Current[10]){
-			motor_throttles[i] = 1000;
+		if (I > Constants->Current[10]){
+			ATOMIC_BLOCK(ATOMIC_FORCEON){
+				g_Motor_Throttles[i] = 1000;
+			}
 			continue;
 		}
 		while(1){
@@ -125,85 +210,108 @@ void Set_throttles(unsigned int motor_throttles[4], float desired_thrust, float 
 			if (middle == first){
 				break;
 			}
-			if (I < Current[middle]){
+			if (I < Constants->Current[middle]){
 				last = middle;
-				continue;
 			}
-			if (I > Current[middle]){
+			else if (I > Constants->Current[middle]){
 				first = middle;
 			}
 		}
-		float temp = ((I - Current[first])/(Current[last]-Current[first]))*100;
-		float motor_throttle_iir = (float)motor_throttles[i]*0.9 +  (first*100 + temp)*0.1;
-		motor_throttles[i] = (unsigned int)motor_throttle_iir;
-		//if (motor_throttles[i]  < 310) motor_throttles[i] = 0;
+		float temp = ((I - Constants->Current[first]) / (Constants->Current[last] - Constants->Current[first])) * 100.0;
+		ATOMIC_BLOCK(ATOMIC_FORCEON){
+			g_Motor_Throttles[i] = (unsigned int)first*100 + (unsigned int)temp;
+		}
 	}
+
 }
 
-volatile unsigned char g_Motor_Run_Flag = 0;
-
-void Run_Motors(unsigned int Throttle_Commands[4]){
+void Run_Motors(unsigned char setup_flag){
 // ESC Interface - PPM (OneShot) control
-// Inputs - Desired motor throttles (0-100)
-// Outputs - 100 Hz, 1-2us waveform to ESC
-	// We want to map 0:1000 to 3000:6000 (1000:2000 us)
-	static unsigned int motor_lookup[1001] = {0};
+// Inputs - Desired motor throttles (0-1000)
+// Outputs - 400 Hz, 1-2 ms waveform to ESC
+// Occurs within ISR, so don't need to worry about g_Motor_Throttles being changed while accessed
+	// We want to map 0:1000 to 12000:24000 (1:2 ms)
+	static unsigned int motor_lookup[(MAX_MOTOR_THROTTLE+1)] = {0};
 	// Build the lookup table if it hasn't been built yet, enable pins for output
-	if (!(motor_lookup[0])){ 
-		for (unsigned int i=0;i<1001;i++){
-			motor_lookup[i] = 3*i + 3000;
+	if (setup_flag){ 
+		for (unsigned int i=0;i<(MAX_MOTOR_THROTTLE+1);i++){
+			motor_lookup[i] = 12*i + 12000;
 		}
-		PORTD_DIR |= PIN0_bm | PIN1_bm | PIN2_bm | PIN3_bm; 
+		PORTD_DIR |= MOTOR1_PIN | MOTOR2_PIN | MOTOR3_PIN | MOTOR4_PIN; 
+		return;
 	}
 	unsigned int mapped_throttle_commands[4] = {0};
+	unsigned int output_throttle[4];
 	// Map commands, saturate if out of bounds
 	for (unsigned char i=0;i<4;i++){
-		Throttle_Commands[i] = (Throttle_Commands[i]>1000)?1000:Throttle_Commands[i];
-		mapped_throttle_commands[i] = motor_lookup[Throttle_Commands[i]];
+		output_throttle[i] = (g_Motor_Throttles[i]>MAX_MOTOR_THROTTLE)?MAX_MOTOR_THROTTLE:g_Motor_Throttles[i];
+		mapped_throttle_commands[i] = motor_lookup[output_throttle[i]];
 	}
+	// ESC motor outputs are numbered 1-4 looking at the voltage connection in the following order:
+	//   1 - bottom left, 2 - top left, 3 - bottom right, 4 - top right
+	// Which connects to the motors in the following way:
+	//	 1 - back, 2 - left, 3 - right, 4 - front
 	// Disable Timer
-	//TCA0_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
-	// Set motor throttles
-	TCA0_SINGLE_CMP0 = mapped_throttle_commands[0] + 220*3; // Motor 1, back
-	TCA0_SINGLE_CMP1 = mapped_throttle_commands[1]; // Motor 2, left
-	TCA0_SINGLE_CMP2 = mapped_throttle_commands[2]; // Motor 3, right
-	TCA1_SINGLE_CMP0 = mapped_throttle_commands[3] + 185*3; // Motor 4, front
+	TCA0_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
 	// Reset timer counts
 	TCA0_SINGLE_CNT = 0;
-	TCA1_SINGLE_CNT = 0;
+	// Set motor throttles
+	TCA0_SINGLE_CMP0 = mapped_throttle_commands[0]; // Motor 1, back
+	TCA0_SINGLE_CMP1 = mapped_throttle_commands[1]; // Motor 2, left
+	TCA0_SINGLE_CMP2 = mapped_throttle_commands[2]; // Motor 3, right
 	// Set pins high
-	PORTD_OUT |= PIN0_bm | PIN1_bm | PIN2_bm | PIN3_bm;
+	PORTD_OUT |= MOTOR1_PIN | MOTOR2_PIN | MOTOR3_PIN;
 	// Start Timers
 	TCA0_SINGLE_CTRLA |= TCA_SINGLE_ENABLE_bm;
+#if defined(AVR128DB48)
+	TCA1_SINGLE_CMP0 = mapped_throttle_commands[3]; // Motor 4, front
+	TCA1_SINGLE_CNT = 0;
+	PORTD_OUT |= MOTOR4_PIN;
 	TCA1_SINGLE_CTRLA |= TCA_SINGLE_ENABLE_bm;
+#elif defined(AVR64DA28)
+	TCB2_CNT = 0;
+	TCB2_CCMP = mapped_throttle_commands[3]; // Motor 4, front
+	PORTD_OUT |= MOTOR4_PIN;
+	TCB2_CTRLA |= TCB_ENABLE_bm;
+#endif
 }
 
 ISR(TCA0_CMP0_vect){
 	// Set pin low
-	PORTD_OUT &= ~PIN0_bm;
+	PORTD_OUT &= ~MOTOR1_PIN;
 	// Clear int flag
 	TCA0_SINGLE_INTFLAGS = TCA_SINGLE_CMP0_bm;
 }
 
 ISR(TCA0_CMP1_vect){
 	// Set pin low
-	PORTD_OUT &= ~PIN1_bm;
+	PORTD_OUT &= ~MOTOR2_PIN;
 	// Clear int flag
 	TCA0_SINGLE_INTFLAGS = TCA_SINGLE_CMP1_bm;
 }
 
 ISR(TCA0_CMP2_vect){
 	// Set pin low
-	PORTD_OUT &= ~PIN2_bm;
+	PORTD_OUT &= ~MOTOR3_PIN;
 	// Clear int flag
 	TCA0_SINGLE_INTFLAGS = TCA_SINGLE_CMP2_bm;
 }
-
+#if defined(AVR128DB48)
 ISR(TCA1_CMP0_vect){
 	// Set pin low
-	PORTD_OUT &= ~PIN3_bm;
+	PORTD_OUT &= ~MOTOR4_PIN;
 	// Clear int flag
 	TCA1_SINGLE_INTFLAGS = TCA_SINGLE_CMP0_bm;
 	// Only motor 4 uses TCA1, so disable timer
-	//TCA1_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
+	TCA1_SINGLE_CTRLA &= ~TCA_SINGLE_ENABLE_bm;
 }
+#elif defined(AVR64DA28)
+ISR(TCB2_INT_vect){
+	// Set pin low
+	PORTD_OUT &= ~MOTOR4_PIN;
+	// Clear int flag
+	TCB2_INTFLAGS = TCB_CAPT_bm;
+	// Only motor 4 uses TCA1, so disable timer
+	TCB2_CTRLA &= ~TCB_ENABLE_bm;
+}
+#endif

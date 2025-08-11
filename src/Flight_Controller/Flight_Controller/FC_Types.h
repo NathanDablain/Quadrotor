@@ -1,6 +1,64 @@
 #ifndef FC_TYPES
 #define FC_TYPES
 
+// Change device to change compilation related to various peripherals - AVR128DB48 and AVR64DA28
+#define AVR64DA28
+//#define AVR128DB48
+
+// ADC_MUX_ESC - Positive mux input to ADC, set to ESC voltage pin
+// ADC_PIN_CTRL - ESC voltage pin interrupt control 
+#if defined(AVR128DB48)
+	#define ADC_MUX_ESC					ADC_MUXPOS_AIN6_gc
+	#define ADC_PIN_CTRL				PORTD_PIN6CTRL
+	#define ADC_PIN						PIN6_bm
+	#define PORT_MAG					PORTB
+	#define CS_MAG						PIN3_bm
+	#define PORT_BAR					PORTA
+	#define CS_BAR						PIN7_bm
+	#define PORT_IMU					PORTA
+	#define CS_IMU						PIN6_bm
+	#define PORT_LORA					PORTA
+	#define CS_LORA						PIN5_bm
+	#define PRIMARY_SPI					SPI1
+	#define PRIMARY_SPI_PORT			PORTC
+	#define PRIMARY_SPI_MOSI_PIN		PIN0_bm
+	#define PRIMARY_SPI_SCK_PIN			PIN2_bm
+	#define PRIMARY_USART				USART3
+	#define PRIMARY_USART_RXC_VECT		USART3_RXC_vect
+	#define PRIMARY_USART_PORT			PORTB
+	#define PRIMARY_USART_TX_PIN		PIN1_bm
+	#define PRIMARY_TWI_PORT			PORTA
+	#define MOTOR1_PIN					PIN0_bm
+	#define MOTOR2_PIN					PIN1_bm
+	#define MOTOR3_PIN					PIN2_bm
+	#define MOTOR4_PIN					PIN3_bm	
+#elif defined(AVR64DA28)
+	#define ADC_MUX_ESC					ADC_MUXPOS_AIN2_gc
+	#define ADC_PIN_CTRL				PORTD_PIN2CTRL
+	#define ADC_PIN						PIN2_bm
+	#define PORT_MAG					PORTA
+	#define CS_MAG						PIN2_bm
+	#define PORT_BAR					PORTA
+	#define CS_BAR						PIN0_bm
+	#define PORT_IMU					PORTA
+	#define CS_IMU						PIN1_bm
+	#define PORT_LORA					PORTA
+	#define CS_LORA						PIN3_bm
+	#define PRIMARY_SPI					SPI0
+	#define PRIMARY_SPI_PORT			PORTA
+	#define PRIMARY_SPI_MOSI_PIN		PIN4_bm
+	#define PRIMARY_SPI_SCK_PIN			PIN6_bm
+	#define PRIMARY_USART				USART2
+	#define PRIMARY_USART_RXC_VECT		USART2_RXC_vect
+	#define PRIMARY_USART_PORT			PORTF
+	#define PRIMARY_USART_TX_PIN		PIN0_bm
+	#define PRIMARY_TWI_PORT			PORTC
+	#define MOTOR1_PIN					PIN3_bm
+	#define MOTOR2_PIN					PIN4_bm
+	#define MOTOR3_PIN					PIN5_bm
+	#define MOTOR4_PIN					PIN6_bm
+#endif
+
 // Global variables
 extern volatile unsigned long g_seconds;
 
@@ -53,6 +111,9 @@ typedef struct{
 	// Reference_Position_ecef -> Earth Centered Earth Fixed coordinates of initial reference position which NED offset is based on
 	unsigned char gps_cal_status;
 	float Reference_Position_ecef[3];
+	// Motor cal data
+	unsigned char motor_cal_status;
+	unsigned char motor_cal_flags[4];
 } Calibration_Data;
 
 void Delay(unsigned long long length);

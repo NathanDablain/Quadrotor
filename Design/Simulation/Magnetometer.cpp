@@ -17,8 +17,8 @@ void Magnetometer::Sample(Environment &env, Sim_Time sim_t){
     // -> Body z = Sensor z
     Vec3 mag_LSB_true = (env.m_vec_Body + env.mag_hard_iron)*mag_sens;
     double temp = mag_LSB_true.data[0];
-    mag_LSB_true.data[0] = mag_LSB_true.data[1];
-    mag_LSB_true.data[1] = -temp;
+    mag_LSB_true.data[0] = -mag_LSB_true.data[1];
+    mag_LSB_true.data[1] = temp;
 
     array<int16_t, 3> mag_noise_LSB;
     for (uint8_t i = 0; i < 3; i++){

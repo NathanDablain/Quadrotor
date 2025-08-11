@@ -4,28 +4,27 @@
 #include <avr/io.h>
 #include <avr/xmega.h>
 #include <avr/interrupt.h>
+#include <util/atomic.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "FC_Types.h"
 #include "SPI.h"
 #include "TWI.h"
 #include "IMU.h"
 #include "Mag.h"
 #include "Bar.h"
+#include "GPS.h"
 #include "Observer.h"
 #include "SSD.h"
 #include "LoRa.h"
 #include "Utilities.h"
-#include "Motors.h"
 #include "Controllers.h"
-#include "FC_Types.h"
 
 // Tracks when to check LoRa for uplink, incremented at 200 Hz
 extern volatile unsigned char g_LoRa_Check_Flag;
-// Tracks when to print output to SSD display
-extern volatile unsigned char g_Print_Flag;
 // Tracks when to sample magnetometer
 extern volatile unsigned char g_MAG_Read_Flag;
 // Tracks when to sample imu
@@ -40,12 +39,16 @@ extern volatile unsigned char g_Motor_Run_Flag;
 extern volatile unsigned char g_Altitude_Control_Flag;
 // Tracks how often to run guidance function
 extern volatile unsigned char g_Guidance_Flag;
-// Tracks when to send downlink
-extern volatile unsigned char g_LoRa_Send_Flag;
 // Tracks when to use accelerometer and magnetometer data to include measurements
 extern volatile unsigned char g_Attitude_Observer_Update_Flag;
 // Tracks when to use gyro data to make predictions
 extern volatile unsigned char g_Attitude_Observer_Predict_Flag;
+// Tracks when power is first applied to the motors
+extern volatile unsigned char g_Motor_Power_Flag;
+// Motor_Throttles-> Values from 0-1000 with 1000 being max throttle, motor order is: back, left, right, front
+extern volatile unsigned int g_Motor_Throttles[4];
+
+extern volatile unsigned char g_Motor_Cal_Flag;
 
 // Either sets or clears a bit within a bitmask depending on the input
 #define SET_BIT(current_val, position, val) ((val < 1) ? current_val&(~(val<<position)) : current_val|(val<<position))
@@ -61,5 +64,9 @@ extern volatile unsigned char g_Attitude_Observer_Predict_Flag;
 unsigned char Setup();
 // Initializes timers used to keep track events
 void Setup_Timers();
+// Initializes Analog to Digital Converter to sample motor battery voltage
+void Setup_ADC();
+
+unsigned int Sample_ADC();
 
 #endif

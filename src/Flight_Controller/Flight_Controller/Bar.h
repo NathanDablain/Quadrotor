@@ -4,6 +4,7 @@
 #include "FC_Types.h"
 
 #define BAR_WHO_AM_I 0x0F
+#define BAR_ID 0b10110011
 #define BAR_IF_CTRL 0x0E
 #define BAR_CTRL_REG1 0x10
 #define BAR_CTRL_REG2 0x11

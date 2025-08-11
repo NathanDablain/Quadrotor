@@ -48,8 +48,9 @@ struct Mat3{
 struct Vec{
     vector<double> data {0.0};
 
-    void operator=(vector<double> v1);
-
+    Vec(size_t length);
+    Vec();
+    
     Vec operator+(Vec v1);
 
     Vec operator-(Vec v1);

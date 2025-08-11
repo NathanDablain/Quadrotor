@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <math.h>
 #include <cstdlib>
+#include <string.h>
 #include "Controllers.h"
 #include "Environment.h"
 #include "Sim_Time.h"
@@ -42,13 +43,13 @@ class MCU{
     private:
         const Sim_Time rtc_rate = {.Seconds = 1, .MicroSeconds = 0};
         const Sim_Time tcb0_rate = {.Seconds = 0, .MicroSeconds = 5000};
-        const Sim_Time tcb1_rate = {.Seconds = 0, .MicroSeconds = 2400};
-        const Sim_Time tcb2_rate = {.Seconds = 0, .MicroSeconds = 600};
+        const Sim_Time tcb1_rate = {.Seconds = 0, .MicroSeconds = 600};
+        const Sim_Time tcd0_rate = {.Seconds = 0, .MicroSeconds = 2000};
 
         Sim_Time rtc_timelast = {0};
         Sim_Time tcb0_timelast = {0};
         Sim_Time tcb1_timelast = {0};
-        Sim_Time tcb2_timelast = {0};
+        Sim_Time tcd0_timelast = {0};
         Sim_Time gps_timelast = {0};
         Sim_Time ready_time = {0};
 
@@ -63,11 +64,14 @@ class MCU{
         uint8_t Gyro_Read_Flag = 0; 
         uint8_t GPS_Read_Flag = 0;
         uint8_t Altitude_Control_Flag = 0; 
-        uint8_t LQR_Flag = 0;
         uint8_t Guidance_Flag = 0;
         uint8_t reset = 0;
         uint16_t motor_throttles[4] = {0};
         Calibration_Data cal_data = {0};
+		// Commanded-> tracks the states the autopilot is tracking to after the desired states are fed through the guidance functions
+		Reference Commanded_States = {0};
+        // Initialize data structures
+		const Drone_Constants Constants = Initialize_Drone_Constants();
         Uplink up_link;
         // Flag to enable guidance and control functions in MCU after calibration
         bool MCU_Cal_Flag = false;
@@ -81,9 +85,7 @@ class MCU{
         void Calibrate_Mag();
         void Calibrate_Gyro();
     public:
-        FC_Status Flight_Controller_Status;
-        // Desired state of the drone, should mirror its counterpart in src/Flight_Controller
-        States Reference = {0};
+        FC_Status Flight_Controller_Status = Standby;
         // Current state of the drone according to the MCU, should mirror the performance in src/Flight_Controller
         States mcu = {0};
         // LPS22H Barometer
@@ -96,15 +98,12 @@ class MCU{
         float Desired_Thrust = 0;
         // Desired moments by MCU
         float Desired_Moments[3] = {0};
-        // Desired position from ground controller
-        float Desired_Position_NED[3] = {0};
-        // For testing
-        float Desired_Euler[3] = {0};
+		// Desired-> tracks the desired drone states issued by the ground controller
+		Reference Desired_States = {0};
 
         uint16_t mapped_throttle_commands[4] = {0};
         void Run(Environment &env, Sim_Time sim_t);
         void Run_Motors(uint16_t throttles[4]);
         void Observer_Update();
         void Observer_Predict();
-        void Run_Guidance();
 };
