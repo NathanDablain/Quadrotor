@@ -1,4 +1,5 @@
 #include "MCU.h"
+#include <iostream>
 
 void MCU::Run(Environment &env, Sim_Time sim_t){
     // This method models the flight controller source code in src/flight_controller
@@ -89,7 +90,7 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
         // PIDs and ESCs run at 200 Hz, updates desired motor speeds
         if (Motor_Run_Flag){
             Motor_Run_Flag = 0;
-            Euler_Control(mcu.Euler, Commanded_States.Euler, Desired_Moments, Desired_Thrust, &Constants);
+            // Euler_Control(mcu.Euler, Commanded_States.Euler, Desired_Moments, Desired_Thrust, &Constants);
             Set_throttles(motor_throttles, Desired_Thrust, Desired_Moments, &Constants);
             Safety_Check(motor_throttles, &mcu, &Flight_Controller_Status);
         }
@@ -170,20 +171,12 @@ void MCU::Calibrate_Mag(){
 		}
 		if (calculate_hard_iron){
 			initial_time = seconds;
-			if (abs(cal_data.m_max[i])<abs(cal_data.m_min[i])){
-				cal_data.hard_iron[i] = cal_data.m_min[i]-cal_data.m_max[i];
-			}
-			else{
-				cal_data.hard_iron[i] = cal_data.m_max[i]-cal_data.m_min[i];
-			}
+            cal_data.hard_iron[i] = cal_data.m_max[i] + cal_data.m_min[i];
 			cal_data.hard_iron[i] >>= 1;
 		}
 	}
 
 	if ((seconds - initial_time) >= MAG_CAL_TIMEOUT){
-        for (uint8_t i = 0 ; i < 3; i++){
-            if (cal_data.hard_iron[i] == 0) cal_data.hard_iron[i] = 1;
-        }
 		cal_data.mag_cal_status = 1;
 	}
 }
@@ -197,12 +190,9 @@ void MCU::Read_Mag(){
     mcu.m_xyz_LSB[1] = magnetometer.magnetic_field_LSB[1]; 
 	mcu.m_xyz_LSB[2] = magnetometer.magnetic_field_LSB[2]; 
 
-	// mcu.m_vec[0] = ((float)(mcu.m_xyz_LSB[1] - cal_data.hard_iron[1]))/((float)cal_data.hard_iron[1]*2.0);
-	// mcu.m_vec[1] = -((float)(mcu.m_xyz_LSB[0] - cal_data.hard_iron[0]))/((float)cal_data.hard_iron[0]*2.0);
-	// mcu.m_vec[2] = ((float)(mcu.m_xyz_LSB[2] - cal_data.hard_iron[2]))/((float)cal_data.hard_iron[2]*2.0);
-    mcu.m_vec[0] = (float)mcu.m_xyz_LSB[1];
-    mcu.m_vec[1] = -(float)mcu.m_xyz_LSB[0];
-	mcu.m_vec[2] = (float)mcu.m_xyz_LSB[2];
+	mcu.m_vec[0] = ((float)(mcu.m_xyz_LSB[1] - cal_data.hard_iron[1]));
+	mcu.m_vec[1] = -((float)(mcu.m_xyz_LSB[0] - cal_data.hard_iron[0]));
+	mcu.m_vec[2] = ((float)(mcu.m_xyz_LSB[2] - cal_data.hard_iron[2]));
 }
 
 void MCU::Calibrate_Gyro(){
@@ -229,25 +219,13 @@ void MCU::Read_Gyro(){
 
 void MCU::Read_Accel(){
     Accel_Read_Flag = 0;
-    if (imu.FIFO_index < ACCEL_WINDOW_SIZE) return;
+    if (imu.accel_drdy_flag == false) return;
+	imu.accel_drdy_flag = true;
 	
-    array<int16_t, 3> Data[ACCEL_WINDOW_SIZE];
-    imu.Read_FIFO(Data);
-	
-	int32_t a_xyz_oversampled[3] = {0};
-	for (uint8_t i=0; i<ACCEL_WINDOW_SIZE; i++){
-		a_xyz_oversampled[0] += Data[i][0];
-		a_xyz_oversampled[1] += Data[i][1];
-		a_xyz_oversampled[2] += Data[i][2];
-	}
-	a_xyz_oversampled[0] >>= 3;
-	a_xyz_oversampled[1] >>= 3;
-	a_xyz_oversampled[2] >>= 3;
-
 	// Flip positive directions on Accelerometer y axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
-	mcu.g_vec[0] = a_xyz_oversampled[0];
-	mcu.g_vec[1] = -a_xyz_oversampled[1];
-	mcu.g_vec[2] = a_xyz_oversampled[2];
+	mcu.g_vec[0] = imu.acceleration_LSB[0];
+	mcu.g_vec[1] = -imu.acceleration_LSB[1];
+	mcu.g_vec[2] = imu.acceleration_LSB[2];
 }
 
 void MCU::Read_LoRa(Environment &env){
@@ -283,9 +261,6 @@ void MCU::Observer_Update(){
     if (isnan(psi_m)){
         psi_m = mcu.Euler[2];
     }
-    // if (psi_m <= 0){
-    //     psi_m += 2.0*PI;
-    // }
 
     // Update
     mcu.Euler[0] = mcu.Euler[0] + OBSERVER_GAIN*(phi_m - mcu.Euler[0]);

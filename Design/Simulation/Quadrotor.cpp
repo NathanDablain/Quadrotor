@@ -11,12 +11,15 @@ Quadrotor::Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf){
     inertia.data[0][0] = Ixx;
     inertia.data[1][1] = Iyy;
     inertia.data[2][2] = Izz;
+    inertia.data[0][1] = Ixy, inertia.data[1][0] = Ixy;
+    inertia.data[0][2] = Ixz, inertia.data[2][0] = Ixz;
+    inertia.data[1][2] = Iyz, inertia.data[2][1] = Iyz;
     q.data.resize(4, (double)0.0);
     q.data = {1.0, 0.0, 0.0, 0.0};
-    Motors[0].deadzone = 200;
-    Motors[1].deadzone = 300;
-    Motors[2].deadzone = 200;
-    Motors[3].deadzone = 275;
+    Motors[0].deadzone = 50;
+    Motors[1].deadzone = 50;
+    Motors[2].deadzone = 50;
+    Motors[3].deadzone = 50;
     AVR128DB48.barometer.Initialize(75, 1, Bar_Mode_Bypass);
     AVR128DB48.magnetometer.Initialize(50);
     AVR128DB48.imu.Initialize(416, 52, 8);
@@ -32,9 +35,9 @@ Quadrotor::Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf){
 void Quadrotor::Calculate_errors(){
     if ((AVR128DB48.Flight_Controller_Status == Flying)||(AVR128DB48.Flight_Controller_Status == Landing)){
         for (uint8_t i = 0; i < 3; i++){
-            Control_errors[i] += fabs(AVR128DB48.Desired_States.Euler[i] - Euler.data[i])*sim_dt.Time_fp();
+            Control_errors[i] += fabs(AVR128DB48.Desired_States.Euler[i] - Euler.data[i])*R2D*sim_dt.Time_fp();
             Control_errors[3+i] += fabs(AVR128DB48.Desired_States.Position_NED[i] - Position_NED.data[i])*sim_dt.Time_fp();
-            Navigation_errors[i] += fabs(Euler.data[i] - AVR128DB48.mcu.Euler[i])*sim_dt.Time_fp();
+            Navigation_errors[i] += fabs(Euler.data[i] - AVR128DB48.mcu.Euler[i])*R2D*sim_dt.Time_fp();
             Navigation_errors[3+i] += fabs(Position_NED.data[i] - AVR128DB48.mcu.Position_NED[i])*sim_dt.Time_fp();
         }
     }
@@ -75,13 +78,31 @@ void Quadrotor::Run_sim(){
 }
 
 void Quadrotor::Manage_FC_Status(){
+    static uint8_t phase;
     if (sim_t == cal_start_time){
         AVR128DB48.Flight_Controller_Status = Calibrating;
     }
     if ((sim_t.Seconds - cal_start_time.Seconds >= 2)&&(AVR128DB48.Flight_Controller_Status == Calibrating)){
-        w.data[0] = 0.2;
-        w.data[1] = -0.04;
-        w.data[2] = 0.2;
+        if (sim_t.Seconds - cal_start_time.Seconds <= 7){
+            w.data[0] = 1.0;
+            phase = 1;
+        }
+        else if (sim_t.Seconds - cal_start_time.Seconds <= 12){
+            if (phase == 1){
+                q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
+                w.data[0] = 0.0;
+            }
+            w.data[1] = 1.0;
+            phase = 2;
+        }
+        else if (sim_t.Seconds - cal_start_time.Seconds <= 17){
+            if (phase == 2){
+                q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
+                w.data[1] = 0.0;
+            }
+            w.data[2] = 1.0;
+            phase = 3;
+        }
     }
     if (AVR128DB48.Flight_Controller_Status == Ready){
         w.data[0] = 0; w.data[1] = 0; w.data[2] = 0;
@@ -191,7 +212,7 @@ void Quadrotor::Update_drone_forces_moments(Environment &env){
     // -> Motors
     // -> Wind
     // -> Ground
-
+    static Gaussian Moment_noise(0.01, 0.0);
     // Gravity force, dependent on initial LLA position
     Vec3 g_vec_NED = {0.0, 0.0, env.gravity};
     Vec3 g_force_Body = NED2Body(g_vec_NED, q)*mass;
@@ -209,14 +230,10 @@ void Quadrotor::Update_drone_forces_moments(Environment &env){
     // -> Left motor (1) produces positive rolling torque and positive yawing torque
     // -> Right motor (2) produces negative rolling torque and positive yawing torque
     // -> Front motor (3) produces positive pitching torque and negative yawing torque
-    Vec3 moment_Noise = {0.0,0.0,0.0};
-    const double moment_max_noise = 0.01;
-    const double moment_noise_sens = moment_max_noise/32767.0;
+    Vec3 moment_Noise = {0.0, 0.0, 0.0};
+
     if (AVR128DB48.Flight_Controller_Status == Flying || AVR128DB48.Flight_Controller_Status == Landing){
-        for (uint8_t i = 0; i < 3; i++){
-            double random_noise = 2.0*rand()*moment_noise_sens;
-            moment_Noise.data[i] = (random_noise>moment_max_noise)?(random_noise-moment_max_noise):(random_noise);
-        }
+        moment_Noise = {Moment_noise.Get_val(), Moment_noise.Get_val(), Moment_noise.Get_val()};
     }
     Vec3 motor_moment_Body = {
         length_l_r*(motor_thrusts.data[1] - motor_thrusts.data[2]),

@@ -10,15 +10,16 @@ void Barometer::Initialize(uint16_t odr, uint8_t watermark, Barometer_mode mode)
 }
 
 void Barometer::Sample(Environment &env, Sim_Time sim_t){
+    static Gaussian Gaussian_Bar(noise_rms, 0.0);
+
     if ((sim_t - last_sample_time) < Update_rate) return;
     last_sample_time = sim_t;
+    // Get noise in hpa
+    double noise_hpa = Gaussian_Bar.Get_val();
+    // Add to true data in Pa, convert to LSB
+    double pressure_LSB = (env.pressure/100.0 + noise_hpa)*sensitivity;
 
-    double pressure_LSB_true = env.pressure*sensitivity;
-
-    double random_noise = 2.0*rand()*noise_sensitivity;
-    random_noise *= sensitivity;
-    int16_t pressure_noise_LSB = (random_noise>(max_noise*sensitivity))?(static_cast<int16_t>(random_noise-(max_noise*sensitivity))):(static_cast<int16_t>(random_noise));
-    Pressure_Out_LSB = static_cast<uint32_t>(pressure_LSB_true) + pressure_noise_LSB;
+    Pressure_Out_LSB = static_cast<uint32_t>(pressure_LSB);
     drdy_flag = true;
     if ((Mode == Bar_Mode_FIFO)&&(FIFO_index < FIFO_watermark)){
         FIFO_buffer[FIFO_index++] = Pressure_Out_LSB;

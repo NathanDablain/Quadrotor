@@ -40,6 +40,9 @@ class Quadrotor{
         double Ixx = 0.0018;
         double Iyy = 0.00356;
         double Izz = 0.00208;
+        double Ixy = 0.0000227;
+        double Ixz = -0.0000012;
+        double Iyz = 0.0000010;
         // Step time for simulation
         Sim_Time sim_dt;
         // Final time of simulation

@@ -28,7 +28,7 @@
 #define ACCEL_SENS 2.0/32768.0
 #define W_CAL_LIMIT 500
 
-#define MAG_CAL_TIMEOUT 5
+#define MAG_CAL_TIMEOUT 15
 
 // Increasing the gain increases the trust on the model(gyro), and decreasing it increases the trust on the measurement (accel & mag)
 #define OBSERVER_GAIN 0.05f

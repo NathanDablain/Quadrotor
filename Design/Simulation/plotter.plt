@@ -5,6 +5,7 @@ set output "Position.png"
 set xlabel "Time (s)"
 set ylabel "Position (m)"
 set yrange [-10:10]
+set xrange [35:]
 # set multiplot layout 3,1 rows
 # plot 'Sim_log.txt' using 1:2 title "North-sim", 'MCU_log.txt' using 1:3 title "North-mcu"
 # plot 'Sim_log.txt' using 1:3 title "East-sim", 'MCU_log.txt' using 1:4 title "East-mcu"
@@ -16,7 +17,8 @@ set term png
 set output "Euler_Angles.png
 set xlabel "Time (s)"
 set ylabel "Euler Angles (rad)"
-set yrange [-1:1]
+set yrange [-1.5:1.5]
+set xrange [35:]
 set multiplot layout 3,1 rows
 plot 'Sim_log.txt' using 1:6 with lines title "Roll-sim" linewidth 4, 'MCU_log.txt' using 1:7 with lines title "Roll-mcu" linewidth 4
 plot 'Sim_log.txt' using 1:7 with lines title "Pitch-sim" linewidth 4, 'MCU_log.txt' using 1:8 with lines title "Pitch-mcu" linewidth 4
@@ -29,6 +31,7 @@ set output "Motor_Thrusts.png"
 set xlabel "Time (s)"
 set ylabel "Motor Thrusts (N)"
 set yrange [0:20]
+set xrange [35:]
 set multiplot layout 2,2 rows
 plot 'Sim_log.txt' using 1:15 title "Back"
 plot 'Sim_log.txt' using 1:16 title "Left"

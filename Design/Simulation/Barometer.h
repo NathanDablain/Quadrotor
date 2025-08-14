@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "Environment.h"
 #include "Sim_Time.h"
+#include "Gaussian.h"
 
 typedef enum {
     Bar_Mode_Bypass,
@@ -12,9 +13,10 @@ typedef enum {
 class Barometer{
     private:
         //------LPS22HH Barometer Parameters-----//
-        const double sensitivity = 40.96;
-        const double max_noise = 2.0; //0.65;
-        const double noise_sensitivity = max_noise/32767.0;
+        // sensitivity in LSB/hpa
+        const double sensitivity = 4096.0;
+        // noise is in hpa
+        const double noise_rms = 0.0065;
         // Output Data Rate in Hz
         uint16_t ODR;
         // Time between sensor readings in microseconds

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "Environment.h"
+#include "Gaussian.h"
 
 class Magnetometer {
     private:
@@ -12,13 +13,12 @@ class Magnetometer {
     // Sensitivity is in units of mgauss/LSB
     const double mag_sens = 1.5;
     // RMS magnetometer noise in (mgauss)
-    const double mag_max_noise = 30.0; //3;
-    const double mag_noise_sens = mag_max_noise/32767.0;
+    const double noise_rms = 3.0;
     public:
         // Output data
         array<int16_t, 3> magnetic_field_LSB;
         // Data ready flag, set when new data has been sampled
-        bool drdy_flag;
+        bool drdy_flag = false;
         void Initialize(uint16_t odr);
         void Sample(Environment &env, Sim_Time sim_t);
 };

@@ -128,11 +128,8 @@ unsigned char Read_Accel(States *Drone){
 
 	// Flip positive directions on Accelerometer x axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
 	Drone->g_vec[0] = -(((signed int)Data[1])<<8) - (signed int)Data[0];
-	Drone->g_vec[0] = -(((signed int)Data[1])<<8) - Data[0];
 	Drone->g_vec[1] = (((signed int)Data[3])<<8) + (signed int)Data[2];
-	Drone->g_vec[1] = (((signed int)Data[3])<<8) + Data[2];
 	Drone->g_vec[2] = (((signed int)Data[5])<<8) + (signed int)Data[4];
-	Drone->g_vec[2] = (((signed int)Data[5])<<8) + Data[4];
 	return 1;
 	
 }
@@ -189,12 +186,7 @@ void Calibrate_Mag(States *Drone, Calibration_Data *cal_data){
 			ATOMIC_BLOCK(ATOMIC_FORCEON){
 				initial_time = g_seconds;
 			}
-			if (abs(cal_data->m_max[i])<abs(cal_data->m_min[i])){
-				cal_data->hard_iron[i] = cal_data->m_min[i]-cal_data->m_max[i];
-			}
-			else{
-				cal_data->hard_iron[i] = cal_data->m_max[i]-cal_data->m_min[i];
-			}
+			cal_data->hard_iron[i] = cal_data->m_min[i] + cal_data->m_max[i];
 			cal_data->hard_iron[i] >>= 1;
 		}
 	}
@@ -220,9 +212,9 @@ unsigned char Read_Mag(States *Drone, Calibration_Data *cal_data){
 		Drone->m_xyz_LSB[i] = (((signed int)Data[2*i+1])<<8) + Data[2*i];
 	}
 
-	Drone->m_vec[0] = ((float)(Drone->m_xyz_LSB[1] - cal_data->hard_iron[1]))/((float)cal_data->hard_iron[1]*2.0);
-	Drone->m_vec[1] = -((float)(Drone->m_xyz_LSB[0]- cal_data->hard_iron[0]))/((float)cal_data->hard_iron[0]*2.0);
-	Drone->m_vec[2] = ((float)(Drone->m_xyz_LSB[2] - cal_data->hard_iron[2]))/((float)cal_data->hard_iron[2]*2.0);
+	Drone->m_vec[0] = ((float)(Drone->m_xyz_LSB[1] - cal_data->hard_iron[1]));
+	Drone->m_vec[1] = -((float)(Drone->m_xyz_LSB[0]- cal_data->hard_iron[0]));
+	Drone->m_vec[2] = ((float)(Drone->m_xyz_LSB[2] - cal_data->hard_iron[2]));
 	
 	return 1;
 }
