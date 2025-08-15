@@ -1,0 +1,33 @@
+#ifndef TIME_P32_H
+#define TIME_P32_H
+
+#include <stdint.h>
+#include <stdbool.h>
+
+#define US_IN_S 1000000
+
+extern volatile uint32_t g_seconds;
+extern volatile uint32_t g_microseconds;
+
+typedef struct{
+    int32_t seconds;
+    int32_t microseconds;
+} Time;
+
+typedef struct{
+    Time imu_clk;
+    Time mag_clk;
+    Time bar_clk;
+    Time lora_clk;
+    Time gps_clk;
+} SEQUENCER;
+
+Time Current_Time();
+
+Time Time_Difference(Time Time_1, Time Time_2);
+
+double Time_fp(Time time);
+
+bool Compare_And_Update(const Time Time_1, Time* Time_2);
+
+#endif
