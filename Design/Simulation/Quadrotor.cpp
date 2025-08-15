@@ -212,7 +212,7 @@ void Quadrotor::Update_drone_forces_moments(Environment &env){
     // -> Motors
     // -> Wind
     // -> Ground
-    static Gaussian Moment_noise(0.01, 0.0);
+    static Gaussian Moment_noise_gauss(0.05, 0.0);
     // Gravity force, dependent on initial LLA position
     Vec3 g_vec_NED = {0.0, 0.0, env.gravity};
     Vec3 g_force_Body = NED2Body(g_vec_NED, q)*mass;
@@ -233,7 +233,7 @@ void Quadrotor::Update_drone_forces_moments(Environment &env){
     Vec3 moment_Noise = {0.0, 0.0, 0.0};
 
     if (AVR128DB48.Flight_Controller_Status == Flying || AVR128DB48.Flight_Controller_Status == Landing){
-        moment_Noise = {Moment_noise.Get_val(), Moment_noise.Get_val(), Moment_noise.Get_val()};
+        moment_Noise = {Moment_noise_gauss.Get_val(), Moment_noise_gauss.Get_val(), Moment_noise_gauss.Get_val()};
     }
     Vec3 motor_moment_Body = {
         length_l_r*(motor_thrusts.data[1] - motor_thrusts.data[2]),

@@ -15,21 +15,9 @@
 #include "SPI.h"
 #include "Utilities.h"
 
-volatile unsigned char g_BAR_Read_Flag = 0;
-
-volatile unsigned char g_Accel_Read_Flag = 0;
-volatile unsigned char g_Gyro_Read_Flag = 0;
-
-volatile unsigned char g_MAG_Read_Flag = 0;
-
 static volatile char g_GPS_Data[256];
 static volatile unsigned char g_GPS_Data_Index;
 volatile unsigned char g_GPS_Read_Flag = 0;
-
-volatile unsigned char g_Attitude_Observer_Update_Flag = 0;
-volatile unsigned char g_Attitude_Observer_Predict_Flag = 0;
-volatile unsigned char g_Altitude_Observer_Update_Flag = 0;
-volatile unsigned char g_Altitude_Observer_Predict_Flag = 0;
 
 void Setup_Pins(){
 	PORT_BAR.DIR |= CS_BAR;

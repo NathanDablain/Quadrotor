@@ -1,11 +1,12 @@
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <util/atomic.h>
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+#include "LoRa.h"
+#include "FC_Types.h"
 #include "Controllers.h"
-
-volatile unsigned char g_Motor_Power_Flag = 0;
-volatile unsigned char g_Guidance_Flag = 0;
-volatile unsigned char g_Altitude_Control_Flag = 0;
-volatile unsigned char g_Motor_Run_Flag = 0;
-volatile unsigned char g_Motor_Cal_Flag = 0;
-volatile unsigned int g_Motor_Throttles[4] = {0};
 
 Drone_Constants Initialize_Drone_Constants(){
 	Drone_Constants Constants = {
@@ -56,6 +57,7 @@ void Safety_Check(States *Drone, FC_Status *Flight_Controller_Status){
 	if (fabs(Drone->Euler[0]) > MOTOR_CUTOFF_ANGLE) safety_switch = 1;
 	else if (fabs(Drone->Euler[1]) > MOTOR_CUTOFF_ANGLE) safety_switch = 1;
 	else if (fabs(Drone->Position_NED[2]) > MOTOR_CUTOFF_ALTITUDE) safety_switch = 1;
+	else if (g_positive_coms_watchdog >= 3) safety_switch = 1;
 	
 	if (safety_switch){
 		ATOMIC_BLOCK(ATOMIC_FORCEON){
@@ -101,8 +103,8 @@ float Altitude_Control(float h, float h_ref, const Drone_Constants *Constants){
 
 void Euler_Control(float Current_Euler[3], float Commanded_Euler[3], float desired_moments[3], float thrust, const Drone_Constants *Constants){
     const float d_t = 0.0025;
-    const float K[3][2] = {{100.0, 200.0},{100.0, 200.0},{10.0, 20.0}};
-	const float K_int = 0.1;
+    const float K[3][2] = {{40.0, 40.0},{40.0, 40.0},{4.0, 8.0}};
+	const float K_int = 0.05;
 	const float IIR_c1 = 0.9;
 	const float IIR_c2 = 1.0 - IIR_c1;
 	const float moment_split = 0.75;

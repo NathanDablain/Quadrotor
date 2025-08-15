@@ -90,7 +90,7 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
         // PIDs and ESCs run at 200 Hz, updates desired motor speeds
         if (Motor_Run_Flag){
             Motor_Run_Flag = 0;
-            // Euler_Control(mcu.Euler, Commanded_States.Euler, Desired_Moments, Desired_Thrust, &Constants);
+            Euler_Control(mcu.Euler, Commanded_States.Euler, Desired_Moments, Desired_Thrust, &Constants);
             Set_throttles(motor_throttles, Desired_Thrust, Desired_Moments, &Constants);
             Safety_Check(motor_throttles, &mcu, &Flight_Controller_Status);
         }

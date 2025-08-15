@@ -1,12 +1,6 @@
 #ifndef CONTROLLERS_H
 #define CONTROLLERS_H
 
-#include <avr/io.h>
-#include <avr/interrupt.h>
-#include <util/atomic.h>
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
 #include "LoRa.h"
 #include "FC_Types.h"
 

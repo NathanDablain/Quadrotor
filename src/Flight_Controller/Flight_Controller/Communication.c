@@ -14,9 +14,6 @@
 
 // SERIAL PERIPHERAL INTERFACE (SPI) CODE
 
-volatile unsigned char g_LoRa_Check_Flag = 0;
-volatile unsigned char g_Print_Flag = 0;
-
 void Setup_SPI(){
 	// Set SCK and MOSI
 	PRIMARY_SPI_PORT.DIR |= PRIMARY_SPI_MOSI_PIN | PRIMARY_SPI_SCK_PIN;
@@ -326,6 +323,8 @@ unsigned char Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Fli
 	Xor_Checksum(buffer_out, UPLINK_DATA_SIZE, start_index+1, checksum_hex);
 	// If checksum passes, read uplink
 	if ((checksum_hex[0] == Check_Sum[0])&&(checksum_hex[1] == Check_Sum[1])&&uplink_status){
+		// Feed the positive coms watchdog
+		g_positive_coms_watchdog = 0;
 		outbound->ID[0] = buffer_out[start_index+3];
 		outbound->ID[1] = buffer_out[start_index+4];
 		// Get desired north/south position

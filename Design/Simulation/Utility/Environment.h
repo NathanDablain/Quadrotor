@@ -5,7 +5,7 @@
 #include <cmath>
 #include "Linear_Algebra.h"
 #include "Coordinate_Frames.h"
-#include "../Sim_Types.h"
+#include "Sim_Types.h"
 #include "Sim_Time.h"
 
 using namespace std;

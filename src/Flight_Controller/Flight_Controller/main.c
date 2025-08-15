@@ -1,8 +1,24 @@
 #include "Flight_Controller.h"
 
+// Initialize all global variables here //
+volatile unsigned char g_positive_coms_watchdog = 0;
 volatile unsigned long g_seconds = 0;
 volatile unsigned char g_print_flag = 0;
-volatile unsigned char g_GPS_setup_status = 0;
+volatile unsigned char g_LoRa_Check_Flag = 0;
+volatile unsigned char g_Motor_Power_Flag = 0;
+volatile unsigned char g_Guidance_Flag = 0;
+volatile unsigned char g_Altitude_Control_Flag = 0;
+volatile unsigned char g_Motor_Run_Flag = 0;
+volatile unsigned char g_Motor_Cal_Flag = 0;
+volatile unsigned int g_Motor_Throttles[4] = {0};
+volatile unsigned char g_BAR_Read_Flag = 0;
+volatile unsigned char g_Accel_Read_Flag = 0;
+volatile unsigned char g_Gyro_Read_Flag = 0;
+volatile unsigned char g_MAG_Read_Flag = 0;
+volatile unsigned char g_Attitude_Observer_Update_Flag = 0;
+volatile unsigned char g_Attitude_Observer_Predict_Flag = 0;
+
+
 unsigned char Setup(){
 	Setup_Pins();
 	if (RSTCTRL_RSTFR & RSTCTRL_PORF_bm){Delay(100000);} // Necessary to stabilize IC's on a cold start
@@ -12,7 +28,7 @@ unsigned char Setup(){
 	
 	_PROTECTED_WRITE (CLKCTRL_OSCHFCTRLA, (CLKCTRL_FRQSEL_24M_gc|CLKCTRL_AUTOTUNE_bm)); // Sets CPU clock to 24 MHz
 	while(!(CLKCTRL_MCLKSTATUS & CLKCTRL_OSCHFS_bm)); // Wait for clock to stabilize
-	g_GPS_setup_status = Setup_GPS();
+	unsigned char GPS_setup_status = Setup_GPS();
 	Setup_SPI();
 	Setup_TWI();
 	Setup_ADC();
@@ -21,7 +37,7 @@ unsigned char Setup(){
 	unsigned char IMU_setup_status = Setup_IMU();
 	unsigned char BAR_setup_status = Setup_Bar();
 	unsigned char SSD_setup_status = Setup_SSD();
-	Setup_Bitmask |= (BAR_setup_status<<NAV_BAR_bp) | (IMU_setup_status<<NAV_IMU_bp) | (MAG_setup_status<<NAV_MAG_bp)
+	Setup_Bitmask |= (GPS_setup_status<<NAV_GPS_bp) | (BAR_setup_status<<NAV_BAR_bp) | (IMU_setup_status<<NAV_IMU_bp) | (MAG_setup_status<<NAV_MAG_bp)
 	| (LoRa_setup_status<<NAV_LORA_bp) | (SSD_setup_status<<SU_SSD_bp);
 	Run_Motors(1);
 	Setup_Timers();
@@ -52,7 +68,6 @@ int main(){
 		// Desired_Moments-> Controlled by PID, moment order is: body x, body y, body z, in units of N-m
 		float Desired_Moments[3] = {0};
 		unsigned char reset = 0;
-		//unsigned int motor_voltage = 0;
 		while(1){
 			//--------------Common code--------------//
 			// LoRa
@@ -67,18 +82,15 @@ int main(){
 				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%4.2f , %4.2f",-Drone.Position_NED[2],Desired_Thrust);
 				Print_Page(1, buffer[1], length_to_print);
 				ATOMIC_BLOCK(ATOMIC_FORCEON){
-				//length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "%5.5f,%5.5f",Desired_Moments[0], Desired_Moments[1]);
 					length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "B %d L %d", g_Motor_Throttles[0],g_Motor_Throttles[1]);
-				Print_Page(2, buffer[2], length_to_print);
-				//ATOMIC_BLOCK(ATOMIC_FORCEON){
+					Print_Page(2, buffer[2], length_to_print);
 					length_to_print = snprintf(buffer[3], sizeof(buffer[3]), "R %d F %d",g_Motor_Throttles[2],g_Motor_Throttles[3]);
-				//}
-				Print_Page(3, buffer[3], length_to_print);
+					Print_Page(3, buffer[3], length_to_print);
 				}
 			}
 			
 			// GPS -> Check when full message is received
-			if (g_GPS_Read_Flag && g_GPS_setup_status) Read_GPS(&Drone, &cal_data);
+			if (g_GPS_Read_Flag && (Setup_Bitmask & (1<<NAV_GPS_bp))) Read_GPS(&Drone, &cal_data);
 
 			// Barometer -> check 100Hz, samples at 75Hz
 			if (g_BAR_Read_Flag >= 2) Read_Bar(&Drone, &cal_data, up_link.Base_altitude);
@@ -129,21 +141,8 @@ int main(){
 				if (cal_data.bar_cal_status && cal_data.mag_cal_status && cal_data.imu_cal_status && cal_data.motor_cal_status) Flight_Controller_Status = Ready;
 	
 			}
-			// 200 - b , 280 - l , 250 - r, 200 - f
 			else if (Flight_Controller_Status == Ready){
-				//static unsigned char motor_checkout_index;
-				//static unsigned int motor_checkout_throttle = 10;
-				//static unsigned long motor_checkout_timelast;
-				//if (g_seconds - motor_checkout_timelast > 1){
-					//motor_checkout_throttle -= 1;
-					//motor_checkout_timelast = g_seconds;
-				//}
-				//if (motor_checkout_throttle == 0){
-					//motor_checkout_throttle = 10;
-					//motor_checkout_index++;
-					//if (motor_checkout_index > 3) Flight_Controller_Status = Standby;
-				//}
-				//g_Motor_Throttles[motor_checkout_index] = motor_checkout_throttle;
+
 			}
 			else {
 			//------------Guidance and Control functions-------------//
@@ -166,7 +165,7 @@ int main(){
 				// Altitude Controller Runs at 100 Hz, updates desired thrust
 				if (g_Altitude_Control_Flag >= 2) Desired_Thrust = Altitude_Control(-Drone.Position_NED[2], -Commanded_States.Position_NED[2], &Constants);
 
-				// Euler angle controller and ESCs run at 200 Hz, updates desired motor speeds
+				// Euler angle controller and throttle updates run at 200 Hz, PWM sent to ESC at 400 Hz in TCD interrupt
 				if (g_Motor_Run_Flag){
 					g_Motor_Run_Flag = 0;
 					Euler_Control(Drone.Euler, Commanded_States.Euler, Desired_Moments, Desired_Thrust, &Constants);
@@ -192,8 +191,6 @@ void Setup_ADC(){
 	ADC0_SAMPCTRL = 100;
 	// Set MUX position
 	ADC0_MUXPOS |= ADC_MUX_ESC;
-	// Setup ESC voltage pin to trigger interrupt when brought high for the first time
-	ADC_PIN_CTRL |= PORT_ISC_RISING_gc;
 	// Enable ADC
 	ADC0_CTRLA |= ADC_ENABLE_bm;
 }
@@ -278,6 +275,7 @@ void Setup_Timers(){
 ISR(RTC_CNT_vect){
 	++g_seconds;
 	++g_print_flag;
+	++g_positive_coms_watchdog;
 	RTC_CNT = 0;
 	RTC_INTFLAGS = RTC_CMP_bm;
 }

@@ -2,7 +2,7 @@
 
 #include <cmath>
 #include <cstring>
-#include "../Sim_Types.h"
+#include "Sim_Types.h"
 
 #define MOTOR_CUTOFF_ANGLE (45.0*D2R)
 #define MOTOR_CUTOFF_ALTITUDE 7.0f
