@@ -29,20 +29,33 @@ class Quadrotor{
         ofstream log_mcu;
         bool log_flag = true;
         bool plot_flag = true;
-        bool error_flag = true;
+        bool error_flag = false;
+        // The following parameters can be varied with montecarlo seeds, specify the mean value and the expected variance
         // Actual mass of drone in (kg)
-        double mass = 0.5885;
+        double mass;
+        const double mass_mean = 0.5885;
+        const double mass_variance = mass_mean/10.0;
         // Distance from front and back motor thrust vectors to drone center of gravity in (m)
-        double length_f_b =  0.127;
+        double length_f_b;
+        const double length_f_b_mean =  0.127;
+        const double length_f_b_variance = length_f_b_mean/5.0;
         // Distance from left and right motor thrust vectors to drone center of gravity in (m)
-        double length_l_r = 0.125;
+        double length_l_r;
+        const double length_l_r_mean = 0.125;
+        const double length_l_r_variance = length_l_r_mean/5.0;
         // Actual mass moments of drone in (kg-m^2)
-        double Ixx = 0.0018;
-        double Iyy = 0.00356;
-        double Izz = 0.00208;
-        double Ixy = 0.0000227;
-        double Ixz = -0.0000012;
-        double Iyz = 0.0000010;
+        const double Ixx = 0.0018;
+        const double Ixx_variance = Ixx/2.0;
+        const double Iyy = 0.00356;
+        const double Iyy_variance = Iyy/2.0;
+        const double Izz = 0.00208;
+        const double Izz_variance = Izz/2.0;
+        const double Ixy = 0.0000227;
+        const double Ixy_variance = Ixy/2.0;
+        const double Ixz = -0.0000012;
+        const double Ixz_variance = Ixz/2.0;
+        const double Iyz = 0.0000010;
+        const double Iyz_variance = Iyz/2.0;
         // Step time for simulation
         Sim_Time sim_dt;
         // Final time of simulation
@@ -63,22 +76,27 @@ class Quadrotor{
         Vec3 Moments_Body;
         // Body linear velocity
         Vec3 v;
-        // Body angular velocity
+        // Body angular velocity (rad/s)
         Vec3 w;
-        // Euler angles
+        // Body angular velocity (deg/s)
+        Vec3 w_deg_s;
+        // Euler angles (rad)
         Vec3 Euler;
+        // Euler angles (degrees)
+        Vec3 Euler_deg;
         // NED Position
         Vec3 Position_NED;
         // NED to body quaternion
         Vec q;
         // Model of BLDC motor and propeller
-        Motor Motors[4]; // Back (CW), Left (CCW), Front (CW), Right (CCW)
+        Motor Motors[4]; // Back (CCW), Left (CW), Front (CCW), Right (CW)
         
-        MCU AVR128DB48;
     public:
+        MCU AVR128DB48;
+
         double Control_errors[6];
         double Navigation_errors[6];
-        Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf);
+        Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf, uint32_t mc_seed);
         void Run_Sensors(Environment &env);
         void Manage_FC_Status();
         void Update_drone_states();
@@ -87,4 +105,5 @@ class Quadrotor{
         void Log_data(Environment &env);
         Vec Differential_equation_momentum(Vec x_in);
         void Calculate_errors();
+        void Set_Monte_Carlo_Data(uint32_t seed);
 };

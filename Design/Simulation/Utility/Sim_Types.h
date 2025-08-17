@@ -9,10 +9,12 @@
 
 struct States{
 	int16_t w[3];
+	float w_deg_s[3];
 	int16_t g_vec[3]; // In the frame Forward - Right - Down
 	float m_vec[3];
 	int32_t m_xyz_LSB[3];
     float Euler[3];
+	float Euler_deg[3];
     float pressure_altitude;
     float Position_NED[3];
     int32_t Longitude;
@@ -60,7 +62,9 @@ enum FC_Status{
 	// Drone is flying, responding to commands and under autopilot control
 	Flying,
 	// Drone is following landing procedure, will automatically proceed to ready once complete
-	Landing
+	Landing,
+	// This type is obviously only for simulation purposes...
+	Crashed
 };
 
 struct Uplink{

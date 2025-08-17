@@ -12,7 +12,7 @@
 #include "Magnetometer.h"
 #include "IMU.h"
 
-#define BAR_SENS 1.0/40.96 // Pa/LSB
+#define BAR_SENS (1.0/40.96) // Pa/LSB
 #define BAR_WINDOW_SIZE 16
 #define BAR_TB 288.15 // Standard temperature at sea level (K)
 #define BAR_G 9.8065 // Acceleration due to gravity (m/s^2)
@@ -24,16 +24,16 @@
 
 #define ACCEL_WINDOW_SIZE 8 // Size of FIR window
 #define GYRO_WINDOW_SIZE 2
-#define GYRO_SENS 500.0/32768.0
-#define ACCEL_SENS 2.0/32768.0
+#define GYRO_SENS (500.0/32768.0)
+#define ACCEL_SENS (2.0/32768.0)
 #define W_CAL_LIMIT 500
 
-#define MAG_CAL_TIMEOUT 15
+#define MAG_CAL_TIMEOUT 5
 
-// Increasing the gain increases the trust on the model(gyro), and decreasing it increases the trust on the measurement (accel & mag)
+// Decreasing the gain increases the trust on the model(gyro), and increasing it increases the trust on the measurement (accel & mag)
 #define OBSERVER_GAIN 0.05f
 // Time step between observer predictions
-#define OBSERVER_DT 0.0025f
+#define OBSERVER_DT 0.00125f//0.0025f
 // Angle at which to stop making predictions and rely entirely on measurements because of pitch discontinuity
 #define OBSERVER_GIMBAL_LOCK_CHECK (5.0f*D2R)
 

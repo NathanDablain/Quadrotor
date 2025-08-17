@@ -91,10 +91,10 @@ void Saturate(float &desired_moment, float max, float min, uint8_t &Saturation_F
 }
 
 void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desired_moments[3], const Drone_Constants *Constants){
-    // -> Back motor (0) produces negative pitching torque and negative yawing torque
-    // -> Left motor (1) produces positive rolling torque and positive yawing torque
-    // -> Right motor (2) produces negative rolling torque and positive yawing torque
-    // -> Front motor (3) produces positive pitching torque and negative yawing torque
+    // -> Back motor (0) produces negative pitching torque and positive yawing torque
+    // -> Left motor (1) produces positive rolling torque and negative yawing torque
+    // -> Right motor (2) produces negative rolling torque and negative yawing torque
+    // -> Front motor (3) produces positive pitching torque and positive yawing torque
 
     const float denom_1 = 4.0 * Constants->k_f * Constants->k_t * Constants->length_f_b;
     const float denom_2 = 4.0 * Constants->k_f * Constants->k_t * Constants->length_l_r;
@@ -104,15 +104,15 @@ void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desi
     const float c4 = Constants->k_f * Constants->length_l_r;
     const float c5 = Constants->k_t * Constants->length_l_r;
 
-    // w_f: (2*My*kt - Mz*kf*lfb + T*kt*lfb)/(4*kf*kt*lfb)
-    // w_r: (Mz*kf*lrl - 2*Mx*kt + T*kt*lrl)/(4*kf*kt*lrl)
-    // w_l: (2*Mx*kt + Mz*kf*lrl + T*kt*lrl)/(4*kf*kt*lrl)
-    // w_b: -(2*My*kt + Mz*kf*lfb - T*kt*lfb)/(4*kf*kt*lfb)
+    // w_f: (2*My*kt + Mz*kf*lfb + T*kt*lfb)/(4*kf*kt*lfb)
+    // w_r: (-Mz*kf*lrl - 2*Mx*kt + T*kt*lrl)/(4*kf*kt*lrl)
+    // w_l: (2*Mx*kt - Mz*kf*lrl + T*kt*lrl)/(4*kf*kt*lrl)
+    // w_b: (-2*My*kt + Mz*kf*lfb + T*kt*lfb)/(4*kf*kt*lfb)
 
-    float omega_front = ((c3*desired_moments[1]) - (c1*desired_moments[2]) + (c2*desired_thrust))/denom_1;
-    float omega_right = ((c4*desired_moments[2]) - (c3*desired_moments[0]) + (c5*desired_thrust))/denom_2;
-    float omega_left = ((c3*desired_moments[0]) + (c4*desired_moments[2]) + (c5*desired_thrust))/denom_2;
-    float omega_back = -((c3*desired_moments[1]) + (c1*desired_moments[2]) - (c2*desired_thrust))/denom_1;
+    float omega_front = ((c3*desired_moments[1]) + (c1*desired_moments[2]) + (c2*desired_thrust))/denom_1;
+    float omega_right = ((-c4*desired_moments[2]) - (c3*desired_moments[0]) + (c5*desired_thrust))/denom_2;
+    float omega_left = ((c3*desired_moments[0]) - (c4*desired_moments[2]) + (c5*desired_thrust))/denom_2;
+    float omega_back = (-(c3*desired_moments[1]) + (c1*desired_moments[2]) + (c2*desired_thrust))/denom_1;
 
     float omega[4] = {omega_back, omega_left, omega_right, omega_front};
 

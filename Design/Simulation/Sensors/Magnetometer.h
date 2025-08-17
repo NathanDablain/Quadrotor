@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "Environment.h"
 #include "Gaussian.h"
+#include "Low_Pass_Filter.h"
 
 class Magnetometer {
     private:
@@ -12,8 +13,10 @@ class Magnetometer {
     //----LIS2MDL Magnetometer Parameters----//
     // Sensitivity is in units of mgauss/LSB
     const double mag_sens = 1.5;
-    // RMS magnetometer noise in (mgauss)
-    const double noise_rms = 3.0;
+    // RMS magnetometer noise in (mgauss),  data sheet value plus 50% FOS
+    const double noise_rms = 1.5*3.0;
+    // Low pass filter setting -> BW = ODR/Low_Pass_Filter_Setting
+    double Low_Pass_Filter_Setting = 4.0;
     public:
         // Output data
         array<int16_t, 3> magnetic_field_LSB;

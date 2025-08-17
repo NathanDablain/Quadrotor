@@ -16,4 +16,5 @@ class Gaussian{
         ~Gaussian();
         double Get_probability(double x);
         double Get_val();
+        double Get_seeded_val(uint32_t seed);
 };

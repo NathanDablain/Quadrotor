@@ -10,6 +10,9 @@ void Magnetometer::Initialize(uint16_t odr){
 
 void Magnetometer::Sample(Environment &env, Sim_Time sim_t){
     static Gaussian Gaussian_mag(noise_rms, 0.0);
+    static Low_Pass_Filter Mag_Filter_x(static_cast<double>(ODR)/Low_Pass_Filter_Setting, 0.0);
+    static Low_Pass_Filter Mag_Filter_y(static_cast<double>(ODR)/Low_Pass_Filter_Setting, 0.0);
+    static Low_Pass_Filter Mag_Filter_z(static_cast<double>(ODR)/Low_Pass_Filter_Setting, 0.0);
 
     if ((sim_t - last_sample_time) < Update_Rate) return;
     last_sample_time = sim_t;
@@ -21,7 +24,10 @@ void Magnetometer::Sample(Environment &env, Sim_Time sim_t){
     // Get noise in mgauss
     Vec3 mag_noise = {Gaussian_mag.Get_val(), Gaussian_mag.Get_val(), Gaussian_mag.Get_val()};
     // Add to truth and hard iron offset, convert to LSB
-    Vec3 mag_LSB = (env.m_vec_Body + env.mag_hard_iron + mag_noise)*(1.0/mag_sens);
+    Vec3 filtered_mag_output = {Mag_Filter_x.Update(env.m_vec_Body.data[0], Update_Rate.Time_fp()),
+                                Mag_Filter_y.Update(env.m_vec_Body.data[1], Update_Rate.Time_fp()),
+                                Mag_Filter_z.Update(env.m_vec_Body.data[2], Update_Rate.Time_fp())};
+    Vec3 mag_LSB = (filtered_mag_output + env.mag_hard_iron + mag_noise)*(1.0/mag_sens);
 
     magnetic_field_LSB[0] = -static_cast<int16_t>(mag_LSB.data[1]);
     magnetic_field_LSB[1] = static_cast<int16_t>(mag_LSB.data[0]);

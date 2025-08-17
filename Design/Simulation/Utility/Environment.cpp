@@ -28,7 +28,9 @@ void Environment::Update(Vec3 &Position_NED, Vec &quaternion, Vec3 &v){
     m_vec_Body = NED2Body(m_vec_NED, quaternion);
     // Update linear acceleration
     static Vec3 v_last = {0.0, 0.0, 0.0};
-    dv_dt = dv_dt*accel_c1 + ((v-v_last)/sim_dt.Time_fp())*accel_c2;
+    Vec3 g_vec_NED = {0.0, 0.0, gravity};
+    Vec3 g_vec_Body = NED2Body(g_vec_NED, quaternion);
+    dv_dt = ((v-v_last)/sim_dt.Time_fp()) + g_vec_Body;
     v_last = v;
 }
 

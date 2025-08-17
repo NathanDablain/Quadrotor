@@ -2,18 +2,15 @@
 
 using namespace std;
 
-Quadrotor::Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf){
+Quadrotor::Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf, uint32_t mc_seed){
     sim_dt = Sim_dt;
     sim_tf = Sim_tf;
     sim_t.MicroSeconds = 0;
     sim_t.Seconds = 0;
     cal_start_time = {.Seconds = 5, .MicroSeconds = 0};
-    inertia.data[0][0] = Ixx;
-    inertia.data[1][1] = Iyy;
-    inertia.data[2][2] = Izz;
-    inertia.data[0][1] = Ixy, inertia.data[1][0] = Ixy;
-    inertia.data[0][2] = Ixz, inertia.data[2][0] = Ixz;
-    inertia.data[1][2] = Iyz, inertia.data[2][1] = Iyz;
+
+    Set_Monte_Carlo_Data(mc_seed);
+
     q.data.resize(4, (double)0.0);
     q.data = {1.0, 0.0, 0.0, 0.0};
     Motors[0].deadzone = 50;
@@ -21,15 +18,36 @@ Quadrotor::Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf){
     Motors[2].deadzone = 50;
     Motors[3].deadzone = 50;
     AVR128DB48.barometer.Initialize(75, 1, Bar_Mode_Bypass);
-    AVR128DB48.magnetometer.Initialize(50);
-    AVR128DB48.imu.Initialize(416, 52, 8);
+    AVR128DB48.magnetometer.Initialize(100);
+    AVR128DB48.imu.Initialize(1666, 416, 1);
     AVR128DB48.Desired_States.Position_NED[2] = -5.0;
 
-    if (log_flag){
-        // log_sim.open("Sim_log.txt");
-        // log_mcu.open("MCU_log.txt");
-    }
+}
 
+void Quadrotor::Set_Monte_Carlo_Data(uint32_t seed){
+    Gaussian gaus_mass(mass_variance, mass_mean);
+    Gaussian gaus_length_f_b(length_f_b_variance, length_f_b_mean);
+    Gaussian gaus_length_l_r(length_l_r_variance, length_l_r_mean);
+    Gaussian gaus_inertia_Ixx(Ixx_variance, Ixx);
+    Gaussian gaus_inertia_Iyy(Iyy_variance, Iyy);
+    Gaussian gaus_inertia_Izz(Izz_variance, Izz);
+    Gaussian gaus_inertia_Ixy(Ixy_variance, Ixy);
+    Gaussian gaus_inertia_Ixz(Ixz_variance, Ixz);
+    Gaussian gaus_inertia_Iyz(Iyz_variance, Iyz);
+
+    mass = gaus_mass.Get_seeded_val(seed);
+    length_f_b = gaus_length_f_b.Get_seeded_val(seed);
+    length_l_r = gaus_length_l_r.Get_seeded_val(seed);
+    inertia.data[0][0] = gaus_inertia_Ixx.Get_seeded_val(seed);
+    inertia.data[0][0] =  gaus_inertia_Ixx.Get_seeded_val(seed);
+    inertia.data[1][1] =  gaus_inertia_Iyy.Get_seeded_val(seed);
+    inertia.data[2][2] =  gaus_inertia_Izz.Get_seeded_val(seed);
+    inertia.data[0][1] = gaus_inertia_Ixy.Get_seeded_val(seed);
+    inertia.data[1][0] = inertia.data[0][1];
+    inertia.data[0][2] = gaus_inertia_Ixz.Get_seeded_val(seed);
+    inertia.data[2][0] = inertia.data[0][2];
+    inertia.data[1][2] = gaus_inertia_Iyz.Get_seeded_val(seed);
+    inertia.data[2][1] = inertia.data[1][2];
 }
 
 void Quadrotor::Calculate_errors(){
@@ -67,6 +85,8 @@ void Quadrotor::Run_sim(){
 
         if (error_flag) Calculate_errors();
 
+        if (AVR128DB48.Flight_Controller_Status == Crashed) break;
+
         sim_t += sim_dt;
     }
     if (log_flag){
@@ -83,30 +103,42 @@ void Quadrotor::Manage_FC_Status(){
         AVR128DB48.Flight_Controller_Status = Calibrating;
     }
     if ((sim_t.Seconds - cal_start_time.Seconds >= 2)&&(AVR128DB48.Flight_Controller_Status == Calibrating)){
-        if (sim_t.Seconds - cal_start_time.Seconds <= 7){
-            w.data[0] = 1.0;
+        if (sim_t.Seconds - cal_start_time.Seconds <= 5){
+            w.data[0] = 3.0;
             phase = 1;
         }
-        else if (sim_t.Seconds - cal_start_time.Seconds <= 12){
+        else if (sim_t.Seconds - cal_start_time.Seconds <= 8){
             if (phase == 1){
                 q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
                 w.data[0] = 0.0;
             }
-            w.data[1] = 1.0;
+            w.data[1] = 3.0;
             phase = 2;
         }
-        else if (sim_t.Seconds - cal_start_time.Seconds <= 17){
+        else if (sim_t.Seconds - cal_start_time.Seconds <= 11){
             if (phase == 2){
                 q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
                 w.data[1] = 0.0;
             }
-            w.data[2] = 1.0;
+            w.data[2] = 3.0;
             phase = 3;
+        }
+        else if (sim_t.Seconds - cal_start_time.Seconds <= 14){
+            q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
+            w.data[2] = 0.0;
         }
     }
     if (AVR128DB48.Flight_Controller_Status == Ready){
+        // TODO: Set initial conditions here
         w.data[0] = 0; w.data[1] = 0; w.data[2] = 0;
         q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
+    }
+    if (AVR128DB48.Flight_Controller_Status == Flying || AVR128DB48.Flight_Controller_Status == Landing){
+        if (Position_NED.data[2] >= -1){
+            if (fabs(Euler.data[0]) >= (15*D2R) || fabs(Euler.data[1]) >= (15*D2R)){
+                AVR128DB48.Flight_Controller_Status = Crashed;
+            }
+        }
     }
 }
 
@@ -122,7 +154,8 @@ void Quadrotor::Log_data(Environment &env){
     const Sim_Time log_rate = {.Seconds = 0, .MicroSeconds = 10000};
     static Sim_Time Time_last;
     if (sim_t == sim_init){
-        log_sim.open("Sim_log.txt");
+        // Opens log file and deletes contents
+        log_sim.open("Sim_log.txt", ios::out);
         LOG_DATA("Time", log_sim);
         LOG_DATA("P_n", log_sim);
         LOG_DATA("P_e", log_sim);
@@ -146,7 +179,7 @@ void Quadrotor::Log_data(Environment &env){
         LOG_DATA("Moment Z", log_sim);
         log_sim << endl;
         log_sim.close();
-        log_mcu.open("MCU_log.txt");
+        log_mcu.open("MCU_log.txt", ios::out);
         LOG_DATA("Time", log_mcu);
         LOG_DATA("FC Status", log_mcu);
         LOG_DATA("P_n", log_mcu);
@@ -172,15 +205,17 @@ void Quadrotor::Log_data(Environment &env){
         log_mcu << endl;
         log_mcu.close();
     }
-    if (sim_t - Time_last >= log_rate){
+    if (sim_t - Time_last >= log_rate && ((AVR128DB48.Flight_Controller_Status == Flying) || (AVR128DB48.Flight_Controller_Status == Landing))){
         Time_last = sim_t;
+        Euler_deg = Euler*R2D;
+        w_deg_s = w*R2D;
         log_sim.open("Sim_log.txt", ios::app);
         log_sim << setprecision(8);
         LOG_DATA(sim_t.Time_fp(), log_sim);
         LOG_VEC3(Position_NED, log_sim);
         LOG_DATA(env.pressure, log_sim);
-        LOG_VEC3(Euler, log_sim);
-        LOG_VEC3(w, log_sim);
+        LOG_VEC3(Euler_deg, log_sim);
+        LOG_VEC3(w_deg_s, log_sim);
         LOG_VEC3(v, log_sim);
         LOG_DATA(Motors[0].Get_motor_thrust(), log_sim);
         LOG_DATA(Motors[1].Get_motor_thrust(), log_sim);
@@ -195,8 +230,8 @@ void Quadrotor::Log_data(Environment &env){
         LOG_DATA(AVR128DB48.Flight_Controller_Status, log_mcu);
         LOG_ARR3(AVR128DB48.mcu.Position_NED, log_mcu);
         LOG_DATA(AVR128DB48.mcu.pressure, log_mcu);
-        LOG_ARR3(AVR128DB48.mcu.Euler, log_mcu);
-        LOG_ARR3(AVR128DB48.mcu.w, log_mcu);
+        LOG_ARR3(AVR128DB48.mcu.Euler_deg, log_mcu);
+        LOG_ARR3(AVR128DB48.mcu.w_deg_s, log_mcu);
         LOG_ARR3(AVR128DB48.Desired_States.Euler, log_mcu);
         LOG_ARR3(AVR128DB48.Desired_Moments, log_mcu);
         LOG_DATA(AVR128DB48.Desired_Thrust, log_mcu);
@@ -226,10 +261,10 @@ void Quadrotor::Update_drone_forces_moments(Environment &env){
                           Motors[2].Get_motor_thrust(), Motors[3].Get_motor_thrust()};
     Vec3 motor_force_Body = {0.0, 0.0, -motor_thrusts.magnitude()};
     // Assume that:
-    // -> Back motor (0) produces negative pitching torque and negative yawing torque
-    // -> Left motor (1) produces positive rolling torque and positive yawing torque
-    // -> Right motor (2) produces negative rolling torque and positive yawing torque
-    // -> Front motor (3) produces positive pitching torque and negative yawing torque
+    // -> Back motor (0) produces negative pitching torque and positive yawing torque
+    // -> Left motor (1) produces positive rolling torque and negative yawing torque
+    // -> Right motor (2) produces negative rolling torque and negative yawing torque
+    // -> Front motor (3) produces positive pitching torque and positive yawing torque
     Vec3 moment_Noise = {0.0, 0.0, 0.0};
 
     if (AVR128DB48.Flight_Controller_Status == Flying || AVR128DB48.Flight_Controller_Status == Landing){
@@ -238,7 +273,7 @@ void Quadrotor::Update_drone_forces_moments(Environment &env){
     Vec3 motor_moment_Body = {
         length_l_r*(motor_thrusts.data[1] - motor_thrusts.data[2]),
         length_f_b*(motor_thrusts.data[3] - motor_thrusts.data[0]),
-        Motors[1].Get_motor_torque() + Motors[2].Get_motor_torque() - Motors[0].Get_motor_torque() - Motors[3].Get_motor_torque()};
+        Motors[0].Get_motor_torque() + Motors[3].Get_motor_torque() - Motors[1].Get_motor_torque() - Motors[2].Get_motor_torque()};
     // Ground force
     // Model the ground as a lumped parameter model, it has some stiffness and some damping
     Vec3 ground_forces_NED;

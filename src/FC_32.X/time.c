@@ -1,13 +1,12 @@
 #include <xc.h>
 #include "time.h"
+#include "global_variables.h"
 #include <stdbool.h>
-
-volatile uint32_t g_seconds = 0;
 
 Time Current_Time(){
     Time current;
     
-    current.microseconds = TMR1/25;
+    current.tmr1_count = 12039021; //TMR1;
     current.seconds = g_seconds;
     
     return current;
@@ -17,9 +16,9 @@ Time Time_Difference(Time Time_1, Time Time_2){
     // result = Time_1 - Time_2
     Time result;
     result.seconds = Time_1.seconds - Time_2.seconds;
-    result.microseconds = Time_1.microseconds - Time_2.microseconds;
-    if (result.microseconds < 0){
-        result.microseconds += US_IN_S;
+    result.tmr1_count = Time_1.tmr1_count - Time_2.tmr1_count;
+    if (result.tmr1_count < 0){
+        result.tmr1_count += g_tmr1_ct_in_s;
         result.seconds--;
     }
 
@@ -27,17 +26,18 @@ Time Time_Difference(Time Time_1, Time Time_2){
 }
 
 double Time_fp(Time time){
-    double result = ((double)time.seconds) + ((double)time.microseconds)/1e6;
+    double result = ((double)time.seconds) + ((double)time.tmr1_count)/g_tmr1_ct_in_s_fp;
     
     return result;
 }
 
-bool Compare_And_Update(const Time Time_1, Time* Time_2){
+bool Compare_And_Update(const Time Time_1, const Time Delta_t, Time* Time_2){
     bool result = false;
-    if (Time_1.seconds > Time_2->seconds){
+    Time difference = Time_Difference(Time_1, *Time_2);
+    if (difference.seconds > Delta_t.seconds){
         result = true;
     }
-    else if ((Time_1.seconds == Time_2->seconds) && (Time_1.microseconds > Time_2->microseconds)){
+    else if ((difference.seconds == Delta_t.seconds) && (difference.tmr1_count > Delta_t.tmr1_count)){
         result = true;
     }
 

@@ -17,7 +17,7 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
     if (Attitude_Observer_Update_Flag >= 4) Observer_Update();
         
     // Observer predict -> 400 Hz
-    if (Attitude_Observer_Predict_Flag >= 4) Observer_Predict();
+    if (Attitude_Observer_Predict_Flag >= 2) Observer_Predict();
 
     if (LoRa_Read_Flag) Read_LoRa(env);
 
@@ -46,7 +46,7 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
     }
     else if (Flight_Controller_Status == Ready){
         if (sim_t.Seconds - ready_time.Seconds > 2){
-            Desired_States.Position_NED[2] = -5;
+            Desired_States.Position_NED[2] = -2;
             Desired_States.Euler[0] = 0;
             Desired_States.Euler[1] = 0;
             Desired_States.Euler[2] = 0;
@@ -56,20 +56,13 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
     else {
     //------------Guidance and Control functions-------------//
         if (Flight_Controller_Status == Flying){
-            if (sim_t.Seconds - ready_time.Seconds > 15){
-                Desired_States.Position_NED[2] = -5.5;
-            }
     
-            if (sim_t.Seconds - ready_time.Seconds > 25){
-                Desired_States.Position_NED[2] = -4.5;
-            }
-    
-            if (sim_t.Seconds - ready_time.Seconds > 40){
+            if (sim_t.Seconds - ready_time.Seconds > 10){
                 Flight_Controller_Status = Landing;
             }
         }
         else if (Flight_Controller_Status == Landing){
-            Desired_States.Position_NED[2] = 1.0;
+            Desired_States.Position_NED[2] = 0.25;
             if (mcu.Position_NED[2] >= 0){
                 Flight_Controller_Status = Standby;
                 Desired_Thrust = 0.0;
@@ -215,6 +208,10 @@ void MCU::Read_Gyro(){
 	mcu.w[0] = -imu.angular_rate_LSB[0] - cal_data.w_bias[0];
 	mcu.w[1] = imu.angular_rate_LSB[1] - cal_data.w_bias[1];
 	mcu.w[2] = -imu.angular_rate_LSB[2] - cal_data.w_bias[2];
+
+    mcu.w_deg_s[0] = mcu.w[0]*(GYRO_SENS);
+    mcu.w_deg_s[1] = mcu.w[1]*(GYRO_SENS);
+    mcu.w_deg_s[2] = mcu.w[2]*(GYRO_SENS);
 }
 
 void MCU::Read_Accel(){
@@ -238,9 +235,9 @@ void MCU::Observer_Predict(){
     Attitude_Observer_Predict_Flag = 0;
     // Predict
 	if (abs(abs(mcu.Euler[1]) - PI_2) > OBSERVER_GIMBAL_LOCK_CHECK){
-		mcu.Euler[0] += (mcu.w[0] + sinf(mcu.Euler[0])*tanf(mcu.Euler[1])*mcu.w[1] + cosf(mcu.Euler[0])*tanf(mcu.Euler[1])*mcu.w[2])*OBSERVER_DT*GYRO_SENS*D2R;
-		mcu.Euler[1] += (cosf(mcu.Euler[0])*mcu.w[1] - sinf(mcu.Euler[0])*mcu.w[2])*OBSERVER_DT*GYRO_SENS*D2R;
-		mcu.Euler[2] += ((sinf(mcu.Euler[0])/cosf(mcu.Euler[1]))*mcu.w[1] + (cosf(mcu.Euler[0])/cosf(mcu.Euler[1]))*mcu.w[2])*OBSERVER_DT*GYRO_SENS*D2R;
+		mcu.Euler[0] += ((float)mcu.w[0] + sinf(mcu.Euler[0])*tanf(mcu.Euler[1])*(float)mcu.w[1] + cosf(mcu.Euler[0])*tanf(mcu.Euler[1])*(float)mcu.w[2])*OBSERVER_DT*GYRO_SENS*D2R;
+		mcu.Euler[1] += (cosf(mcu.Euler[0])*(float)mcu.w[1] - sinf(mcu.Euler[0])*(float)mcu.w[2])*OBSERVER_DT*GYRO_SENS*D2R;
+		mcu.Euler[2] += ((sinf(mcu.Euler[0])/cosf(mcu.Euler[1]))*(float)mcu.w[1] + (cosf(mcu.Euler[0])/cosf(mcu.Euler[1]))*(float)mcu.w[2])*OBSERVER_DT*GYRO_SENS*D2R;
 	}
 }
 
@@ -267,7 +264,10 @@ void MCU::Observer_Update(){
     mcu.Euler[1] = mcu.Euler[1] + OBSERVER_GAIN*(theta_m - mcu.Euler[1]);
     // Prevent yaw angle discontinuity at 2pi - 0 to cause the filter to slowly cycle between them
     mcu.Euler[2] = (abs(psi_m - mcu.Euler[2])>PI)?(psi_m):(mcu.Euler[2] + OBSERVER_GAIN*(psi_m - mcu.Euler[2]));
-
+    // Below is just for logging
+    mcu.Euler_deg[0] = mcu.Euler[0]*R2D;
+    mcu.Euler_deg[1] = mcu.Euler[1]*R2D;
+    mcu.Euler_deg[2] = mcu.Euler[2]*R2D;
 }
 
 void MCU::Run_Motors(uint16_t motor_throttles[4]){

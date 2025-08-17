@@ -2,6 +2,7 @@
 #include "time.h"
 #include "linear_algebra.h"
 #include "kalman_filter.h"
+#include "global_variables.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -10,13 +11,8 @@
 
 
 int main(void) {
-    Kalman_Filter *kf = Filter_Constructor(3, 1, 1);
-
-    Matrix *input = Mat_Constructor(1,1);
-    
-    bool prediction_status = Predict(kf, input);
-    
-    Filter_Destructor(kf, 5);
+    static SEQUENCER sequencer = {0};
+    bool time_to_update = Compare_And_Update(Current_Time(), g_gyro_sample_rate, &sequencer.imu_clk);
     bool setup_status = Setup();
     
     while(setup_status){
@@ -65,7 +61,7 @@ bool Setup(){
     T1CONbits.TCKPS = 1; 
     T1CONbits.TCS = 0;
     TMR1 = 0;
-    PR1 = 25000000;
+    PR1 = g_tmr1_ct_in_s;
     // Enable Timer1 interrupts
     IFS1bits.T1IF = 1;
     IEC1bits.T1IE = 1;
@@ -81,7 +77,7 @@ bool Setup(){
 void Execute(){
     static SEQUENCER sequencer = {0};
     static uint32_t count = 0;
-    if (Compare_And_Update(Current_Time(), &sequencer.imu_clk)){
-        count++;
-    }
+//    if (Compare_And_Update(Current_Time(), &sequencer.imu_clk)){
+//        count++;
+//    }
 }

@@ -29,12 +29,16 @@ void IMU::Initialize(uint16_t gyro_odr, uint16_t accel_odr, uint16_t accel_water
     accel_bias.data[2] = 42.0;
 
     FIFO_watermark = accel_watermark;
-    accel_noise_rms = 0.09*sqrt(static_cast<double>(accel_odr));
-    gyro_noise_rms = 5.0*sqrt(static_cast<double>(gyro_odr));
+    // data sheet value plus 50% FOS
+    accel_noise_rms = 1.5*0.09*sqrt(static_cast<double>(accel_odr));
+    gyro_noise_rms = 1.5*5.0*sqrt(static_cast<double>(gyro_odr));
 }
 
 void IMU::Sample_Acc(Environment &env, Vec &quaternion, Sim_Time &sim_t){
     static Gaussian accel_gaussian(accel_noise_rms, 0.0);
+    static Low_Pass_Filter accel_filter_x(static_cast<double>(ODR_Accel)/Accel_filter_setting, 0.0);
+    static Low_Pass_Filter accel_filter_y(static_cast<double>(ODR_Accel)/Accel_filter_setting, 0.0);
+    static Low_Pass_Filter accel_filter_z(static_cast<double>(ODR_Accel)/Accel_filter_setting, 0.0);
 
     if (sim_t - last_sample_time_accel < Update_Rate_Accel) return;
     last_sample_time_accel = sim_t;
@@ -42,9 +46,9 @@ void IMU::Sample_Acc(Environment &env, Vec &quaternion, Sim_Time &sim_t){
     // -> Body x = Sensor x
     // -> Body y = -Sensor y
     // -> Body z = Sensor z
-    Vec3 g_vec_NED = {0.0, 0.0, env.gravity};
-    Vec3 g_vec_Body = NED2Body(g_vec_NED, quaternion);
-    Vec3 v_dot = (g_vec_Body*1000.0);// + env.dv_dt)*1000.0;
+    Vec3 v_dot = {accel_filter_x.Update(env.dv_dt.data[0], Update_Rate_Accel.Time_fp())*1000.0,
+                  accel_filter_y.Update(env.dv_dt.data[1], Update_Rate_Accel.Time_fp())*1000.0,
+                  accel_filter_z.Update(env.dv_dt.data[2], Update_Rate_Accel.Time_fp())*1000.0};
     // 1. add noise in mg
     Vec3 accel_noise;
     accel_noise.data[0] = accel_gaussian.Get_val() + accel_bias.data[0];
@@ -65,6 +69,9 @@ void IMU::Sample_Acc(Environment &env, Vec &quaternion, Sim_Time &sim_t){
 
 void IMU::Sample_Gyr(Environment &env, Vec3 &w, Sim_Time &sim_t){
     static Gaussian gyro_gaussian(gyro_noise_rms, 0.0);
+    static Low_Pass_Filter gyro_filter_x(Gyro_ODR_1660_BW[Gyro_filter_setting], 0.0);
+    static Low_Pass_Filter gyro_filter_y(Gyro_ODR_1660_BW[Gyro_filter_setting], 0.0);
+    static Low_Pass_Filter gyro_filter_z(Gyro_ODR_1660_BW[Gyro_filter_setting], 0.0);
 
     if (sim_t - time_last_walk_update > Random_walk_rate){
         time_last_walk_update = sim_t;
@@ -83,9 +90,12 @@ void IMU::Sample_Gyr(Environment &env, Vec3 &w, Sim_Time &sim_t){
     gyro_noise.data[1] = gyro_gaussian.Get_val() + gyro_bias.data[1] + gyro_random_walk_mdps;
     gyro_noise.data[2] = gyro_gaussian.Get_val() + gyro_bias.data[2] + gyro_random_walk_mdps;
     // 2. saturate
-    Vec3 gyro_output= {Saturate(w.data[0]*R2D + (gyro_noise.data[0]/1000.0), -gyro_range, gyro_range),
-                        Saturate(w.data[1]*R2D + (gyro_noise.data[1]/1000.0), -gyro_range, gyro_range),
-                        Saturate(w.data[2]*R2D + (gyro_noise.data[2]/1000.0), -gyro_range, gyro_range)};
+    Vec3 Filtered_gyro = {gyro_filter_x.Update(w.data[0], Update_Rate_Gyro.Time_fp()),
+                               gyro_filter_y.Update(w.data[1], Update_Rate_Gyro.Time_fp()),
+                               gyro_filter_z.Update(w.data[2], Update_Rate_Gyro.Time_fp())};
+    Vec3 gyro_output= {Saturate(Filtered_gyro.data[0]*R2D + (gyro_noise.data[0]/1000.0), -gyro_range, gyro_range),
+                        Saturate(Filtered_gyro.data[1]*R2D + (gyro_noise.data[1]/1000.0), -gyro_range, gyro_range),
+                        Saturate(Filtered_gyro.data[2]*R2D + (gyro_noise.data[2]/1000.0), -gyro_range, gyro_range)};
     // 3. convert to LSB
     Vec3 gyro_LSB = gyro_output*(1.0/gyro_sens_dps);
     angular_rate_LSB[0] = static_cast<int16_t>(-gyro_LSB.data[0]);

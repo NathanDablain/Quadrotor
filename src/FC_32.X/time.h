@@ -4,13 +4,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define US_IN_S 1000000
-
-extern volatile uint32_t g_seconds;
-
+// Rather than use microseconds and have to divide an integer by 25, keep track of
+// the timer 1 count instead. This is better for comparing times, if performing calculations
+// then convert to microseconds
 typedef struct{
     int32_t seconds;
-    int32_t microseconds;
+    int32_t tmr1_count;
 } Time;
 
 typedef struct{
@@ -27,6 +26,6 @@ Time Time_Difference(Time Time_1, Time Time_2);
 
 double Time_fp(Time time);
 
-bool Compare_And_Update(const Time Time_1, Time* Time_2);
+bool Compare_And_Update(const Time Time_1, const Time Delta_t, Time* Time_2);
 
 #endif
