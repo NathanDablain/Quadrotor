@@ -2,13 +2,25 @@
 #define	GLOBAL_VARIABLES_H
 
 #include "time.h"
+#include "system_types.h"
 #include <stdint.h>
+#include <stdbool.h>
+
+// Global state machine
+extern FC_Status g_Flight_Controller_Status;
 
 // Timing variables
 extern volatile uint32_t g_seconds;
 extern const int32_t g_tmr1_ct_in_s;
 extern const double g_tmr1_ct_in_s_fp;
 
+// Math variables
+// Converts degrees to radians and vice versa
+#define D2R (M_PI/180.0)
+#define R2D (1.0/D2R)
+
+extern const double g_gravity;
+extern const double g_mass;
 // ADC variables
 extern volatile uint32_t g_adc_1s_result;
 extern volatile uint32_t g_adc_4s_result;

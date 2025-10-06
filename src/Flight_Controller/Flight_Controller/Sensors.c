@@ -105,6 +105,10 @@ void Calibrate_IMU(States *Drone, Calibration_Data *cal_data){
 }
 
 unsigned char Read_Accel(States *Drone){
+	// Sensor axis corresponds to drone body axis in following way:
+	// -> x_bod = x_sens
+	// -> y_bod = -y_sens
+	// -> z_bod = -z_sens
 	g_Accel_Read_Flag = 0;
 
 	unsigned char accel_status = 0;
@@ -114,10 +118,14 @@ unsigned char Read_Accel(States *Drone){
 	unsigned char Data[6];
 	Read_SPI(&PORT_IMU.OUT, CS_IMU, (ACCEL_DATA_START|0x80), Data, 6);
 
-	// Flip positive directions on Accelerometer x axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
-	Drone->g_vec[0] = -(((signed int)Data[1])<<8) - (signed int)Data[0];
-	Drone->g_vec[1] = (((signed int)Data[3])<<8) + (signed int)Data[2];
-	Drone->g_vec[2] = (((signed int)Data[5])<<8) + (signed int)Data[4];
+	// Flip positive directions on Accelerometer y and z axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
+	Drone->Linear_Accelerations[0].bytes[1] = Data[1];
+	Drone->Linear_Accelerations[0].bytes[0] = Data[0];
+	Drone->Linear_Accelerations[1].bytes[1] = Data[3];
+	Drone->Linear_Accelerations[1].bytes[0] = Data[2];
+	Drone->Linear_Accelerations[2].bytes[1] = Data[5];
+	Drone->Linear_Accelerations[2].bytes[0] = Data[4];
+
 	return 1;
 	
 }
@@ -132,9 +140,12 @@ unsigned char Read_Gyro(States *Drone, Calibration_Data *cal_data){
 	unsigned char Data[6] = {0};
 	Read_SPI(&PORT_IMU.OUT, CS_IMU, (GYRO_DATA_START|0x80), Data, sizeof(Data));
 	
-	Drone->w[0] = ((((signed int)Data[1])<<8) + (signed int)Data[0]) - cal_data->w_bias[0];
-	Drone->w[1] = -((((signed int)Data[3])<<8) + (signed int)Data[2]) - cal_data->w_bias[1];
-	Drone->w[2] = -((((signed int)Data[5])<<8) + (signed int)Data[4]) - cal_data->w_bias[2];
+	Drone->Angular_Rates[0].bytes[1] = Data[1];
+	Drone->Angular_Rates[0].bytes[0] = Data[0];
+	Drone->Angular_Rates[1].bytes[1] = Data[3];
+	Drone->Angular_Rates[1].bytes[0] = Data[2];
+	Drone->Angular_Rates[2].bytes[1] = Data[5];
+	Drone->Angular_Rates[2].bytes[0] = Data[4];
 	
 	return 1;
 }

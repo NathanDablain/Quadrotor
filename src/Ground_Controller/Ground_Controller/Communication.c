@@ -372,14 +372,15 @@ void Set_Desired_Status(Uplink *outbound, Downlink *inbound){
 		g_Button0_Flag = 0;
 		switch (inbound->Flight_Controller_Status){
 			case Standby:
-				outbound->Desired_status = Calibrating;
+				outbound->Desired_status = User_Calibration;
 				break;
-			case Calibrating:
-			// Drone can only move out of calibrating status internally
-				outbound->Desired_status = Standby;
+			case User_Calibration:
+				outbound->Desired_status = System_Calibration;
 				break;
+			case System_Calibration:
+				outbound->Desired_status = Ready;
 			case Ready:
-				outbound->Desired_status = (outbound->Desired_status == Calibrating)?Ready:Flying;
+				outbound->Desired_status = Flying;
 				break;
 			case Flying:
 				outbound->Desired_status = Landing;
@@ -779,7 +780,7 @@ unsigned char Print_Page(unsigned char page, char *to_print, unsigned char lengt
 
 void Print_Displays(Dial *D_h, Dial *D_n, Dial *D_e, Uplink *up_link, Downlink *down_link, Downlink_Reponse_Codes Downlink_Status){
 	char *Dl_S_renums[5] = {"NO RESPONSE","BAD FORMAT","BAD ID","BAD CHECKSUM","GOOD RESPONSE"};
-	char *Dr_S_renums[5] = {"STANDBY","CALIBRATING","READY","FLYING","LANDING"};
+	char *Dr_S_renums[6] = {"STANDBY","USER CALIB","SYS CALIB","READY","FLYING","LANDING"};
 	char buffer[3][20];
 	g_Print_Flag = 0;
 	

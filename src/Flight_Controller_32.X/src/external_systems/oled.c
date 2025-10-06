@@ -1,9 +1,14 @@
 #include <xc.h>
 #include <stdint.h>
+#include <stdio.h>
 #include "global_variables.h"
+#include "imu.h"
 #include "i2c.h"
 #include "oled.h"
 #include "pins.h"
+#include "spi.h"
+#include "dma.h"
+#include "navigation.h"
 
 uint8_t Setup_OLED(){
 	uint8_t Setup_status = 1;
@@ -357,16 +362,32 @@ uint8_t Print_Page(uint8_t page, char *to_print, uint8_t length_to_print){
 	return Print_status;
 }
 
-void Send_Pages(Print_Buffer buffer){
+void Send_Pages(){
     // Send strings to arduino over SPI2 for it to print on serial monitor
     const int32_t ODR_Hz = 10;
     const Time Sample_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/ODR_Hz};
     static Time Last_Update = {0};
     static char buffer_c[200] = {0};
-//    static char buffer1[] = {'F', 'U', 'C', 'K', 0, 0};
+    
+    Print_Buffer print_buf = {0};
+    print_buf.dble[0] = IMU_Angular_Rate(0);
+    print_buf.dble[1] = IMU_Angular_Rate(1);
+    print_buf.dble[2] = IMU_Angular_Rate(2);
+//    print_buf.dble[3] = IMU_Acceleration(0);
+//    print_buf.dble[4] = IMU_Acceleration(1);
+//    print_buf.dble[5] = IMU_Acceleration(2);
+    
+//    print_buf.dble[0] = Ground_Filter_data(0);
+//    print_buf.dble[1] = Ground_Filter_data(1);
+//    print_buf.dble[2] = Ground_Filter_data(2);
+    print_buf.dble[3] = Ground_Filter_data(6);
+    print_buf.dble[4] = Ground_Filter_data(7);
+    print_buf.dble[5] = Ground_Filter_data(8);
+
     if ((g_spi2_rdy_flag) && (Compare_And_Update(Current_Time(), Sample_Rate, &Last_Update))){
-        uint8_t amount_to_print = sprintf(buffer_c, "%f , %f , %f , %f , %f , %f", buffer.dble[0], buffer.dble[1], buffer.dble[2], buffer.dble[3], buffer.dble[4], buffer.dble[5]) + 2;
-        Prepare_SPI2_For_DMA(&CS_ARDUINO_PORT, CS_ARDUINO_PIN, buffer_c);
-        Set_DMA_2(&buffer_c[1], amount_to_print);
+        uint8_t amount_to_print = sprintf(buffer_c, "%f , %f , %f , %f , %f , %f",
+                print_buf.dble[0], print_buf.dble[1], print_buf.dble[2], print_buf.dble[3], print_buf.dble[4], print_buf.dble[5]) + 2;
+        Prepare_SPI2_For_DMA(&CS_ARDUINO_PORT, CS_ARDUINO_PIN, (uint8_t *)buffer_c);
+        Set_DMA_2((uint8_t *)&buffer_c[1], amount_to_print);
     }
 }

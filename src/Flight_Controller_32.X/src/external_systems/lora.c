@@ -7,11 +7,11 @@
 #include "spi.h"
 #include "time.h"
 #include "global_variables.h"
+#include "system_types.h"
 
 // Manage LORA state
-void Run_LORA(Uplink *uplink, FC_Status *Flight_Controller_Status){
+void Run_LORA(Uplink *uplink){
     static LORA_Status radio_status;
-//    static LORA_Mode radio_mode;
 	static Downlink downlink = {0};
     const int32_t Update_Rate_Hz = 200;
     const Time Update_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/Update_Rate_Hz};
@@ -23,43 +23,39 @@ void Run_LORA(Uplink *uplink, FC_Status *Flight_Controller_Status){
 	uint8_t uplink_status;
     uint8_t dummy_out[10];
             
-    if (g_spi1_rdy_flag || !Compare_And_Update(Current_Time(), Update_Rate, &Last_Update)) return;
+    if (!g_spi1_rdy_flag || !Compare_And_Update(Current_Time(), Update_Rate, &Last_Update)) return;
 
-//    case LORA_Interchange:
-        switch (radio_status){
-            case LORA_Standby:
-                // Put LORA in RXContinuous mode
-                SPI_transfer(&CS_LORA_PORT, CS_LORA_PIN, rx_timeout, dummy_out, sizeof(rx_timeout));
-                radio_status = LORA_Receiving;
-                break;
+    switch (radio_status){
+        case LORA_Standby:
+            // Put LORA in RXContinuous mode
+            SPI_transfer(&CS_LORA_PORT, CS_LORA_PIN, rx_timeout, dummy_out, sizeof(rx_timeout));
+            radio_status = LORA_Receiving;
+            break;
 
-            case LORA_Receiving:				
-                uplink_status = Receive_Uplink(uplink, &downlink, Flight_Controller_Status);
-                if (uplink_status){
-//                    if (uplink->Radio_mode == LORA_Interchange){
-//                        Update_Rate_Hz = 50;
-//                    }
-                    radio_status = LORA_Ready_to_Transmit;
+        case LORA_Receiving:				
+            uplink_status = Receive_Uplink(uplink, &downlink);
+            if (uplink_status){
+                radio_status = LORA_Ready_to_Transmit;
+            }
+            break;
+
+        case LORA_Ready_to_Transmit:
+            Send_Downlink(&downlink);
+            radio_status = LORA_Transmitting;
+            break;
+
+        case LORA_Transmitting:
+            // LORA busy pin goes low when the chip has reached a stable state
+            if (!(LORA_BUSY_PORT & (1<<LORA_BUSY_PIN))){
+                // LORA IRQ status will indicate if the transmission is complete yet
+                SPI_transfer(&CS_LORA_PORT, CS_LORA_PIN, lora_irq_status_in, lora_irq_status_out, sizeof(lora_irq_status_in));
+                if (lora_irq_status_out[3] & LORA_TX_DONE_IRQ){
+                    radio_status = LORA_Standby;
+                    SPI_transfer(&CS_LORA_PORT, CS_LORA_PIN, lora_irq_clear, dummy_out, sizeof(lora_irq_clear));
                 }
-                break;
-
-            case LORA_Ready_to_Transmit:
-                Send_Downlink(&downlink);
-                radio_status = LORA_Transmitting;
-                break;
-
-            case LORA_Transmitting:
-                // LORA busy pin goes low when the chip has reached a stable state
-                if (!(LORA_BUSY_PORT & (1<<LORA_BUSY_PIN))){
-                    // LORA IRQ status will indicate if the transmission is complete yet
-                    SPI_transfer(&CS_LORA_PORT, CS_LORA_PIN, lora_irq_status_in, lora_irq_status_out, sizeof(lora_irq_status_in));
-                    if (lora_irq_status_out[3] & LORA_TX_DONE_IRQ){
-                        radio_status = LORA_Standby;
-                        SPI_transfer(&CS_LORA_PORT, CS_LORA_PIN, lora_irq_clear, dummy_out, sizeof(lora_irq_clear));
-                    }
-                }
-                break;
-        }
+            }
+            break;
+    }
 
 }
 
@@ -141,18 +137,18 @@ uint8_t Setup_LoRa(){
 }
 
 // Receive and parse uplink
-uint8_t Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Controller_Status){
+uint8_t Receive_Uplink(Uplink *inbound, Downlink *outbound){
     // Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C_L*CS
 	// Underscores are for readability, not part of actual message
 	uint8_t rx_offset = 0;
 	
 	uint8_t data_available = Check_For_Message(&rx_offset);
-	if (data_available != UPLINK_SIZE) return 0;
+	if (data_available < UPLINK_SIZE) return 0;
 	
 	uint8_t amount_to_read = data_available + 3;
 	uint8_t uplink_status = 1;
-	uint8_t buffer_in[UPLINK_SIZE+3] = {0};
-	char buffer_out[UPLINK_SIZE+3] = {0};
+	uint8_t buffer_in[255] = {0};
+	char buffer_out[255] = {0};
 	buffer_in[0] = LORA_READ_BUFFER;
 	buffer_in[1] = rx_offset;
 	SPI_transfer(&CS_LORA_PORT, CS_LORA_PIN, buffer_in, (uint8_t *)buffer_out, amount_to_read);
@@ -211,11 +207,7 @@ uint8_t Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Co
 		// Get requested drone status
 		char Requested_Drone_Status_c[2] = {buffer_out[start_index+31], 0};
 		inbound->Drone_status = atoi(Requested_Drone_Status_c);
-		*Flight_Controller_Status = Manage_FC_Status(inbound->Drone_status, *Flight_Controller_Status);
-		outbound->Flight_Controller_Status = *Flight_Controller_Status;
-        // Get LORA mode
-        char LORA_Mode_c[2] = {buffer_out[start_index+32], 0};
-        inbound->Radio_mode = atoi(LORA_Mode_c);
+		Manage_FC_Status(inbound->Drone_status);
         
 		return 1;		
 	}
@@ -227,7 +219,7 @@ uint8_t Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Co
 void Send_Downlink(Downlink *outbound){
     // Downlink message format -> $ND_MM_C_T*CS
 	// Need to attach TX_offset in LORA data buffer to start of message
-	char message[] = {TX_BASE_ADR, '$', 'N', 'D', outbound->ID[0], outbound->ID[1], outbound->Flight_Controller_Status, outbound->Tracking_Status, '*', 0, 0, 0};
+	char message[] = {TX_BASE_ADR, '$', 'N', 'D', outbound->ID[0], outbound->ID[1], g_Flight_Controller_Status, outbound->Tracking_Status, '*', 0, 0, 0};
     char checksum_hex[4] = {0};
     uint8_t data_in[sizeof(message)+1];
     uint8_t dummy_out[sizeof(message)+1];
@@ -249,91 +241,13 @@ void Send_Downlink(Downlink *outbound){
 }
 
 // State machine to transition drone state
-FC_Status Manage_FC_Status(FC_Status Desired, FC_Status Current){
-    switch (Desired){
-		case Standby:
-			switch (Current){
-				case Standby:
-					return Current;
-				case Calibrating:
-					return Desired;
-				case Ready:
-					return Desired;
-				case Flying:
-					return Landing;
-				case Landing:
-					return Current;
-				default:
-					return Current;
-			}
-			break;
-		case Calibrating:
-			switch (Current){
-				case Standby:
-					return Desired;
-				case Calibrating:
-					return Current;
-				case Ready:
-					return Current;
-				case Flying:
-					return Landing;
-				case Landing:
-					return Current;
-				default:
-					return Current;
-			}
-			break;
-		case Ready:
-			switch (Current){
-				case Standby:
-					return Current;
-				case Calibrating:
-					return Current;
-				case Ready:
-					return Current;
-				case Flying:
-					return Landing;
-				case Landing:
-					return Current;
-				default:
-					return Current;
-			}
-			break;
-		case Flying:
-			switch (Current){
-				case Standby:
-					return Current;
-				case Calibrating:
-					return Current;
-				case Ready:
-					return Desired;
-				case Flying:
-					return Current;
-				case Landing:
-					return Desired;
-				default:
-					return Current;
-			}
-			break;
-		case Landing:
-			switch (Current){
-				case Standby:
-					return Current;
-				case Calibrating:
-					return Current;
-				case Ready:
-					return Current;
-				case Flying:
-					return Desired;
-				case Landing:
-					return Current;
-				default:
-					return Current;
-			}
-			break;	
-		default: 
-			return Current;
-	}
+void Manage_FC_Status(FC_Status Desired){
+    if (Desired > Landing){
+        g_Flight_Controller_Status = Standby;
+    }
+    else{
+        g_Flight_Controller_Status = Desired;
+    }
 }
 
 // Get payload length in LoRa FIFO

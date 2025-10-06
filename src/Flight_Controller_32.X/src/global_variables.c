@@ -2,13 +2,21 @@
 #include "time.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <math.h>
 #include <xc.h>
+
+// Global state machine
+FC_Status g_Flight_Controller_Status = Standby;
 
 // Keeps track of seconds since end of setup
 volatile uint32_t g_seconds = 0;
 // How many ticks of timer1 are in one second
 const int32_t g_tmr1_ct_in_s = 12500000;
 const double g_tmr1_ct_in_s_fp = 12500000.0;
+
+const double g_gravity = 9.8065;
+const double g_mass = 0.5885;
 
 // Result of 1S LIPO voltage level
 volatile uint32_t g_adc_1s_result = 0;

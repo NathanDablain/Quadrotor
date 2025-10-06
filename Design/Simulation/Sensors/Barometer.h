@@ -17,7 +17,7 @@ class Barometer{
         // sensitivity in LSB/hpa
         const double sensitivity = 4096.0;
         // noise is in hpa, data sheet value plus 50% FOS
-        const double noise_rms = 1.5*0.0065;
+        const double noise_rms = 1.5*0.0170;
         // Output Data Rate in Hz
         uint16_t ODR;
         // Time between sensor readings in microseconds
@@ -30,7 +30,11 @@ class Barometer{
         // FIFO buffer
         uint32_t FIFO_buffer[255];
         // Low pass filter setting -> BW = ODR/Low_Pass_Filter_Setting
-        double Low_Pass_Filter_Setting = 20.0;
+        double Low_Pass_Filter_BW[3] = {2.0, 9.0, 20.0};
+        uint8_t Filter_Setting;
+        bool passthrough_flag = false;
+        Gaussian Gaussian_Bar;
+        Low_Pass_Filter Bar_Filter;
     public:
         bool drdy_flag = false;
         // The data in the readable output registers
@@ -38,7 +42,7 @@ class Barometer{
         // FIFO index
         uint32_t FIFO_index = 0;
         // Set data rate, and enable FIFO
-        void Initialize(uint16_t odr, uint8_t watermark, Barometer_mode mode);
+        void Initialize(uint16_t odr, uint8_t watermark, Barometer_mode mode, uint8_t filter_setting);
         // Turns true pressure data tracked in environment into a quantized LSB reading
         void Sample(Environment &env, Sim_Time sim_t);
         // Fills supplied array with data in FIFO

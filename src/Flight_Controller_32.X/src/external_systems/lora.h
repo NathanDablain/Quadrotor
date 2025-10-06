@@ -1,6 +1,7 @@
 #ifndef LORA_H
 #define	LORA_H
 
+#include "system_types.h"
 #include <stdint.h>
 
 // Protocol for 7th bit when using SPI interface:
@@ -47,30 +48,14 @@
 // Includes $, *, and checksum
 #define INTERCHANGE_DOWNLINK_SIZE 10
 #define INTERCHANGE_DATA_SIZE 6
-// 4 bytes for each angular rate(dps), 6 bytes for each accel (mdps), 6 bytes for height (cm))
-#define TELEMETRY_DOWNLINK_SIZE 36
-#define TELEMETRY_DATA_SIZE 36
 // Includes $, *, and checksum
-#define UPLINK_SIZE 36
+#define UPLINK_SIZE 35
 #define UPLINK_DATA_SIZE 31
 #define RX_BASE_ADR 0
 #define TX_BASE_ADR 100
 #define LORA_SYNC_WORD 0x6494
 
-#define LORA_STANDARD_DELAY 200000
-
-typedef enum {
-	// Drone systems initialized, awaiting calibration
-	Standby,
-	// Drone systems calibrating
-	Calibrating,
-	// Drone systems are calibrated, ready to fly
-	Ready,
-	// Drone is flying, responding to commands and under autopilot control
-	Flying,
-	// Drone is following landing procedure, will automatically proceed to ready once complete
-	Landing
-} FC_Status;
+#define LORA_STANDARD_DELAY 300000
 
 typedef enum {
 	// LORA is ready to transition modes
@@ -83,18 +68,8 @@ typedef enum {
 	LORA_Transmitting
 } LORA_Status;
 
-typedef enum{
-    // LORA has not yet established contact with ground controller
-    LORA_Pre_Handshake,
-    // Standard mode when flying, downlink triggered by uplink at 1Hz
-    LORA_Interchange,
-    // Useful for debugging, after handshake stay in transmit and downlink data for viewing on ground controller displays
-    LORA_Telemetry
-} LORA_Mode;
-
 typedef struct {
 	FC_Status Drone_status;
-    LORA_Mode Radio_mode;
 	float Desired_north;
 	float Desired_east;
 	float Desired_altitude;
@@ -112,17 +87,17 @@ typedef struct {
 // Set radio frequency, antenna power, packet parameters, and interrupt flag bit mask
 uint8_t Setup_LoRa();
 // Receive and parse uplink
-uint8_t Receive_Uplink(Uplink *inbound, Downlink *outbound, FC_Status *Flight_Controller_Status);
+uint8_t Receive_Uplink(Uplink *inbound, Downlink *outbound);
 // Respond to uplink with downlink
 void Send_Downlink(Downlink *outbound);
 // State machine to transition drone state
-FC_Status Manage_FC_Status(FC_Status Desired, FC_Status Current);
+void Manage_FC_Status(FC_Status Desired);
 // Get payload length in LoRa FIFO
 uint8_t Check_For_Message(uint8_t *rx_offset);
 // Delay and check LORA busy pin
 void LORA_Delay(uint32_t length);
 // Manage LORA state
-void Run_LORA(Uplink *uplink, FC_Status *Flight_Controller_Status);
+void Run_LORA(Uplink *uplink);
 // Given a string of characters, returns a compound xor checksum in character hex format
 void Xor_Checksum(char *data, uint8_t length, uint8_t start_index, char checksum_hex[3]);
 

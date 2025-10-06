@@ -74,6 +74,7 @@ bool Predict(Kalman_Filter *filter, Matrix *input){
     else{
         return false;
     }
+    
     // P_new = F*P*F' + Q, toss F*P, F', and F*P*F'
     Matrix *P_new = Mat_Add(Mat_Mul(Mat_Mul(filter->F, filter->P, 0), Mat_Tran(filter->F), 3), filter->Q, 1);
     if (P_new != NULL){
@@ -90,10 +91,28 @@ bool Predict(Kalman_Filter *filter, Matrix *input){
 bool Update(Kalman_Filter *filter, Matrix *measurement){
     // ybar = y - H*xhat, toss H*xhat 
     Matrix *ybar = Mat_Sub(measurement, Mat_Mul(filter->H, filter->xhat, 0), 2);
-    // S = H*P*H' + R, toss H*P, H', and H*P*H'
-    Matrix *S = Mat_Add(Mat_Mul(Mat_Mul(filter->H, filter->P, 0), Mat_Tran(filter->H), 3), filter->R, 1);
+    if (ybar == NULL) return false;
+
+    Matrix *H_tran = Mat_Tran(filter->H);
+    if (H_tran == NULL){
+        Mat_Destructor(ybar);
+        return false;
+    }
+        
+    // S = H*P*H' + R, toss H*P, and H*P*H'
+    Matrix *S = Mat_Add(Mat_Mul(Mat_Mul(filter->H, filter->P, 0), H_tran, 1), filter->R, 1);
+    
+    // Make sure S can be inverted
+    Matrix *S_inv = Mat_Inv(S);
+    Mat_Destructor(S);
+    if (S_inv == NULL){
+        Mat_Destructor(ybar);
+        return true;
+    }
+    
     // K = P*H'*inv(S), toss H', P*H', and inv(S)
-    Matrix *K = Mat_Mul(Mat_Mul(filter->P, Mat_Tran(filter->H), 2), Mat_Inv(S), 3);
+    Matrix *K = Mat_Mul(Mat_Mul(filter->P, H_tran, 2), S_inv, 3);
+    
     // x_new = xhat + K*ybar, toss K*ybar and ybar
     Matrix *x_new = Mat_Add(filter->xhat, Mat_Mul(K, ybar, 2), 2);
     if (x_new != NULL){

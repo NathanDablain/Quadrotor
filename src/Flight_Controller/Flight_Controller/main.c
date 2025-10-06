@@ -74,12 +74,16 @@ int main(){
 			if (g_LoRa_Check_Flag>=2) Run_LORA(&up_link, &Flight_Controller_Status);
 
 			// Printing
-			if (g_print_flag &&(Setup_Bitmask & (1<<SU_SSD_bp))){
+			if (g_print_flag>=20 &&(Setup_Bitmask & (1<<SU_SSD_bp))){
 				g_print_flag = 0;
 				char buffer[4][20] = {0};
-				unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%4.2f, %4.2f, %4.2f", Drone.Euler[0], Drone.Euler[1], Drone.Euler[2]);
+				//unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%4.2f, %4.2f, %4.2f", Drone.Euler[0], Drone.Euler[1], Drone.Euler[2]);
+				//Print_Page(0, buffer[0], length_to_print);
+				//length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%4.2f , %4.2f",-Drone.Position_NED[2],Desired_Thrust);
+				//Print_Page(1, buffer[1], length_to_print);
+				unsigned char length_to_print = snprintf(buffer[0], sizeof(buffer[0]), "%d , %d", Drone.Linear_Accelerations[0].value, -Drone.Linear_Accelerations[1].value);
 				Print_Page(0, buffer[0], length_to_print);
-				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%4.2f , %4.2f",-Drone.Position_NED[2],Desired_Thrust);
+				length_to_print = snprintf(buffer[1], sizeof(buffer[1]), "%d", -Drone.Linear_Accelerations[2].value);
 				Print_Page(1, buffer[1], length_to_print);
 				ATOMIC_BLOCK(ATOMIC_FORCEON){
 					length_to_print = snprintf(buffer[2], sizeof(buffer[2]), "B %d L %d", g_Motor_Throttles[0],g_Motor_Throttles[1]);
@@ -142,36 +146,52 @@ int main(){
 	
 			}
 			else if (Flight_Controller_Status == Ready){
-
+				//g_Motor_Throttles[0] = 150;
+				//g_Motor_Throttles[1] = 150;
+				//g_Motor_Throttles[2] = 150;
+				//g_Motor_Throttles[3] = 150;
+				static unsigned int current_throttle = 0;
+				static unsigned long time_last_change = 0;
+				if (g_seconds - time_last_change >= 10){
+					current_throttle += 50;
+					time_last_change = g_seconds;
+				}
+				if (current_throttle <= 1000){
+					g_Motor_Throttles[1] = current_throttle;
+				}
+				else{
+					memset(g_Motor_Throttles, 0, sizeof(g_Motor_Throttles));
+					Flight_Controller_Status = Standby;
+				}
 			}
 			else {
 			//------------Guidance and Control functions-------------//
-				if (Flight_Controller_Status == Flying){
-					if (up_link.Desired_altitude < 5.0){
-						Desired_States.Position_NED[2] = -up_link.Desired_altitude;
-					}
-				}
-				else if (Flight_Controller_Status == Landing){
-					Desired_States.Position_NED[2] = 1.0;
-					if (Drone.Position_NED[2] >= 0){
-						Flight_Controller_Status = Standby;
-						Desired_Thrust = 0.0;
-						memset(Desired_Moments, 0, sizeof(Desired_Moments));
-					}
-				}
-				
-				if (g_Guidance_Flag) Run_Guidance(&Desired_States, &Commanded_States);
-				
-				// Altitude Controller Runs at 100 Hz, updates desired thrust
-				if (g_Altitude_Control_Flag >= 2) Desired_Thrust = Altitude_Control(-Drone.Position_NED[2], -Commanded_States.Position_NED[2], &Constants);
-
-				// Euler angle controller and throttle updates run at 200 Hz, PWM sent to ESC at 400 Hz in TCD interrupt
-				if (g_Motor_Run_Flag){
-					g_Motor_Run_Flag = 0;
-					Euler_Control(Drone.Euler, Commanded_States.Euler, Desired_Moments, Desired_Thrust, &Constants);
-					Set_throttles(Desired_Thrust, Desired_Moments, &Constants);
-					Safety_Check(&Drone, &Flight_Controller_Status);
-				}
+				//if (Flight_Controller_Status == Flying){
+					//if (up_link.Desired_altitude < 5.0){
+						//Desired_States.Position_NED[2] = -up_link.Desired_altitude;
+					//}
+				//}
+				//else if (Flight_Controller_Status == Landing){
+					//Desired_States.Position_NED[2] = 1.0;
+					//if (Drone.Position_NED[2] >= 0){
+						//Flight_Controller_Status = Standby;
+						//Desired_Thrust = 0.0;
+						//memset(Desired_Moments, 0, sizeof(Desired_Moments));
+					//}
+				//}
+				//
+				//if (g_Guidance_Flag) Run_Guidance(&Desired_States, &Commanded_States);
+				//
+				//// Altitude Controller Runs at 100 Hz, updates desired thrust
+				//if (g_Altitude_Control_Flag >= 2) Desired_Thrust = Altitude_Control(-Drone.Position_NED[2], -Commanded_States.Position_NED[2], &Constants);
+//
+				//// Euler angle controller and throttle updates run at 200 Hz, PWM sent to ESC at 400 Hz in TCD interrupt
+				//if (g_Motor_Run_Flag){
+					//g_Motor_Run_Flag = 0;
+					//Euler_Control(Drone.Euler, Commanded_States.Euler, Desired_Moments, Desired_Thrust, &Constants);
+					//Set_throttles(Desired_Thrust, Desired_Moments, &Constants);
+					//Safety_Check(&Drone, &Flight_Controller_Status);
+				//}
 			}
 		}
 
@@ -274,13 +294,14 @@ void Setup_Timers(){
 
 ISR(RTC_CNT_vect){
 	++g_seconds;
-	++g_print_flag;
+	//++g_print_flag;
 	++g_positive_coms_watchdog;
 	RTC_CNT = 0;
 	RTC_INTFLAGS = RTC_CMP_bm;
 }
 
 ISR(TCB0_INT_vect){
+	++g_print_flag;
 	++g_Motor_Run_Flag;
 	++g_Accel_Read_Flag;
 	++g_LoRa_Check_Flag;

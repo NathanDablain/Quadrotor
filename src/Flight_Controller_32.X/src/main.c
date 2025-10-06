@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include "main.h"
+#include "system_types.h"
 #include "time.h"
 #include "global_variables.h"
 #include "system_clocks.h"
@@ -18,6 +19,8 @@
 #include "lora.h"
 #include "i2c.h"
 #include "oled.h"
+#include "kalman_filter.h"
+#include "navigation.h"
 
 bool Setup(){
     bool setup_status = true;
@@ -65,18 +68,9 @@ int main(void) {
 }
 
 void Execute(){
-//    static SEQUENCER sequencer = {0};
-    static uint32_t count = 0;
+    static bool A_Filter_Init = false;
     static Uplink uplink;
-    static FC_Status Flight_Controller_Status = Standby;
-    Print_Buffer print_buf = {0};
-    print_buf.dble[0] = IMU_Angular_Rate(0);
-    print_buf.dble[1] = IMU_Angular_Rate(1);
-    print_buf.dble[2] = IMU_Angular_Rate(2);
-    print_buf.dble[3] = IMU_Acceleration(0);
-    print_buf.dble[4] = IMU_Acceleration(1);
-    print_buf.dble[5] = IMU_Acceleration(2);
-
+    
     Sample_Voltages();
     
     Run_Barometer_Machine();
@@ -85,11 +79,37 @@ void Execute(){
     
     Run_Magnetometer_Machine();
 
-    Run_LORA(&uplink, &Flight_Controller_Status);
+    Run_LORA(&uplink);
+    
+    Send_Pages();
 
-    Send_Pages(print_buf);
-    if (g_seconds != count){
-        count = g_seconds;
+    switch (g_Flight_Controller_Status){
+        case Standby:
+            Run_Ground_Filter(true);
+            break;
+            
+        case User_Calibration:
+            break;
+            
+        case System_Calibration:
+            // Run when drone is in takeoff position to estimate gyro biases and initial rotation
+            Run_Ground_Filter(false);
+            
+            break;
+            
+        case Ready:
+            // Save off ground filter states as initial conditions for air filter
+            Run_Air_Filter(true);
+            break;
+            
+        case Flying:
+            Run_Air_Filter(false);
+            break;
+            
+        case Landing:
+            Run_Air_Filter(false);
+            break;
+                    
     }
 
 }

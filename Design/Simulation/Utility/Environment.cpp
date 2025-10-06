@@ -1,4 +1,5 @@
 #include "Environment.h"
+#include <iostream>
 
 Environment::Environment(double Longitude, double Latitude, double Altitude_MSL, Sim_Time Sim_dt){
     // Store latitude, longitude, and altitude
@@ -14,7 +15,7 @@ Environment::Environment(double Longitude, double Latitude, double Altitude_MSL,
     sim_dt = Sim_dt;
 }
 
-void Environment::Update(Vec3 &Position_NED, Vec &quaternion, Vec3 &v){
+void Environment::Update(Vec3 &Position_NED, Vec4 &quaternion, Vec3 &v, Vec3 &a, Vec3 &w){
     // Update ecef position based off of current NED position and established reference ecef position in constructor
     P_ecef = NED2ecef(Position_NED, P_ref_ecef, lla);
     // Update lla position based off of updated ecef
@@ -26,12 +27,11 @@ void Environment::Update(Vec3 &Position_NED, Vec &quaternion, Vec3 &v){
     pressure = P_b*pow(1.0 + p_c1, p_c2);
     // Update magnetic field based off of quaternion
     m_vec_Body = NED2Body(m_vec_NED, quaternion);
-    // Update linear acceleration
-    static Vec3 v_last = {0.0, 0.0, 0.0};
+    // Update measured linear acceleration -> acceleration of the accelerometer mass relative to the casing 
     Vec3 g_vec_NED = {0.0, 0.0, gravity};
     Vec3 g_vec_Body = NED2Body(g_vec_NED, quaternion);
-    dv_dt = ((v-v_last)/sim_dt.Time_fp()) + g_vec_Body;
-    v_last = v;
+    a_measured = a + w.cross(v) - g_vec_Body;
+
 }
 
 double Saturate(double value_in, double low_limit, double high_limit){

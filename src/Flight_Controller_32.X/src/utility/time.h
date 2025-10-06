@@ -12,14 +12,6 @@ typedef struct{
     int32_t tmr1_count;
 } Time;
 
-typedef struct{
-    Time imu_clk;
-    Time mag_clk;
-    Time bar_clk;
-    Time lora_clk;
-    Time gps_clk;
-} SEQUENCER;
-
 Time Current_Time();
 
 Time Time_Difference(Time Time_1, Time Time_2);

@@ -58,6 +58,46 @@ double Vec3::dot(Vec3 const& v1){ // DOT PRODUCT
     return data[0]*v1.data[0] + data[1]*v1.data[1] + data[2]*v1.data[2];
 }
 //------------------------------------//
+
+//--------Vec4 Methods----------------//
+void Vec4::operator=(Vec4 const& v1){
+    this->data[0] = v1.data[0];
+    this->data[1] = v1.data[1];
+    this->data[2] = v1.data[2];
+    this->data[3] = v1.data[3];
+}
+
+Vec4 Vec4::operator+(Vec4 const& v1){
+    Vec4 v2;
+    for (uint8_t i = 0; i < 4; i++){
+        v2.data[i] = this->data[i] + v1.data[i];
+    }
+
+    return v2;
+}
+
+Vec4 Vec4::operator-(Vec4 const& v1){
+    Vec4 v2;
+    for (uint8_t i = 0; i < 4; i++){
+        v2.data[i] = this->data[i] - v1.data[i];
+    }
+
+    return v2;
+}
+
+Vec4 Vec4::operator*(double const& c){
+    Vec4 v2;
+    for (uint8_t i = 0; i < 4; i++){
+        v2.data[i] = this->data[i]*c;
+    }
+
+    return v2;
+}
+
+double Vec4::dot(Vec4 const& v1){ // DOT PRODUCT
+    return data[0]*v1.data[0] + data[1]*v1.data[1] + data[2]*v1.data[2] + data[3]*v1.data[3];
+}
+//------------------------------------//
 //--------Mat3 Methods----------------//
 void Mat3::operator=(Mat3 m1){
     for (uint8_t i = 0; i < 3; i++){

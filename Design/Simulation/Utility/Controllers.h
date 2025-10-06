@@ -35,10 +35,14 @@ float Altitude_Control(float h, float h_ref, const Drone_Constants *Constants);
 
 void Set_throttles(uint16_t motor_throttles[4], float desired_thrust, float desired_moments[3], const Drone_Constants *Constants);
 
-void Euler_Control(float Current_Euler[3], float Commanded_Euler[3], float desired_moments[3], float thrust, const Drone_Constants *Constants);
+void Euler_Control(States *Drone, float Commanded_Euler[3], float desired_moments[3], float thrust, const Drone_Constants *Constants);
 
 void Saturate(float &desired_moment, float max, float min, uint8_t &Saturation_Flag);
 
 void Safety_Check(uint16_t motor_throttles[4], States *Drone, FC_Status *Flight_Controller_Status);
 
 void Run_Guidance(Reference *Desired_States, Reference *Commanded_States);
+
+void Euler_Guidance(float Current_Euler[3], float Commanded_Euler[3], float desired_w[3]);
+
+void Angular_Rate_PID(float desired_w[3], float current_w[3], float desired_moments[3], const Drone_Constants *Constants);

@@ -6,11 +6,17 @@
 
 typedef struct{
     // data points first by row then by column
-    float **data;
+    double **data;
     uint8_t rows;
     uint8_t columns;
 } Matrix;
 
+typedef struct{
+    //data points first by row then by column
+    double data[3][3];
+} Matrix_3;
+
+// Variable size matrix functions
 Matrix* Mat_Constructor(uint8_t rows, uint8_t columns);
 
 void Mat_Destructor(Matrix* Mat);
@@ -27,10 +33,22 @@ Matrix* Mat_Inv(Matrix* Mat);
 
 Matrix* Mat_Id(uint8_t dim);
 
-void Mult_and_Sub_Row(float *left_side, float *right_side, float con, uint8_t length);
+void Mult_and_Sub_Row(double *left_side, double *right_side, double con, uint8_t length);
 
-void Multiply_row(float *row, float con, uint8_t length);
+void Multiply_row(double *row, double con, uint8_t length);
 
-void Subtract_row(float *left_side, float *right_side, uint8_t length);
+void Subtract_row(double *left_side, double *right_side, uint8_t length);
+
+// Fixed 3x3 size matrix functions
+
+void Mat3_Add(Matrix_3 *Mat1, Matrix_3 *Mat2, Matrix_3 *Res);
+
+void Mat3_Sub(Matrix_3 *Mat1, Matrix_3 *Mat2, Matrix_3 *Res);
+
+void Mat3_Mul(Matrix_3 *Mat1, Matrix_3 *Mat2, Matrix_3 *Res);
+
+void Mat3_Tran(Matrix_3 *Mat, Matrix_3 *Res);
+
+bool Mat3_Inv(Matrix_3 *Mat, Matrix_3 *Res);
 
 #endif

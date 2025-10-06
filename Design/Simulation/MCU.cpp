@@ -3,6 +3,7 @@
 
 void MCU::Run(Environment &env, Sim_Time sim_t){
     // This method models the flight controller source code in src/flight_controller
+    Current_Time = sim_t;
     Run_Timers(sim_t);
     // Bar samples at 75 Hz
     if (BAR_Read_Flag >= 2) Read_Bar();
@@ -13,11 +14,11 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
     // Accel samples at 52 Hz
     if (Accel_Read_Flag) Read_Accel();
 
-    // Observer update -> 50 Hz
+    // Observer update -> 52 Hz
     if (Attitude_Observer_Update_Flag >= 4) Observer_Update();
         
     // Observer predict -> 400 Hz
-    if (Attitude_Observer_Predict_Flag >= 2) Observer_Predict();
+    if (Attitude_Observer_Predict_Flag >= 4) Observer_Predict();
 
     if (LoRa_Read_Flag) Read_LoRa(env);
 
@@ -45,8 +46,8 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
 
     }
     else if (Flight_Controller_Status == Ready){
-        if (sim_t.Seconds - ready_time.Seconds > 2){
-            Desired_States.Position_NED[2] = -2;
+        if (sim_t.Seconds - ready_time.Seconds > 5){
+            Desired_States.Position_NED[2] = -3.5;
             Desired_States.Euler[0] = 0;
             Desired_States.Euler[1] = 0;
             Desired_States.Euler[2] = 0;
@@ -57,7 +58,7 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
     //------------Guidance and Control functions-------------//
         if (Flight_Controller_Status == Flying){
     
-            if (sim_t.Seconds - ready_time.Seconds > 10){
+            if (sim_t.Seconds - ready_time.Seconds > 60){
                 Flight_Controller_Status = Landing;
             }
         }
@@ -83,7 +84,10 @@ void MCU::Run(Environment &env, Sim_Time sim_t){
         // PIDs and ESCs run at 200 Hz, updates desired motor speeds
         if (Motor_Run_Flag){
             Motor_Run_Flag = 0;
-            Euler_Control(mcu.Euler, Commanded_States.Euler, Desired_Moments, Desired_Thrust, &Constants);
+            // float Commanded_Euler[3] = {0.0};
+            // Euler_Guidance(mcu.Euler, Commanded_Euler, desired_w);
+            // Angular_Rate_PID(desired_w, mcu.w_rads, Desired_Moments, &Constants);
+            Euler_Control(&mcu, Commanded_States.Euler, Desired_Moments, Desired_Thrust, &Constants);
             Set_throttles(motor_throttles, Desired_Thrust, Desired_Moments, &Constants);
             Safety_Check(motor_throttles, &mcu, &Flight_Controller_Status);
         }
@@ -190,12 +194,12 @@ void MCU::Read_Mag(){
 
 void MCU::Calibrate_Gyro(){
 	// Flip positive directions on Gyro x and z axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
-	unsigned long w_magnitude = abs(mcu.w[0]) + abs(mcu.w[1]) + abs(mcu.w[2]);
+	uint32_t w_magnitude = abs(mcu.w[0]) + abs(mcu.w[1]) + abs(mcu.w[2]);
 	
 	if (w_magnitude <= W_CAL_LIMIT){
-		cal_data.w_bias[0] = -mcu.w[0];
+		cal_data.w_bias[0] = mcu.w[0];
 		cal_data.w_bias[1] = mcu.w[1];
-		cal_data.w_bias[2] = -mcu.w[2];
+		cal_data.w_bias[2] = mcu.w[2];
 		cal_data.imu_cal_status = 1;
 	}
 }
@@ -205,13 +209,16 @@ void MCU::Read_Gyro(){
     if (imu.gyro_drdy_flag == false) return;
     imu.gyro_drdy_flag = true;
 	
-	mcu.w[0] = -imu.angular_rate_LSB[0] - cal_data.w_bias[0];
-	mcu.w[1] = imu.angular_rate_LSB[1] - cal_data.w_bias[1];
+	mcu.w[0] = imu.angular_rate_LSB[0] - cal_data.w_bias[0];
+	mcu.w[1] = -imu.angular_rate_LSB[1] - cal_data.w_bias[1];
 	mcu.w[2] = -imu.angular_rate_LSB[2] - cal_data.w_bias[2];
 
     mcu.w_deg_s[0] = mcu.w[0]*(GYRO_SENS);
     mcu.w_deg_s[1] = mcu.w[1]*(GYRO_SENS);
     mcu.w_deg_s[2] = mcu.w[2]*(GYRO_SENS);
+    mcu.w_rads[0] = mcu.w[0]*(GYRO_SENS)*D2R;
+    mcu.w_rads[1] = mcu.w[1]*(GYRO_SENS)*D2R;
+    mcu.w_rads[2] = mcu.w[2]*(GYRO_SENS)*D2R;
 }
 
 void MCU::Read_Accel(){
@@ -219,10 +226,10 @@ void MCU::Read_Accel(){
     if (imu.accel_drdy_flag == false) return;
 	imu.accel_drdy_flag = true;
 	
-	// Flip positive directions on Accelerometer y axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
-	mcu.g_vec[0] = imu.acceleration_LSB[0];
-	mcu.g_vec[1] = -imu.acceleration_LSB[1];
-	mcu.g_vec[2] = imu.acceleration_LSB[2];
+	// Flip positive directions on Accelerometer y and z axis to align with Forward-Right-Down coordinate system (aligns with NED when not rotated)
+	mcu.a[0] = imu.acceleration_LSB[0];
+	mcu.a[1] = -imu.acceleration_LSB[1];
+	mcu.a[2] = -imu.acceleration_LSB[2];
 }
 
 void MCU::Read_LoRa(Environment &env){
@@ -234,24 +241,41 @@ void MCU::Read_LoRa(Environment &env){
 void MCU::Observer_Predict(){
     Attitude_Observer_Predict_Flag = 0;
     // Predict
+    float w_x = ((float)mcu.w[0])*GYRO_SENS*D2R;
+    float w_y = ((float)mcu.w[1])*GYRO_SENS*D2R;
+    float w_z = ((float)mcu.w[2])*GYRO_SENS*D2R;
+
 	if (abs(abs(mcu.Euler[1]) - PI_2) > OBSERVER_GIMBAL_LOCK_CHECK){
-		mcu.Euler[0] += ((float)mcu.w[0] + sinf(mcu.Euler[0])*tanf(mcu.Euler[1])*(float)mcu.w[1] + cosf(mcu.Euler[0])*tanf(mcu.Euler[1])*(float)mcu.w[2])*OBSERVER_DT*GYRO_SENS*D2R;
-		mcu.Euler[1] += (cosf(mcu.Euler[0])*(float)mcu.w[1] - sinf(mcu.Euler[0])*(float)mcu.w[2])*OBSERVER_DT*GYRO_SENS*D2R;
-		mcu.Euler[2] += ((sinf(mcu.Euler[0])/cosf(mcu.Euler[1]))*(float)mcu.w[1] + (cosf(mcu.Euler[0])/cosf(mcu.Euler[1]))*(float)mcu.w[2])*OBSERVER_DT*GYRO_SENS*D2R;
+		mcu.Euler[0] += ((w_x + sinf(mcu.Euler[0])*tanf(mcu.Euler[1])*w_y + cosf(mcu.Euler[0])*tanf(mcu.Euler[1])*w_z)*OBSERVER_DT);
+		mcu.Euler[1] += ((cosf(mcu.Euler[0])*w_y - sinf(mcu.Euler[0])*w_z)*OBSERVER_DT);
+		mcu.Euler[2] += (((sinf(mcu.Euler[0])/cosf(mcu.Euler[1]))*w_y + (cosf(mcu.Euler[0])/cosf(mcu.Euler[1]))*w_z)*OBSERVER_DT);
 	}
+    // Below is just for logging
+    mcu.Euler_deg[0] = mcu.Euler[0]*R2D;
+    mcu.Euler_deg[1] = mcu.Euler[1]*R2D;
+    mcu.Euler_deg[2] = mcu.Euler[2]*R2D;
 }
 
 void MCU::Observer_Update(){
+
+    bool accel_update = true;
+    if (Flight_Controller_Status == Flying || Flight_Controller_Status == Landing){
+        accel_update = false;
+    }
     Attitude_Observer_Update_Flag = 0;
-    // Measure
-    float phi_m = atan2f(mcu.g_vec[1], mcu.g_vec[2]);
-    if (isnan(phi_m)){
-        phi_m = mcu.Euler[0];
+    if (accel_update){
+        float phi_m = atan2f(((float)-mcu.a[1]), ((float)-mcu.a[2]));
+        if (isnan(phi_m)){
+            phi_m = mcu.Euler[0];
+        }
+        float theta_m = atan2f(((float)mcu.a[0]), sqrt(pow((float)mcu.a[1],2) + pow((float)mcu.a[2],2)));
+        if (isnan(theta_m)){
+            theta_m = mcu.Euler[1];
+        }
+        mcu.Euler[0] = mcu.Euler[0] + OBSERVER_GAIN*(phi_m - mcu.Euler[0]);
+        mcu.Euler[1] = mcu.Euler[1] + OBSERVER_GAIN*(theta_m - mcu.Euler[1]);
     }
-    float theta_m = atan2f(-mcu.g_vec[0], sqrt(pow(mcu.g_vec[1],2) + pow(mcu.g_vec[2],2)));
-    if (isnan(theta_m)){
-        theta_m = mcu.Euler[1];
-    }
+
     float mag_x_NED = cosf(mcu.Euler[1])*mcu.m_vec[0] + sinf(mcu.Euler[0])*sinf(mcu.Euler[1])*mcu.m_vec[1] + cosf(mcu.Euler[0])*sinf(mcu.Euler[1])*mcu.m_vec[2];
     float mag_y_NED = cosf(mcu.Euler[0])*mcu.m_vec[1] - sinf(mcu.Euler[0])*mcu.m_vec[2];
     float psi_m = -atan2f(mag_y_NED, mag_x_NED);
@@ -259,15 +283,10 @@ void MCU::Observer_Update(){
         psi_m = mcu.Euler[2];
     }
 
+    measured_Euler[2] = psi_m*R2D;
     // Update
-    mcu.Euler[0] = mcu.Euler[0] + OBSERVER_GAIN*(phi_m - mcu.Euler[0]);
-    mcu.Euler[1] = mcu.Euler[1] + OBSERVER_GAIN*(theta_m - mcu.Euler[1]);
     // Prevent yaw angle discontinuity at 2pi - 0 to cause the filter to slowly cycle between them
     mcu.Euler[2] = (abs(psi_m - mcu.Euler[2])>PI)?(psi_m):(mcu.Euler[2] + OBSERVER_GAIN*(psi_m - mcu.Euler[2]));
-    // Below is just for logging
-    mcu.Euler_deg[0] = mcu.Euler[0]*R2D;
-    mcu.Euler_deg[1] = mcu.Euler[1]*R2D;
-    mcu.Euler_deg[2] = mcu.Euler[2]*R2D;
 }
 
 void MCU::Run_Motors(uint16_t motor_throttles[4]){

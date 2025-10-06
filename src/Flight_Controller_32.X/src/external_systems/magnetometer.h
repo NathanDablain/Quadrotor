@@ -63,7 +63,7 @@ bool Calculate_Soft_Iron();
 
 void Compensate_Magnetometer_Reading(bool Soft_iron_cal);
 
-double Magnemtometer_Field(uint8_t index);
+double Magnetometer_Field(uint8_t index);
 
 #endif
 

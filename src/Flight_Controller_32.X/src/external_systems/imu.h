@@ -15,6 +15,7 @@ typedef struct{
     uint8_t gyro_LSB_bytes[9];
     int16_t gyro_LSB[3];
     int16_t accel_LSB[3];
+    int32_t accel_bias_LSB[3];
     double angular_rate[3];
     double acceleration[3];
 } IMU_Data;

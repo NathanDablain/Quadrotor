@@ -52,7 +52,7 @@ uint8_t Clear_Display();
 
 uint8_t Print_Page(uint8_t page, char *to_print, uint8_t number);
 
-void Send_Pages(Print_Buffer buffer);
+void Send_Pages();
 
 #endif
 

@@ -6,7 +6,11 @@
 #include <cmath>
 #include "Linear_Algebra.h"
 
-Vec3 NED2Body(Vec3 NED_vec, Vec q);
+Vec4 Euler2Quat(Vec3 Euler);
+
+Vec3 NED2Body(Vec3 NED_vec, Vec4 q);
+
+Vec3 Body2NED(Vec3 Body_vec, Vec4 q);
 
 Vec3 Body2NED(Vec3 Body_vec, Vec q);
 

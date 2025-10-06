@@ -2,9 +2,10 @@ CXX = g++
 CC = gcc
 CXXFLAGS = -Wall -O2
 CXXDBGFLAGS = -g -Wall -O0
-CFLAGS = -g -Wall -O0
+CCFLAGS = -Wall -O2
+CCDBGFLAGS = -g -Wall -O0
 CPPFLAGS = -MMD -MP -I Utility -I Sensors -I PIC32
-
+# For profiling add -pg -no-pie to compiling and linking
 BUILD_DIR_DBG = Build_Debug
 BUILD_DIR_REL = Build_Release
 
@@ -66,4 +67,4 @@ clean_dep:
 .PHONY: pristine
 
 pristine:
-	rm -rf $(BUILD_DIR_REL)/sim.exe $(BUILD_DIR_DBG)/sim_debg.exe $(CXXDEPENDS) $(CXXOBJECTS) $(CCDEPENDS) $(CCDEPENDS) $(CXXDBGOBJECTS) $(CCDBGOBJECTS) $(CXXDBGDEPENDS) $(CCDBGDEPENDS)
+	rm -rf $(BUILD_DIR_REL)/sim.exe $(BUILD_DIR_DBG)/sim_debg.exe $(CXXDEPENDS) $(CXXOBJECTS) $(CCOBJECTS) $(CCDEPENDS) $(CCDEPENDS) $(CXXDBGOBJECTS) $(CCDBGOBJECTS) $(CXXDBGDEPENDS) $(CCDBGDEPENDS)

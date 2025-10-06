@@ -1,111 +1,41 @@
-#include <stdint.h>
 #include <stdbool.h>
-#include <stdlib.h>
+#include <stdint.h>
 #include <math.h>
-#include "magnetometer.h"
-#include "linear_algebra.h"
-#include "global_variables.h"
-#include "pins.h"
-#include "spi.h"
-#include "dma.h"
-#include "time.h"
-    
-static Mag_Machine state = Mag_Standby;
+#include <string.h>
+#include "Magnetometer_p32.h"
+
 static Mag_Data mag = {0};
 
-void Run_Magnetometer_Machine(){
-    const int32_t ODR_Hz = 50;
-    const Time Sample_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/ODR_Hz};
-    static uint8_t Read_Array[7] = {0};
-    static Time Last_Update = {0};
-    static bool Data_Ready_Flag = false;
+static bool offset_initialized[3] = {false, false, false};
+
+void Initialize_Mag(){
+    memset(&mag, 0, sizeof(mag));
+    offset_initialized[0] = false;
+    offset_initialized[1] = false;
+    offset_initialized[2] = false;
+}
+
+void Read_Mag(int16_t magnetic_field_LSB[3]){
     bool Hard_iron_cal = false;
     bool Soft_iron_cal = false;
-    
-    switch (state){
-       case Mag_Standby:
-           Read_Array[0] = MAG_DATA_START|0x80;
-           state = Initialize_Magnetometer();
-           mag.mag_field_min_LSB[0] = INT16_MAX;
-           mag.mag_field_min_LSB[1] = INT16_MAX;
-           mag.mag_field_min_LSB[2] = INT16_MAX;
-           mag.mag_field_max_LSB[0] = INT16_MIN;
-           mag.mag_field_max_LSB[1] = INT16_MIN;
-           mag.mag_field_max_LSB[2] = INT16_MIN;
-           break;
-       case Mag_Fail:
-           break;
-       case Mag_Ready:
-           if ((g_spi1_rdy_flag) && (Compare_And_Update(Current_Time(), Sample_Rate, &Last_Update))){
-               Prepare_SPI1_For_DMA(&CS_MAG_PORT, CS_MAG_PIN, Read_Array, &Data_Ready_Flag);
-               Set_DMA_01(&Read_Array[1], &mag.field_LSB_bytes[0], sizeof(Read_Array));
-               state = Mag_Reading;
-           }
-           break;
-       case Mag_Reading:
-           if (Data_Ready_Flag){
-               Convert_Magnetometer();
-               // If the current measurements require the hard iron offsets to be updated, 
-               // then a new soft iron calibration will also be required
-               Hard_iron_cal = Calculate_Hard_Iron();
-               if (Hard_iron_cal){
-                   Soft_iron_cal = Calculate_Soft_Iron();
-               }
-               Compensate_Magnetometer_Reading(Soft_iron_cal);
-
-               Data_Ready_Flag = false;
-               state = Mag_Ready;
-           }
-           break;
-    }
-}
-
-Mag_Machine Initialize_Magnetometer(){
-    uint8_t dummy_out[2] = {0};
-    
-     // Reset device
-    uint8_t reset_mag[2] = {MAG_CFG_REG_A, MAG_REBOOT};
-    SPI_transfer(&CS_MAG_PORT, CS_MAG_PIN, reset_mag, dummy_out, sizeof(reset_mag));
-	Delay(200000);
-    
-     // Enables 4 wire SPI, disable I2C, set block data update
-    uint8_t com_mag[2] = {MAG_CFG_REG_C, MAG_DISABLE_I2C|MAG_BDU|MAG_4WSPI};
-	SPI_transfer(&CS_MAG_PORT, CS_MAG_PIN, com_mag, dummy_out, sizeof(com_mag));
-	Delay(20000);
-    
-    // Check ID to make sure device is functioning
-    uint8_t mag_id_in[2] = {(MAG_WHO_AM_I|0x80), 0};
-    uint8_t mag_id_out[2] = {0};
-	SPI_transfer(&CS_MAG_PORT, CS_MAG_PIN, mag_id_in, mag_id_out, sizeof(mag_id_in));
-	if (mag_id_out[1] != MAG_ID) return Mag_Fail;
-	
-    // Set 50 Hz ODR, temp compensation enabled
-    uint8_t mag_config_a[2] = {MAG_CFG_REG_A, MAG_TEMP_COMP|MAG_ODR_100Hz};
-	SPI_transfer(&CS_MAG_PORT, CS_MAG_PIN, mag_config_a, dummy_out, sizeof(mag_config_a));
-    
-    // Enable LPF
-    uint8_t mag_config_b[2] = {MAG_CFG_REG_B, MAG_LPF_ENABLE};
-	SPI_transfer(&CS_MAG_PORT, CS_MAG_PIN, mag_config_b, dummy_out, sizeof(mag_config_b));
-
-    return Mag_Ready;
-}
-
-void Convert_Magnetometer(){
     // The Magnetometer sensor axis corresponds to the body axis in the following way
     // -> Body x = Sensor y
     // -> Body y = -Sensor x
     // -> Body z = Sensor z
-    
-    mag.field_LSB[0] = (((int16_t)mag.field_LSB_bytes[4])<<8) + ((int16_t)mag.field_LSB_bytes[3]);
-    mag.field_LSB[1] = -(((int16_t)mag.field_LSB_bytes[2])<<8) - ((int16_t)mag.field_LSB_bytes[1]);
-    mag.field_LSB[2] = (((int16_t)mag.field_LSB_bytes[6])<<8) + ((int16_t)mag.field_LSB_bytes[5]);
-    
+    mag.field_LSB[0] = magnetic_field_LSB[1];
+    mag.field_LSB[1] = -magnetic_field_LSB[0]; 
+	mag.field_LSB[2] = magnetic_field_LSB[2];
+
+    Hard_iron_cal = Calculate_Hard_Iron();
+    if (Hard_iron_cal){
+        Soft_iron_cal = Calculate_Soft_Iron();
+    }
+    Compensate_Magnetometer_Reading(Soft_iron_cal);
 }
 
 bool Calculate_Hard_Iron(){
     // We will find the ellipsoid center offset from 0 by saving off the
     // maximum and minimum measured values and dividing by two
-    static bool offset_initialized[3] = {false, false, false};
     bool update_performed = false;
     
 	for (uint8_t i = 0; i < 3; i++){
@@ -213,4 +143,17 @@ void Compensate_Magnetometer_Reading(bool Soft_iron_cal){
 
 double Magnetometer_Field(uint8_t index){
     return mag.field[index];
+}
+
+// CPP wrapper functions
+void Initialize_Mag_cpp(){
+    void Initialize_Mag();
+}
+
+void Read_Mag_cpp(int16_t magnetic_field_LSB[3]){
+    Read_Mag(magnetic_field_LSB);
+}
+
+double Magnetometer_Field_cpp(uint8_t index){
+    return Magnetometer_Field(index);
 }

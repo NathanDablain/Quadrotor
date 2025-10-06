@@ -55,13 +55,10 @@ class Environment{
         Mat3 R_mag;
         Vec3 m_vec_NED;
         //---------------------------------------//
-        // IIR constants for converting linear velocity to linear acceleration
-        const double accel_c1 = 0.995;
-        const double accel_c2 = 1.0-accel_c1;
-        //---------------------------------------//
+
     public:
-        // Vector for holding linear acceleration
-        Vec3 dv_dt = {0.0, 0.0, 0.0};
+        // Vector for holding measured linear acceleration
+        Vec3 a_measured = {0.0, 0.0, 0.0};
         Vec3 m_vec_Body;
         // Constant offsets in the magnetometer readings due to the local environment in (mgauss) 
         Vec3 mag_hard_iron = {100, -175, 200};
@@ -74,5 +71,5 @@ class Environment{
         // Methods
         Environment(double Longitude, double Latitude, double Altitude_MSL, Sim_Time sim_dt);
         void 
-            Update(Vec3 &Position_NED, Vec &quaternion, Vec3 &v);
+            Update(Vec3 &Position_NED, Vec4 &quaternion, Vec3 &v, Vec3 &a, Vec3 &w);
 };

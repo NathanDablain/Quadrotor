@@ -14,8 +14,6 @@ typedef struct {
     Matrix *R;
     Matrix *P;
     Matrix *xhat;
-    Time Last_prediction;
-    Time Last_update;
 } Kalman_Filter;
 
 Kalman_Filter* Filter_Constructor(uint8_t states, uint8_t inputs, uint8_t measurements);
@@ -24,6 +22,10 @@ void Filter_Destructor(Kalman_Filter *filter, uint8_t stage);
 
 bool Predict(Kalman_Filter *filter, Matrix *input);
 
+bool Predict_EKF(Kalman_Filter *filter);
+
 bool Update(Kalman_Filter *filter, Matrix *measurement);
+
+bool Update_EKF(Kalman_Filter *filter, Matrix *measurement, Matrix *predicted_measurement);
 
 #endif

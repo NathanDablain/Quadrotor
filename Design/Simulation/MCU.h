@@ -31,9 +31,9 @@
 #define MAG_CAL_TIMEOUT 5
 
 // Decreasing the gain increases the trust on the model(gyro), and increasing it increases the trust on the measurement (accel & mag)
-#define OBSERVER_GAIN 0.05f
+#define OBSERVER_GAIN 0.10f
 // Time step between observer predictions
-#define OBSERVER_DT 0.00125f//0.0025f
+#define OBSERVER_DT 0.0025f
 // Angle at which to stop making predictions and rely entirely on measurements because of pitch discontinuity
 #define OBSERVER_GIMBAL_LOCK_CHECK (5.0f*D2R)
 
@@ -52,6 +52,7 @@ class MCU{
         Sim_Time tcd0_timelast = {0};
         Sim_Time gps_timelast = {0};
         Sim_Time ready_time = {0};
+        Sim_Time Current_Time = {0};
 
         uint32_t seconds = 0;
         uint8_t LoRa_Read_Flag = 0;
@@ -98,6 +99,8 @@ class MCU{
         float Desired_Thrust = 0;
         // Desired moments by MCU
         float Desired_Moments[3] = {0};
+        float desired_w[3] = {0};
+        float measured_Euler[3] = {0};
 		// Desired-> tracks the desired drone states issued by the ground controller
 		Reference Desired_States = {0};
 

@@ -124,7 +124,7 @@ unsigned char Write_TWI(unsigned char Slave_Address, unsigned char Address_Byte,
 	// Returns 4 if successful, lower numbers indicate stage of failure
 	unsigned char i = 0;
 	unsigned long timeout = 0;
-	TWI0_MADDR = Slave_Address<<1;
+	TWI0_MADDR = Slave_Addres	s<<1;
 	while(!(TWI0_MSTATUS & TWI_WIF_bm)){if (++timeout > TWI_TIMEOUT_THRESHOLD){return 3;}};
 	if (TWI0_MSTATUS & TWI_RXACK_bm){return 0;}
 	TWI0_MDATA = Address_Byte;

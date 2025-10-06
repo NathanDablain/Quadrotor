@@ -8,12 +8,12 @@ class Gaussian{
         double Mean;
         double Max;
         double Min;
-        uint32_t Steps;
-        double *Probability;
-        double *Sigma;
+        double Probability[500];
+        double Sigma[500];
     public:
+        Gaussian();
         Gaussian(double variance, double mean);
-        ~Gaussian();
+        void Initialize(double variance, double mean);
         double Get_probability(double x);
         double Get_val();
         double Get_seeded_val(uint32_t seed);

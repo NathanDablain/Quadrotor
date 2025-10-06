@@ -16,8 +16,6 @@ typedef struct {
     Matrix *R;
     Matrix *P;
     Matrix *xhat;
-    Time Last_prediction;
-    Time Last_update;
 } Kalman_Filter;
 
 Kalman_Filter* Filter_Constructor(uint8_t states, uint8_t inputs, uint8_t measurements);

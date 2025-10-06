@@ -53,16 +53,27 @@ Matrix* Mat_Add(Matrix *restrict Mat1, Matrix *restrict Mat2, uint8_t Destroy_fl
             Mat_result->data[i][j] = Mat1->data[i][j] + Mat2->data[i][j];
         }
     }
-
-    if (Destroy_flag == 1){
-        Mat_Destructor(Mat1);
-    }
-    else if (Destroy_flag == 2){
-        Mat_Destructor(Mat2);
-    }
-    else if (Destroy_flag == 3){
-        Mat_Destructor(Mat1);
-        Mat_Destructor(Mat2);
+    
+    switch (Destroy_flag){
+        case 0:
+            break;
+            
+        case 1:
+            Mat_Destructor(Mat1);
+            break;
+            
+        case 2:
+            Mat_Destructor(Mat2);
+            break;
+            
+        case 3:
+            Mat_Destructor(Mat1);
+            Mat_Destructor(Mat2);
+            break;
+            
+        default :
+            break;
+                   
     }
     
     return Mat_result;
@@ -81,15 +92,26 @@ Matrix* Mat_Sub(Matrix *restrict Mat1, Matrix *restrict Mat2, uint8_t Destroy_fl
         }
     }
     
-    if (Destroy_flag == 1){
-        Mat_Destructor(Mat1);
-    }
-    else if (Destroy_flag == 2){
-        Mat_Destructor(Mat2);
-    }
-    else if (Destroy_flag == 3){
-        Mat_Destructor(Mat1);
-        Mat_Destructor(Mat2);
+    switch (Destroy_flag){
+        case 0:
+            break;
+            
+        case 1:
+            Mat_Destructor(Mat1);
+            break;
+            
+        case 2:
+            Mat_Destructor(Mat2);
+            break;
+            
+        case 3:
+            Mat_Destructor(Mat1);
+            Mat_Destructor(Mat2);
+            break;
+            
+        default :
+            break;
+                   
     }
     
     return Mat_result;
@@ -113,15 +135,26 @@ Matrix* Mat_Mul(Matrix *restrict Mat1, Matrix *restrict Mat2, uint8_t Destroy_fl
         }
     }
     
-    if (Destroy_flag == 1){
-        Mat_Destructor(Mat1);
-    }
-    else if (Destroy_flag == 2){
-        Mat_Destructor(Mat2);
-    }
-    else if (Destroy_flag == 3){
-        Mat_Destructor(Mat1);
-        Mat_Destructor(Mat2);
+    switch (Destroy_flag){
+        case 0:
+            break;
+            
+        case 1:
+            Mat_Destructor(Mat1);
+            break;
+            
+        case 2:
+            Mat_Destructor(Mat2);
+            break;
+            
+        case 3:
+            Mat_Destructor(Mat1);
+            Mat_Destructor(Mat2);
+            break;
+            
+        default :
+            break;
+                   
     }
     
     return Mat_result;

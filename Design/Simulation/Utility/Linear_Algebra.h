@@ -25,6 +25,20 @@ struct Vec3{
     double dot(Vec3 const& v1);
 };
 
+struct Vec4{
+    array<double, 4> data {0.0};
+
+    void operator=(Vec4 const& v1);
+
+    Vec4 operator+(Vec4 const& v1);
+
+    Vec4 operator-(Vec4 const& v1);
+
+    Vec4 operator*(double const& c);
+
+    double dot(Vec4 const& v1);
+};
+
 struct Mat3{
     array<array<double, 3>, 3> data {0.0};
 

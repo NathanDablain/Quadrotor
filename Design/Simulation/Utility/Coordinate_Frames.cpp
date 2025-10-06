@@ -2,7 +2,22 @@
 
 #include "Coordinate_Frames.h"
 
-Vec3 NED2Body(Vec3 NED_vec, Vec q){
+Vec4 Euler2Quat(Vec3 Euler){
+    // Returns a quaternion assuming a 3-2-1 rotation sequence with the given Euler angles
+    Vec4 q;
+    double phi2 = Euler.data[0]/2.0;
+    double theta2 = Euler.data[1]/2.0;
+    double psi2 = Euler.data[2]/2.0;
+
+    q.data[0] = cos(phi2)*cos(theta2)*cos(psi2) + sin(phi2)*sin(theta2)*sin(psi2);
+    q.data[1] = sin(phi2)*cos(theta2)*cos(psi2) - cos(phi2)*sin(theta2)*sin(psi2);
+    q.data[2] = cos(phi2)*sin(theta2)*cos(psi2) + sin(phi2)*cos(theta2)*sin(psi2);
+    q.data[3] = cos(phi2)*cos(theta2)*sin(psi2) - sin(phi2)*sin(theta2)*cos(psi2);
+
+    return q;
+}
+
+Vec3 NED2Body(Vec3 NED_vec, Vec4 q){
     // Rotates a vector from the drone NED frame to the drone's body frame
     // It is assumed that the quaternion, q, rotates from the body to NED frame
     // u = -q(2:4);
@@ -12,6 +27,18 @@ Vec3 NED2Body(Vec3 NED_vec, Vec q){
     Vec3 t_loc = u_loc.cross(NED_vec)*2.0;
     Vec3 Body_vec = NED_vec + t_loc*q.data[0] + u_loc.cross(t_loc);
     return Body_vec;
+}
+
+Vec3 Body2NED(Vec3 Body_vec, Vec4 q){
+    // Rotates a vector from the drone's body frame to the drone NED frame
+    // It is assumed that the quaternion, q, rotates from the body to NED frame
+    // u = q(2:4);
+    // t = 2*cross(u, v);
+    // v_rot = v + q(1)*t + cross(u, t);
+    Vec3 u_loc = {q.data[1], q.data[2], q.data[3]};
+    Vec3 t_loc = u_loc.cross(Body_vec)*2.0;
+    Vec3 NED_vec = Body_vec + t_loc*q.data[0] + u_loc.cross(t_loc);
+    return NED_vec;
 }
 
 Vec3 Body2NED(Vec3 Body_vec, Vec q){

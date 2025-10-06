@@ -94,9 +94,18 @@ extern volatile unsigned char g_positive_coms_watchdog;
 #define R2D (180.0/M_PI)
 
 // Structures
+typedef union{
+	signed int value;
+	unsigned char bytes[2]; // In MSB-LSB order
+}mems_16bit_data;
+
 typedef struct{
 	signed int w[3];
-	signed int g_vec[3]; // In the frame Forward - Right - Down
+	// In the sensor axis
+	mems_16bit_data Angular_Rates[3];
+	signed int g_vec[3];
+	// In the sensor axis
+	mems_16bit_data Linear_Accelerations[3];
 	float m_vec[3];
 	signed long m_xyz_LSB[3];
 	float Euler[3];
