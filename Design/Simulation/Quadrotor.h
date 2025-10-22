@@ -13,20 +13,29 @@
 #include "Environment.h"
 #include "Coordinate_Frames.h"
 #include "Controllers.h"
-#include "MCU.h"
-#include "PIC32AK.h"
+#include "Gaussian.h"
+#include "Barometer.h"
+#include "IMU.h"
+#include "Magnetometer.h"
+
 
 #define STANDARD_WIDTH 20
 #define LOG_DATA(data,log_name) (log_name << setw(STANDARD_WIDTH) << data)
 #define LOG_VEC3(vec3,log_name) (log_name << setw(STANDARD_WIDTH) << vec3.data[0] << setw(STANDARD_WIDTH) << vec3.data[1] << setw(STANDARD_WIDTH) << vec3.data[2])
 #define LOG_ARR3(arr3,log_name) (log_name << setw(STANDARD_WIDTH) << arr3[0] << setw(STANDARD_WIDTH) << arr3[1] << setw(STANDARD_WIDTH) << arr3[2])
 
+extern "C" {
+    void Reset_External_Interface();
+    void Initialize_p32(bool log_flag);
+    void Execute_p32();
+}
+
 class Quadrotor{
     private:
         std::ofstream log_sim;
         std::ofstream log_pic;
-        bool log_flag = true;
-        bool plot_flag = true;
+        bool log_flag = false;
+        bool plot_flag = false;
         bool error_flag = false;
         // The following parameters can be varied with montecarlo seeds, specify the mean value and the expected variance
         // Actual mass of drone in (kg)
@@ -79,11 +88,25 @@ class Quadrotor{
         Gaussian Moment_noise_gauss;
         Gaussian Force_noise_guass;
         Sim_Time Time_last_log;
+        // LORA
+        Sim_Time last_transmit_time;
+        uint8_t Lora_ID_index;
+        float Lora_Desired_North = 0.0;
+        float Lora_Desired_East = 0.0;
+        float Lora_Desired_Altitude = 0.0;
+        float Lora_Pressure_Altitude = 0.0;
+        FC_Status Lora_Desired_Status = Standby;
     public:
         // Current time in simulation
         Sim_Time sim_t;
-        MCU AVR128DB48;
-        PIC32AK PIC;
+        FC_Status inbound_Flight_Controller_Status = Standby;
+        bool Successful_Landing = false;
+        // LPS22H Barometer
+        Barometer barometer;
+        // LIS2MDL Magnetometer
+        Magnetometer magnetometer;
+        // LSM6DS3TR IMU
+        IMU imu;
         double Control_errors[6];
         double Navigation_errors[6];
         Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf);
@@ -92,9 +115,9 @@ class Quadrotor{
         void Update_drone_states();
         void Update_drone_forces_moments(Environment &env);
         void Run_sim();
+        void Run_Ground_Controller();
         void Log_data(Environment &env);
         std::array<double, 13> Differential_equation_momentum(std::array<double, 13> x_in);
-        void Calculate_errors();
         void Set_Monte_Carlo_Data(Monte_Carlo_Data MC_Data);
 
 };

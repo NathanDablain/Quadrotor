@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "linear_algebra.h"
+#include "time.h"
 
 typedef enum{
     Mag_Standby,
@@ -20,6 +21,10 @@ typedef struct{
     int16_t mag_field_max_LSB[3];
     int16_t mag_field_min_LSB[3];
     Matrix_3 soft_iron;
+    uint8_t Read_Array[7];
+    Time Last_Update;
+    bool drdy_Flag;
+    bool offset_initialized[3];
 } Mag_Data;
 
 #define MAG_WHO_AM_I 0x4F
@@ -50,6 +55,8 @@ typedef struct{
 #define MAG_DRDY_bm (1<<3)
 
 #define MAG_SENSITIVITY 1.5
+
+void Initialize_Magnetometer_Machine();
 
 void Run_Magnetometer_Machine();
 

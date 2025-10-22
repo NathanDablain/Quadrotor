@@ -30,22 +30,14 @@ void Sample_Voltages(){
         Voltage_1S = (float)Voltage_1s_lsb/(float)ADC_max;
         Voltage_1S *= ADC_sensitivity;
         
-        if (Voltage_1S >= 3.9){
-            // Illuminate green LED
-            RAISE_PIN(GREEN_LED_PORT, GREEN_LED_PIN);
-            LOWER_PIN(YELLOW_LED_PORT, YELLOW_LED_PIN);
-            LOWER_PIN(RED_LED_PORT, RED_LED_PIN);
-        }
-        else if (Voltage_1S >= 3.6){
-            // Illuminate yellow LED
-            LOWER_PIN(GREEN_LED_PORT, GREEN_LED_PIN);
-            RAISE_PIN(YELLOW_LED_PORT, YELLOW_LED_PIN);
+        if (Voltage_1S >= 3.6){
+            // Illuminate white LED
+            RAISE_PIN(WHITE_LED_PORT, WHITE_LED_PIN);
             LOWER_PIN(RED_LED_PORT, RED_LED_PIN);
         }
         else {
             // Illuminate red LED
-            LOWER_PIN(GREEN_LED_PORT, GREEN_LED_PIN);
-            LOWER_PIN(YELLOW_LED_PORT, YELLOW_LED_PIN);
+            LOWER_PIN(WHITE_LED_PORT, WHITE_LED_PIN);
             RAISE_PIN(RED_LED_PORT, RED_LED_PIN);
         }
     }

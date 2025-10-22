@@ -1,17 +1,14 @@
-#define _USE_MATH_DEFINES
 #include <stdint.h>
-#include <stdbool.h>
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
-#include "Controllers_p32.h"
-#include "Guidance_p32.h"
-#include "Navigation_p32.h"
-#include "IMU_p32.h"
-#include "Barometer_p32.h"
-#include "Global_Variables_p32.h"
-#include "Least_Squares_p32.h"
-#include "External_Interface.h"
+#include "time.h"
+#include "controllers.h"
+#include "navigation.h"
+#include "guidance.h"
+#include "imu.h"
+#include "barometer.h"
+#include "global_variables.h"
 
 typedef struct{
     double Sum;
@@ -193,10 +190,4 @@ void Set_throttles(){
         if (temp > 1000) temp = 1000;
         Output.Throttles[i] = (uint16_t)temp;
     }
-    // Write throttle commands into interface
-    memcpy(e_throttle_commands, Output.Throttles, sizeof(e_throttle_commands));
-}
-
-double Thrust_Command(){
-    return Output.Thrust;
 }

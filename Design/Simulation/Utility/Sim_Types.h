@@ -59,8 +59,10 @@ struct Calibration_Data{
 typedef enum{
 	// Drone systems initialized, awaiting calibration
 	Standby,
-	// Drone systems are being calibrated
-	Calibrating,
+	// Drone systems are being calibrated by the user, involves rotating drone body
+	User_Calibration,
+	// Drone systems are performing automatic pre flight calibration, drone should be in position
+	System_Calibration,
 	// Drone systems are calibrated, ready to fly
 	Ready,
 	// Drone is flying, responding to commands and under autopilot control
@@ -97,9 +99,7 @@ struct Uplink{
 };
 
 struct Downlink{
-	// Are we calibrated
-	uint8_t Calibration_Status;
-	// Are we tracking the reference well
+	FC_Status Flight_Controller_Status;
 	uint8_t Tracking_Status;
 	char ID[3];
 };
@@ -123,4 +123,6 @@ struct Monte_Carlo_Data{
 	double Initial_roll;
 	double Initial_pitch;
 	double Initial_yaw;
+	double Windspeed[2];
+	double WindEuler[3][2];
 };

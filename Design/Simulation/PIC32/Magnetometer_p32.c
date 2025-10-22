@@ -3,34 +3,73 @@
 #include <math.h>
 #include <string.h>
 #include "Magnetometer_p32.h"
+#include "Global_Variables_p32.h"
+#include "External_Interface.h"
 
+static Mag_Machine state;
 static Mag_Data mag = {0};
-
-static bool offset_initialized[3] = {false, false, false};
 
 void Initialize_Mag(){
     memset(&mag, 0, sizeof(mag));
-    offset_initialized[0] = false;
-    offset_initialized[1] = false;
-    offset_initialized[2] = false;
+    mag.mag_field_min_LSB[0] = INT16_MAX;
+    mag.mag_field_min_LSB[1] = INT16_MAX;
+    mag.mag_field_min_LSB[2] = INT16_MAX;
+    mag.mag_field_max_LSB[0] = INT16_MIN;
+    mag.mag_field_max_LSB[1] = INT16_MIN;
+    mag.mag_field_max_LSB[2] = INT16_MIN;
+    mag.offset_initialized[0] = false;
+    mag.offset_initialized[1] = false;
+    mag.offset_initialized[2] = false;
+    state = Mag_Standby;
 }
 
-void Read_Mag(int16_t magnetic_field_LSB[3]){
+void Run_Magnetometer_Machine(){
+    const int32_t ODR_Hz = 100;
+    const Time Sample_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/ODR_Hz};
     bool Hard_iron_cal = false;
     bool Soft_iron_cal = false;
+    
+    switch (state){
+       case Mag_Standby:
+           e_mag_odr = ODR_Hz;
+           e_mag_lpf_setting = 1;
+           e_mag_settings_updated = true;
+           state = Mag_Ready;
+           break;
+       case Mag_Fail:
+           break;
+       case Mag_Ready:
+           if (Compare_And_Update(Current_Time(), Sample_Rate, &mag.Last_Update)){
+               state = Mag_Reading;
+           }
+           break;
+       case Mag_Reading:
+            Convert_Magnetometer();
+            // If the current measurements require the hard iron offsets to be updated, 
+            // then a new soft iron calibration will also be required
+            Hard_iron_cal = Calculate_Hard_Iron();
+            if (Hard_iron_cal){
+                Soft_iron_cal = Calculate_Soft_Iron();
+            }
+            Compensate_Magnetometer_Reading(Soft_iron_cal);
+
+            state = Mag_Ready;
+           break;
+    }
+}
+
+void Convert_Magnetometer(){
     // The Magnetometer sensor axis corresponds to the body axis in the following way
     // -> Body x = Sensor y
     // -> Body y = -Sensor x
     // -> Body z = Sensor z
-    mag.field_LSB[0] = magnetic_field_LSB[1];
-    mag.field_LSB[1] = -magnetic_field_LSB[0]; 
-	mag.field_LSB[2] = magnetic_field_LSB[2];
 
-    Hard_iron_cal = Calculate_Hard_Iron();
-    if (Hard_iron_cal){
-        Soft_iron_cal = Calculate_Soft_Iron();
-    }
-    Compensate_Magnetometer_Reading(Soft_iron_cal);
+    memcpy(mag.field_LSB_bytes, e_mag_data, sizeof(e_mag_data));
+
+    mag.field_LSB[0] = (((int16_t)mag.field_LSB_bytes[3])<<8) + ((int16_t)mag.field_LSB_bytes[2]);
+    mag.field_LSB[1] = -(((int16_t)mag.field_LSB_bytes[1])<<8) - ((int16_t)mag.field_LSB_bytes[0]);
+    mag.field_LSB[2] = (((int16_t)mag.field_LSB_bytes[5])<<8) + ((int16_t)mag.field_LSB_bytes[4]);
+
 }
 
 bool Calculate_Hard_Iron(){
@@ -54,13 +93,13 @@ bool Calculate_Hard_Iron(){
 		if (calculate_hard_iron){
 			mag.hard_iron[i] = mag.mag_field_min_LSB[i] + mag.mag_field_max_LSB[i];
 			mag.hard_iron[i] >>= 1;
-            offset_initialized[i] = (mag.mag_field_max_LSB[i] != mag.hard_iron[i])?true:false;
+            mag.offset_initialized[i] = (mag.mag_field_max_LSB[i] != mag.hard_iron[i])?true:false;
             update_performed = true;
 		}
 	}
     
 	// Prevents future divide by 0 error in soft iron offset calculation
-    return (update_performed && (offset_initialized[0] & offset_initialized[1] & offset_initialized[2]))?true:false;
+    return (update_performed && (mag.offset_initialized[0] & mag.offset_initialized[1] & mag.offset_initialized[2]))?true:false;
 
 }
 
@@ -143,17 +182,4 @@ void Compensate_Magnetometer_Reading(bool Soft_iron_cal){
 
 double Magnetometer_Field(uint8_t index){
     return mag.field[index];
-}
-
-// CPP wrapper functions
-void Initialize_Mag_cpp(){
-    void Initialize_Mag();
-}
-
-void Read_Mag_cpp(int16_t magnetic_field_LSB[3]){
-    Read_Mag(magnetic_field_LSB);
-}
-
-double Magnetometer_Field_cpp(uint8_t index){
-    return Magnetometer_Field(index);
 }

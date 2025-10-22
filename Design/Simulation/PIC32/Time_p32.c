@@ -1,12 +1,13 @@
 #include "Time_p32.h"
 #include "Global_Variables_p32.h"
+#include "External_Interface.h"
 #include <stdbool.h>
 
 Time Current_Time(){
     Time current;
     
-    current.tmr1_count = 12039021; //TMR1;
-    current.seconds = g_seconds;
+    current.tmr1_count = e_Current_Time.tmr1_count;
+    current.seconds = e_Current_Time.seconds;
     
     return current;
 }

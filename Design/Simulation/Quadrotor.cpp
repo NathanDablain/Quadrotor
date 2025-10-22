@@ -1,5 +1,5 @@
 #include "Quadrotor.h"
-
+#include "External_Interface.h"
 using namespace std;
 
 Quadrotor::Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf){
@@ -8,13 +8,18 @@ Quadrotor::Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf){
     sim_tf = Sim_tf;
     sim_t = {.Seconds = 0, .MicroSeconds = 0};
     Time_last_log = {.Seconds = 0, .MicroSeconds = 0};
+    last_transmit_time = {.Seconds = 0, .MicroSeconds = 0};
     cal_start_time = {.Seconds = 5, .MicroSeconds = 0};
+    Lora_ID_index = 0;
     // Initial conditions initialization
     q = Euler2Quat(Initial_Euler);
+    // Reset microcontroller interface
+    Reset_External_Interface();
     // PIC32
-    PIC.barometer.Initialize(200, 1, Bar_Mode_Bypass, 0);
-    PIC.magnetometer.Initialize(100, 1);
-    PIC.imu.Initialize(3330, 1660, 1, 2, 3);
+    Initialize_p32(log_flag);
+    barometer.Initialize(e_bar_odr, false, e_bar_lpf_setting);
+    magnetometer.Initialize(e_mag_odr, e_mag_lpf_setting);
+    imu.Initialize(e_gyro_odr, e_accel_odr, e_gyro_lpf_setting, e_accel_lpf_setting);
     calibration_phase = 0;
     Moment_noise_gauss.Initialize(0.05, 0.0);
     Force_noise_guass.Initialize(0.05, 0.0);
@@ -47,32 +52,22 @@ void Quadrotor::Set_Monte_Carlo_Data(Monte_Carlo_Data MC_Data){
 
 }
 
-void Quadrotor::Calculate_errors(){
-    if ((AVR128DB48.Flight_Controller_Status == Flying)||(AVR128DB48.Flight_Controller_Status == Landing)){
-        for (uint8_t i = 0; i < 3; i++){
-            Control_errors[i] += fabs(AVR128DB48.Desired_States.Euler[i] - Euler.data[i])*R2D*sim_dt.Time_fp();
-            Control_errors[3+i] += fabs(AVR128DB48.Desired_States.Position_NED[i] - Position_NED.data[i])*sim_dt.Time_fp();
-            Navigation_errors[i] += fabs(Euler.data[i] - AVR128DB48.mcu.Euler[i])*R2D*sim_dt.Time_fp();
-            Navigation_errors[3+i] += fabs(Position_NED.data[i] - AVR128DB48.mcu.Position_NED[i])*sim_dt.Time_fp();
-        }
-    }
-}
-
 void Quadrotor::Run_sim(){
     Environment env(-97.06265, 32.79100, 0.0, sim_dt);
-    if (error_flag){
-        memset(Control_errors, 0.0, sizeof(Control_errors));
-        memset(Navigation_errors, 0.0, sizeof(Navigation_errors));
-    }
 
     while(sim_t <= sim_tf){
+        e_Current_Time.seconds = sim_t.Seconds;
+        e_Current_Time.tmr1_count = 25*sim_t.MicroSeconds;
+
         env.Update(Position_NED, q, v, a, w);
 
         Run_Sensors(env);
 
         Manage_FC_Status();
 
-        PIC.Run(env, sim_t);
+        Run_Ground_Controller();
+
+        Execute_p32();
 
         Update_drone_forces_moments(env);
 
@@ -80,9 +75,7 @@ void Quadrotor::Run_sim(){
 
         if (log_flag) Log_data(env);
 
-        if (error_flag) Calculate_errors();
-
-        if (PIC.Flight_Controller_Status == Crashed_p32 || PIC.Successful_Landing) break;
+        if (inbound_Flight_Controller_Status == Crashed || Successful_Landing) break;
 
         sim_t += sim_dt;
     }
@@ -95,62 +88,281 @@ void Quadrotor::Run_sim(){
     if (plot_flag) system("gnuplot plotter.plt");
 }
 
+void Quadrotor::Run_Ground_Controller(){
+    const Sim_Time transmit_rate = {.Seconds = 1, .MicroSeconds = 0};
+    // Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C*CS
+	const char ID[12][3] = {
+		{'I','e',0},
+		{'W','n',0},
+		{'o','Y',0},
+		{'u','o',0},
+		{'l','u',0},
+		{'d','r',0},
+		{'H','D',0},
+		{'a','a',0},
+		{'v','d',0},
+		{'e','d',0},
+		{'B','y',0},
+		{'e','.',0},
+	};
+    // Uplink the desired flight controller status and positions once per second
+    if (sim_t - last_transmit_time > transmit_rate){
+        last_transmit_time = sim_t;
+        // Cycle message ID
+        Lora_ID_index = (Lora_ID_index<11)?(Lora_ID_index+1):(0);
+        char buffer[5][7];
+        sprintf(buffer[0], "%06.2f", fabs(Lora_Desired_North));
+        char north_south = (Lora_Desired_North >= 0)?('N'):('S');
+        sprintf(buffer[1], "%06.2f", fabs(Lora_Desired_East));
+        char east_west = (Lora_Desired_East >= 0)?('E'):('W');
+        sprintf(buffer[2], "%06.2f", Lora_Desired_Altitude);
+        sprintf(buffer[3], "%06.2f", fabs(Lora_Pressure_Altitude));
+        sprintf(buffer[4], "%d", Lora_Desired_Status);
+        // Build up link message
+        char message[] = {'$', 'N', 'D', ID[Lora_ID_index][0], ID[Lora_ID_index][1],
+		 buffer[0][0], buffer[0][1], buffer[0][2], buffer[0][3], buffer[0][4], buffer[0][5], north_south,
+		 buffer[1][0], buffer[1][1], buffer[1][2], buffer[1][3], buffer[1][4], buffer[1][5], east_west,
+		 buffer[2][0], buffer[2][1], buffer[2][2], buffer[2][3], buffer[2][4], buffer[2][5],
+		 buffer[3][0], buffer[3][1], buffer[3][2], buffer[3][3], buffer[3][4], buffer[3][5], buffer[4][0],
+		 '*', 0, 0, 0};
+        // Build checksum
+        char checksum_hex[3] = {0};
+        uint8_t start_index = 1;
+        uint8_t length = sizeof(message)-5;
+        // checksum_hex must be a null terminated array of 3 characters
+        int8_t checksum = message[start_index];
+        for (uint8_t i=start_index+1; i<(length+start_index); i++){
+            checksum ^= message[i];
+        }
+        uint8_t converted_length = snprintf(checksum_hex, 3, "%X", checksum);
+        if (converted_length == 1){ // Won't add the 0 in automatically if the number is less than 8
+            checksum_hex[1] = checksum_hex[0];
+            checksum_hex[0] = '0';
+        }
+        message[sizeof(message)-2] = checksum_hex[1];
+        message[sizeof(message)-3] = checksum_hex[0];
+        // Copy into interface, don't include null terminator 
+        memcpy(e_uplink_message, message, sizeof(message)-1);
+        e_uplink_ready = true;
+    }
+    // When not transmitting, we are constantly checking for downlinks
+    if (e_downlink_ready){
+        e_downlink_ready = false;
+        uint8_t data_available = sizeof(e_downlink_message);
+        char buffer[sizeof(e_downlink_message)] = {0};
+        memcpy(buffer, e_downlink_message, data_available);
+        // Keeps track of index in buffer
+        uint8_t i = 0;
+        // Index in buffer where '$' is, signifies start of message
+        int8_t start_index = -1;
+        // Index in buffer where '*' is, signifies end of data section of message, beginning of checksum
+        int8_t end_index = -1;
+        // Populate with down link message checksum characters
+        char Check_Sum[2] = {0};
+
+        while(i != data_available){
+            if (buffer[i] == '$'){
+                start_index = i;
+            }
+            if ((start_index != -1)&&(buffer[i] == '*')){
+                end_index = i;
+                Check_Sum[0] = buffer[++i];
+                Check_Sum[1] = buffer[++i];
+                break;
+            }
+            i++;
+        }
+
+        if ((start_index == -1)||(end_index == -1)) return;
+        // Compare checksum in message to calculated checksum
+        char checksum_hex[3] = {0};
+        // checksum_hex must be a null terminated array of 3 characters
+        int8_t checksum = buffer[start_index+1];
+        uint8_t length = 6;
+        for (uint8_t i=start_index+2; i<(length+start_index+1); i++){
+            checksum ^= buffer[i];
+        }
+        uint8_t converted_length = snprintf(checksum_hex, 3, "%X", checksum);
+        if (converted_length == 1){ // Won't add the 0 in automatically if the number is less than 8
+            checksum_hex[1] = checksum_hex[0];
+            checksum_hex[0] = '0';
+        }
+        // If checksum passes, read downlink
+        if ((checksum_hex[0] == Check_Sum[0])&&(checksum_hex[1] == Check_Sum[1])){
+            char inbound_ID[3] = {buffer[3], buffer[4], 0};
+            if (strcmp(inbound_ID, ID[Lora_ID_index]) == 0){
+                inbound_Flight_Controller_Status = (FC_Status)buffer[5];
+            }
+        }
+    }
+
+    switch(inbound_Flight_Controller_Status){
+        case Standby:
+            if (sim_t == cal_start_time){
+                Lora_Desired_Status = User_Calibration;
+            }
+            break;
+
+        case User_Calibration:
+            if (sim_t.Seconds - cal_start_time.Seconds >= 2){
+                if (sim_t.Seconds - cal_start_time.Seconds <= 6){
+                    w.data[0] = 2.0;
+                    calibration_phase = 1;
+                }
+                else if (sim_t.Seconds - cal_start_time.Seconds <= 10){
+                    if (calibration_phase == 1){
+                        q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
+                        w.data[0] = -0.5;
+                    }
+                    w.data[1] = 3.0;
+                    calibration_phase = 2;
+                }
+                else if (sim_t.Seconds - cal_start_time.Seconds <= 14){
+                    if (calibration_phase == 2){
+                        q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
+                        w.data[1] = -0.75;
+                    }
+                    w.data[2] = -3.0;
+                    calibration_phase = 3;
+                }
+                else if (sim_t.Seconds - cal_start_time.Seconds <= 24){
+                    q = Euler2Quat(Initial_Euler);
+                    w.data[0] = 0.0;
+                    w.data[1] = 0.0;
+                    w.data[2] = 0.0;
+                    Lora_Desired_Status = System_Calibration;
+                }
+            }
+            break;
+            
+        case System_Calibration:
+            if (sim_t.Seconds >= 26){
+                Lora_Desired_Status = Ready;
+            }
+            break;
+            
+        case Ready:
+            if (sim_t.Seconds >= 28){
+                Lora_Desired_Altitude = 2.0;
+                Lora_Desired_Status = Flying;
+            }
+            break;
+            
+        case Flying:
+            if ((Position_NED.data[2] >= -0.15) && 
+                (fabs(Euler.data[0] - Initial_Euler.data[0]) >= (20*D2R) ||
+                 fabs(Euler.data[1] - Initial_Euler.data[1]) >= (20*D2R)))
+            {
+                inbound_Flight_Controller_Status = Crashed;
+                Successful_Landing = false;
+            }
+            if ((-Position_NED.data[2] > 1.3*Lora_Desired_Altitude) || 
+                (fabs(Position_NED.data[0]) > 15.0) ||
+                (fabs(Position_NED.data[1]) > 15.0))
+            {
+                Successful_Landing = false;
+            }
+
+            if (sim_t.Seconds - cal_start_time.Seconds >= 60){
+                if (fabs(-Position_NED.data[2] - Lora_Desired_Altitude) > Lora_Desired_Altitude*0.1){
+                    Successful_Landing = false; 
+                }
+                else {
+                    Lora_Desired_Status = Landing;
+                }
+            }
+            break;
+            
+        case Landing:
+            if (Position_NED.data[2] >= -0.15){
+                if ((fabs(Euler.data[0] - Initial_Euler.data[0]) >= (20*D2R) ||
+                    fabs(Euler.data[1] - Initial_Euler.data[1]) >= (20*D2R)) ||
+                    (Velocity_NED.data[2] > 1.0))
+                {
+                    inbound_Flight_Controller_Status = Crashed;
+                    Successful_Landing = false;
+                }
+                else{
+                    Successful_Landing = true;
+                }
+            }
+            break;
+            
+        case Crashed:
+            break;
+            
+    }
+
+}
+
 void Quadrotor::Manage_FC_Status(){
-    if (sim_t == cal_start_time){
-        PIC.Flight_Controller_Status = User_Calibration_p32;
-    }
-    if (sim_t.Seconds - cal_start_time.Seconds >= 2){
-        if (sim_t.Seconds - cal_start_time.Seconds <= 6){
-            w.data[0] = 2.0;
-            calibration_phase = 1;
-        }
-        else if (sim_t.Seconds - cal_start_time.Seconds <= 10){
-            if (calibration_phase == 1){
-                q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
-                w.data[0] = -0.5;
-            }
-            w.data[1] = 3.0;
-            calibration_phase = 2;
-        }
-        else if (sim_t.Seconds - cal_start_time.Seconds <= 14){
-            if (calibration_phase == 2){
-                q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
-                w.data[1] = -0.75;
-            }
-            w.data[2] = -3.0;
-            calibration_phase = 3;
-        }
-        else if (sim_t.Seconds - cal_start_time.Seconds <= 24){
-            q = Euler2Quat(Initial_Euler);
-            w.data[0] = 0.0;
-            w.data[1] = 0.0;
-            w.data[2] = 0.0;
-            PIC.Flight_Controller_Status = System_Calibration_p32;
-        }
-        else if (sim_t.Seconds - cal_start_time.Seconds <= 26){
-            PIC.Flight_Controller_Status = Ready_p32;
-        }
-        else if (sim_t.Seconds - cal_start_time.Seconds <= 28){
-            PIC.Flight_Controller_Status = Flying_p32;
-        }
-    }
-    // Assume that the initial drone orientation corresponds to the ground around it
-    // If it pitches or rolls a certain distance past this initial orientation while near the ground,
-    // it will be considered a crash
-    if (PIC.Flight_Controller_Status == Flying_p32 || PIC.Flight_Controller_Status == Landing_p32){
-        if (Position_NED.data[2] >= -0.15){
-            if (fabs(Euler.data[0] - Initial_Euler.data[0]) >= (20*D2R) || fabs(Euler.data[1] - Initial_Euler.data[1]) >= (20*D2R)){
-                PIC.Flight_Controller_Status = Crashed_p32;
-            }
-        }
-    }
+    // if (sim_t == cal_start_time){
+    //     PIC.Flight_Controller_Status = User_Calibration_p32;
+    // }
+    // if (sim_t.Seconds - cal_start_time.Seconds >= 2){
+    //     if (sim_t.Seconds - cal_start_time.Seconds <= 6){
+    //         w.data[0] = 2.0;
+    //         calibration_phase = 1;
+    //     }
+    //     else if (sim_t.Seconds - cal_start_time.Seconds <= 10){
+    //         if (calibration_phase == 1){
+    //             q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
+    //             w.data[0] = -0.5;
+    //         }
+    //         w.data[1] = 3.0;
+    //         calibration_phase = 2;
+    //     }
+    //     else if (sim_t.Seconds - cal_start_time.Seconds <= 14){
+    //         if (calibration_phase == 2){
+    //             q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
+    //             w.data[1] = -0.75;
+    //         }
+    //         w.data[2] = -3.0;
+    //         calibration_phase = 3;
+    //     }
+    //     else if (sim_t.Seconds - cal_start_time.Seconds <= 24){
+    //         q = Euler2Quat(Initial_Euler);
+    //         w.data[0] = 0.0;
+    //         w.data[1] = 0.0;
+    //         w.data[2] = 0.0;
+    //         PIC.Flight_Controller_Status = System_Calibration_p32;
+    //     }
+    //     else if (sim_t.Seconds - cal_start_time.Seconds <= 26){
+    //         PIC.Flight_Controller_Status = Ready_p32;
+    //     }
+    //     else if (sim_t.Seconds - cal_start_time.Seconds <= 28){
+    //         PIC.Flight_Controller_Status = Flying_p32;
+    //     }
+    // }
+    // // Assume that the initial drone orientation corresponds to the ground around it
+    // // If it pitches or rolls a certain distance past this initial orientation while near the ground,
+    // // it will be considered a crash
+    // if (PIC.Flight_Controller_Status == Flying_p32 || PIC.Flight_Controller_Status == Landing_p32){
+    //     if (Position_NED.data[2] >= -0.15){
+    //         if (fabs(Euler.data[0] - Initial_Euler.data[0]) >= (20*D2R) || fabs(Euler.data[1] - Initial_Euler.data[1]) >= (20*D2R)){
+    //             PIC.Flight_Controller_Status = Crashed_p32;
+    //         }
+    //     }
+    // }
 }
 
 void Quadrotor::Run_Sensors(Environment &env){
-    PIC.imu.Sample_Acc(env, sim_t);
-    PIC.imu.Sample_Gyr(env, w, sim_t);
-    PIC.magnetometer.Sample(env, sim_t);
-    PIC.barometer.Sample(env, sim_t);
+    if (e_imu_settings_updated){
+        imu.Initialize(e_gyro_odr, e_accel_odr, e_gyro_lpf_setting, e_accel_lpf_setting);
+        e_imu_settings_updated = false;
+    }
+    if (e_mag_settings_updated){
+        magnetometer.Initialize(e_mag_odr, e_mag_lpf_setting);
+        e_mag_settings_updated = false;
+    }
+    if (e_bar_settings_updated){
+        barometer.Initialize(e_bar_odr, e_bar_low_noise_setting, e_bar_lpf_setting);
+        e_bar_settings_updated = false;
+    }
+    imu.Sample_Acc(env, sim_t);
+    imu.Sample_Gyr(env, w, sim_t);
+    magnetometer.Sample(env, sim_t);
+    barometer.Sample(env, sim_t);
 }
 
 void Quadrotor::Log_data(Environment &env){
@@ -193,8 +405,6 @@ void Quadrotor::Log_data(Environment &env){
         LOG_DATA("V_n", log_pic);
         LOG_DATA("V_e", log_pic);
         LOG_DATA("V_h", log_pic);
-        LOG_DATA("Filter_P_h", log_pic);
-        LOG_DATA("Filter_V_h", log_pic);
         LOG_DATA("Pressure", log_pic);
         LOG_DATA("Roll", log_pic);
         LOG_DATA("Pitch", log_pic);
@@ -207,7 +417,7 @@ void Quadrotor::Log_data(Environment &env){
         LOG_DATA("v_z", log_pic);
         log_pic << endl;
     }
-    if (sim_t - Time_last_log >= log_rate && ((PIC.Flight_Controller_Status == Flying_p32) || (PIC.Flight_Controller_Status == Landing_p32))){
+    if (sim_t - Time_last_log >= log_rate && ((inbound_Flight_Controller_Status == Flying) || (inbound_Flight_Controller_Status == Landing))){
         Time_last_log = sim_t;
         w_deg_s = w*R2D;
         log_sim << setprecision(8);
@@ -230,19 +440,17 @@ void Quadrotor::Log_data(Environment &env){
         log_sim << endl;
         log_pic << setprecision(8);
         LOG_DATA(sim_t.Time_fp(), log_pic);
-        LOG_DATA(PIC.Flight_Controller_Status, log_pic);
-        LOG_DATA(PIC.Output_States.Position_NED[0], log_pic);
-        LOG_DATA(PIC.Output_States.Position_NED[1], log_pic);
-        LOG_DATA(-PIC.Output_States.Position_NED[2], log_pic);
-        LOG_DATA(PIC.Output_States.Velocity_NED[0], log_pic);
-        LOG_DATA(PIC.Output_States.Velocity_NED[1], log_pic);
-        LOG_DATA(-PIC.Output_States.Velocity_NED[2], log_pic);
-        LOG_DATA(PIC.Output_States.Altitude_Filter_Data[0], log_pic);
-        LOG_DATA(PIC.Output_States.Altitude_Filter_Data[1], log_pic);
-        LOG_DATA(PIC.Output_States.pressure, log_pic);
-        LOG_ARR3(PIC.Output_States.Euler_deg, log_pic);
-        LOG_ARR3(PIC.Output_States.w_deg_s, log_pic);
-        LOG_ARR3(PIC.Output_States.v, log_pic);
+        LOG_DATA(inbound_Flight_Controller_Status, log_pic);
+        LOG_DATA(e_Output_States.Position_NED[0], log_pic);
+        LOG_DATA(e_Output_States.Position_NED[1], log_pic);
+        LOG_DATA(-e_Output_States.Position_NED[2], log_pic);
+        LOG_DATA(e_Output_States.Velocity_NED[0], log_pic);
+        LOG_DATA(e_Output_States.Velocity_NED[1], log_pic);
+        LOG_DATA(-e_Output_States.Velocity_NED[2], log_pic);
+        LOG_DATA(e_Output_States.pressure, log_pic);
+        LOG_ARR3(e_Output_States.Euler_deg, log_pic);
+        LOG_ARR3(e_Output_States.w_deg_s, log_pic);
+        LOG_ARR3(e_Output_States.v, log_pic);
         log_pic << endl;
     }
 
@@ -265,7 +473,7 @@ void Quadrotor::Update_drone_forces_moments(Environment &env){
     // -> Front motor (3) produces positive pitching torque and positive yawing torque
 
     for (uint8_t i = 0; i < 4; i++){
-        Motors[i].Throttle = PIC.mapped_throttle_commands[i];
+        Motors[i].Throttle = e_throttle_commands[i];
         Motors[i].Update_speed();
     }
     double motor_thrusts[4] = {Motors[0].Get_motor_thrust(), Motors[1].Get_motor_thrust(),
@@ -280,7 +488,7 @@ void Quadrotor::Update_drone_forces_moments(Environment &env){
     // External, uncontrollable forces and moments
     Vec3 moment_Noise = {0.0, 0.0, 0.0};
     Vec3 force_Noise = {0.0, 0.0, 0.0};
-    if (PIC.Flight_Controller_Status >= Flying_p32){
+    if (inbound_Flight_Controller_Status >= Flying){
         moment_Noise = {Moment_noise_gauss.Get_val(), Moment_noise_gauss.Get_val(), Moment_noise_gauss.Get_val()};
         force_Noise = {Force_noise_guass.Get_val(), Force_noise_guass.Get_val(), Force_noise_guass.Get_val()};
     }

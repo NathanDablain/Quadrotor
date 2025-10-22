@@ -15,6 +15,7 @@ typedef struct {
     Matrix *Q;
     Matrix *R;
     Matrix *P;
+    Matrix *K;
     Matrix *xhat;
 } Kalman_Filter;
 

@@ -1,6 +1,14 @@
 {
     "files.associations": {
         "cmath": "cpp",
-        "array": "cpp"
+        "array": "cpp",
+        "voltage_monitor.h": "c",
+        "stdint.h": "c",
+        "sim_types.h": "c",
+        "global_variables_p32.h": "c",
+        "functional": "c",
+        "iomanip": "cpp",
+        "string_view": "cpp",
+        "magnetometer_p32.h": "c"
     }
 }

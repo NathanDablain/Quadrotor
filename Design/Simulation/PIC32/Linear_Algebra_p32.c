@@ -287,7 +287,7 @@ bool Mat3_Inv(Matrix_3 *restrict Mat, Matrix_3 *restrict Res){
     Res->data[1][1] = 1.0;
     Res->data[2][2] = 1.0;
     const uint8_t n = 3;
-    const double Mat_inv_threshold = 1e-3;
+    const double Mat_inv_threshold = 5e-2;
 
     // Use gauss-jordan elimination to solve system of linear equations
     // First work along rows until you get row echelon form, then work backwards to get reduced row echelon form

@@ -14,8 +14,8 @@ class Magnetometer {
         //----LIS2MDL Magnetometer Parameters----//
         // Sensitivity is in units of mgauss/LSB
         const double mag_sens = 1.5;
-        // RMS magnetometer noise in (mgauss),  data sheet value plus 50% FOS
-        const double noise_rms = 1.5*3.0;
+        // RMS magnetometer noise in (mgauss)
+        const double noise_rms[2] = {4.5, 3.0};
         // Low pass filter setting -> BW = ODR/Low_Pass_Filter_Setting
         double Low_Pass_Filter_BW[2] = {2.0, 4.0};
         bool passthrough_flag = false;

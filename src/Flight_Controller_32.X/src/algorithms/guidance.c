@@ -1,15 +1,13 @@
+#include "guidance.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
-#include <stdio.h>
-#include "Guidance_p32.h"
-#include "Lora_p32.h"
-#include "Navigation_p32.h"
-#include "Time_p32.h"
-#include "Barometer_p32.h"
-#include "IMU_p32.h"
-#include "Global_Variables_p32.h"
+#include "time.h"
+#include "lora.h"
+#include "barometer.h"
+#include "navigation.h"
+#include "global_variables.h"
 
 static Guidance_State State;
 static Reference_Data Reference;
@@ -73,8 +71,6 @@ void Guidance_Machine(){
 }
 
 void Transition_Guidance_State(Guidance_State new_state, double peak_height){
-    const char *renum_guid[] = {"Awaiting_Guidance", "Taking_Off", "Climbing", "Hovering", "Descending", "Landed"};
-    // printf("Guidance state transitioned to %s at %f\n", renum_guid[new_state], Time_fp(Current_Time()));
     switch(new_state){
         case Awaiting_Guidance:
             Reference.Inhibit_Motors = true;

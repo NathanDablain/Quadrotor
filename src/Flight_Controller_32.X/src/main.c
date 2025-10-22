@@ -21,6 +21,10 @@
 #include "oled.h"
 #include "kalman_filter.h"
 #include "navigation.h"
+#include "guidance.h"
+#include "controllers.h"
+
+static const bool arduino_interchange = false;
 
 bool Setup(){
     bool setup_status = true;
@@ -34,22 +38,27 @@ bool Setup(){
         
     Initialize_ADC();
 
-    Initialize_SPI();
+    Initialize_SPI(1);
+    
+    if (arduino_interchange){
+        Initialize_SPI(2);
+    }
     
     Initialize_DMA();    
     
-    Run_Barometer_Machine();
+    Initialize_Barometer_Machine();
     
-    Run_IMU_Machine();
+    Initialize_IMU_Machine();
     
-    Run_Magnetometer_Machine();
+    Initialize_Magnetometer_Machine();
     
-    Setup_LoRa();
-    //---Enable peripherals---//
+    Initialize_LORA_Machine();
     
-    //---Configure external devices--//
-
-    //---Enable Interrupts---//
+    Manage_FC_Status(Standby);
+    
+    Initialize_Guidance_Machine();
+    
+    Initialize_Controllers();
     
     INTCON1bits.GIE = 1;
 
@@ -59,7 +68,7 @@ bool Setup(){
 int main(void) {
 
     bool setup_status = Setup();     
-    
+
     while(setup_status){
         Execute();
     }
@@ -68,8 +77,6 @@ int main(void) {
 }
 
 void Execute(){
-    static bool A_Filter_Init = false;
-    static Uplink uplink;
     
     Sample_Voltages();
     
@@ -79,37 +86,20 @@ void Execute(){
     
     Run_Magnetometer_Machine();
 
-    Run_LORA(&uplink);
+    Run_LORA();
     
-    Send_Pages();
-
-    switch (g_Flight_Controller_Status){
-        case Standby:
-            Run_Ground_Filter(true);
-            break;
-            
-        case User_Calibration:
-            break;
-            
-        case System_Calibration:
-            // Run when drone is in takeoff position to estimate gyro biases and initial rotation
-            Run_Ground_Filter(false);
-            
-            break;
-            
-        case Ready:
-            // Save off ground filter states as initial conditions for air filter
-            Run_Air_Filter(true);
-            break;
-            
-        case Flying:
-            Run_Air_Filter(false);
-            break;
-            
-        case Landing:
-            Run_Air_Filter(false);
-            break;
-                    
+    if (arduino_interchange){
+        Send_Pages();
     }
-
+        
+    if (g_Flight_Controller_Status == System_Calibration){
+        Run_Ground_Filter(false);
+    }
+    else if (g_Flight_Controller_Status == Flying || g_Flight_Controller_Status == Landing){
+        Guidance_Machine();
+        Run_Air_Filter(false);
+        Run_Altitude_Filter(false);
+        Run_Controllers();
+    }
+    
 }

@@ -36,7 +36,7 @@ class Environment{
         // Gravity constant
         const double k_c = ((b_c*g_p_c) - (a_c*g_e_c))/(a_c*g_e_c); 
         // Assume an orthometric height for simulation purposes in (m)
-        const double H_ortho = 50;
+        const double H_ortho = 50.0;
         const double R = 8.3144598;
         const double g_0 = 9.80665;
         const double M_0 = 0.0289644;
@@ -54,6 +54,10 @@ class Environment{
         // Rotation matrix from true north to local magnetic field
         Mat3 R_mag;
         Vec3 m_vec_NED;
+        // Controls how long a burst of wind takes to build up
+        // 0.3-1.5 : light air, 1.6-3.3 light breeze, 3.4-5.4 gentle breeze
+        double windburst1_speed;
+        double windburst2_speed;
         //---------------------------------------//
 
     public:
@@ -70,6 +74,5 @@ class Environment{
         double ground_damping = ground_stiffness/10.0;
         // Methods
         Environment(double Longitude, double Latitude, double Altitude_MSL, Sim_Time sim_dt);
-        void 
-            Update(Vec3 &Position_NED, Vec4 &quaternion, Vec3 &v, Vec3 &a, Vec3 &w);
+        void Update(Vec3 &Position_NED, Vec4 &quaternion, Vec3 &v, Vec3 &a, Vec3 &w);
 };

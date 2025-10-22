@@ -6,16 +6,28 @@
 #include "pins.h"
 #include "spi.h"
 #include "time.h"
+#include "navigation.h"
+#include "guidance.h"
+#include "controllers.h"
 #include "global_variables.h"
 #include "system_types.h"
 
+static Uplink uplink;
+static Downlink downlink;
+static LORA_Status state;
+static Time Last_Update;
+
+void Initialize_LORA_Machine(){
+    memset(&uplink, 0, sizeof(uplink));
+    memset(&downlink, 0, sizeof(downlink));
+    memset(&Last_Update, 0, sizeof(Last_Update));
+    state = Setup_LoRa();
+}
+
 // Manage LORA state
-void Run_LORA(Uplink *uplink){
-    static LORA_Status radio_status;
-	static Downlink downlink = {0};
+void Run_LORA(){
     const int32_t Update_Rate_Hz = 200;
     const Time Update_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/Update_Rate_Hz};
-    static Time Last_Update = {0};
 	uint8_t rx_timeout[4] = {LORA_SETRX, 0xFF, 0xFF, 0xFF};
 	uint8_t lora_irq_status_out[5] = {0};
     uint8_t lora_irq_status_in[5] = {LORA_GET_IRQ_STATUS, 0, 0, 0, 0};
@@ -25,23 +37,24 @@ void Run_LORA(Uplink *uplink){
             
     if (!g_spi1_rdy_flag || !Compare_And_Update(Current_Time(), Update_Rate, &Last_Update)) return;
 
-    switch (radio_status){
+    switch (state){
         case LORA_Standby:
             // Put LORA in RXContinuous mode
             SPI_transfer(&CS_LORA_PORT, CS_LORA_PIN, rx_timeout, dummy_out, sizeof(rx_timeout));
-            radio_status = LORA_Receiving;
+            state = LORA_Receiving;
             break;
-
+        case LORA_Fail:
+            break;
         case LORA_Receiving:				
-            uplink_status = Receive_Uplink(uplink, &downlink);
+            uplink_status = Receive_Uplink();
             if (uplink_status){
-                radio_status = LORA_Ready_to_Transmit;
+                state = LORA_Ready_to_Transmit;
             }
             break;
 
         case LORA_Ready_to_Transmit:
-            Send_Downlink(&downlink);
-            radio_status = LORA_Transmitting;
+            Send_Downlink();
+            state = LORA_Transmitting;
             break;
 
         case LORA_Transmitting:
@@ -50,7 +63,7 @@ void Run_LORA(Uplink *uplink){
                 // LORA IRQ status will indicate if the transmission is complete yet
                 SPI_transfer(&CS_LORA_PORT, CS_LORA_PIN, lora_irq_status_in, lora_irq_status_out, sizeof(lora_irq_status_in));
                 if (lora_irq_status_out[3] & LORA_TX_DONE_IRQ){
-                    radio_status = LORA_Standby;
+                    state = LORA_Standby;
                     SPI_transfer(&CS_LORA_PORT, CS_LORA_PIN, lora_irq_clear, dummy_out, sizeof(lora_irq_clear));
                 }
             }
@@ -59,7 +72,7 @@ void Run_LORA(Uplink *uplink){
 
 }
 
-uint8_t Setup_LoRa(){
+LORA_Status Setup_LoRa(){
     // Take CS pin low, wait for busy to go low to indicate LORA modem is out of sleep mode
     LOWER_PIN(CS_LORA_PORT, CS_LORA_PIN);
     LORA_Delay(1000000);
@@ -87,7 +100,7 @@ uint8_t Setup_LoRa(){
     uint8_t dummy_in[3] = {0x11, 0, 0};
     uint8_t packet_type_read[3] = {0};
 	SPI_transfer(&CS_LORA_PORT, CS_LORA_PIN, dummy_in, packet_type_read, sizeof(packet_type_read)); 
-	if (packet_type_read[2] != 1) return 0;
+	if (packet_type_read[2] != 1) return LORA_Fail;
     
 	// Set power to 18dBm and ramp time to 3.4 ms
 	uint8_t tx_params[3] = {LORA_SET_TX_PARAMS, 0x12, 0x07};
@@ -132,12 +145,12 @@ uint8_t Setup_LoRa(){
     lora_mode[0] = LORA_SETFS;
 	SPI_transfer(&CS_LORA_PORT, CS_LORA_PIN, lora_mode, dummy_out, sizeof(lora_mode));
     
-    return 1;
+    return LORA_Standby;
 
 }
 
 // Receive and parse uplink
-uint8_t Receive_Uplink(Uplink *inbound, Downlink *outbound){
+uint8_t Receive_Uplink(){
     // Uplink message format -> $ND_MM_nnn.nn_N_eee.ee_E_hhh.hh_HHH.HH_C_L*CS
 	// Underscores are for readability, not part of actual message
 	uint8_t rx_offset = 0;
@@ -188,26 +201,31 @@ uint8_t Receive_Uplink(Uplink *inbound, Downlink *outbound){
 	if ((checksum_hex[0] == Check_Sum[0])&&(checksum_hex[1] == Check_Sum[1])&&uplink_status){
 		// Feed the positive coms watchdog
 //		g_positive_coms_watchdog = 0;
-		outbound->ID[0] = buffer_out[start_index+3];
-		outbound->ID[1] = buffer_out[start_index+4];
+		downlink.ID[0] = buffer_out[start_index+3];
+		downlink.ID[1] = buffer_out[start_index+4];
 		// Get desired north/south position
 		char inbound_Desired_North[7] = {buffer_out[start_index+5],buffer_out[start_index+6],buffer_out[start_index+7],buffer_out[start_index+8],buffer_out[start_index+9],buffer_out[start_index+10],0};
-		float sign = (buffer_out[start_index+11]=='N')?(1.0):(-1.0);
-		inbound->Desired_north = sign*atof(inbound_Desired_North);
+		double sign = (buffer_out[start_index+11]=='N')?(1.0):(-1.0);
+		uplink.Desired_north = sign*atof(inbound_Desired_North);
 		// Get desired east/west position
 		char inbound_Desired_East[7] = {buffer_out[start_index+12],buffer_out[start_index+13],buffer_out[start_index+14],buffer_out[start_index+15],buffer_out[start_index+16],buffer_out[start_index+17],0};
 		sign = (buffer_out[start_index+18]=='E')?(1.0):(-1.0);
-		inbound->Desired_east = sign*atof(inbound_Desired_East);
+		uplink.Desired_east = sign*atof(inbound_Desired_East);
 		// Get desired altitude
 		char inbound_Desired_Altitude[7] = {buffer_out[start_index+19],buffer_out[start_index+20],buffer_out[start_index+21],buffer_out[start_index+22],buffer_out[start_index+23],buffer_out[start_index+24],0};
-		inbound->Desired_altitude = atof(inbound_Desired_Altitude);
+		uplink.Desired_altitude = atof(inbound_Desired_Altitude);
+        if (fabs(uplink.Desired_altitude) > ALTITUDE_CEILING){
+            uplink.Desired_altitude = 0.0;
+        }
 		// Get base altitude
 		char inbound_Base_Altitude[7] = {buffer_out[start_index+25],buffer_out[start_index+26],buffer_out[start_index+27],buffer_out[start_index+28],buffer_out[start_index+29],buffer_out[start_index+30],0};
-		inbound->Base_altitude = atof(inbound_Base_Altitude);
+		uplink.Base_altitude = atof(inbound_Base_Altitude);
 		// Get requested drone status
 		char Requested_Drone_Status_c[2] = {buffer_out[start_index+31], 0};
-		inbound->Drone_status = atoi(Requested_Drone_Status_c);
-		Manage_FC_Status(inbound->Drone_status);
+		uplink.Drone_status = atoi(Requested_Drone_Status_c);
+        if (uplink.Drone_status != g_Flight_Controller_Status){
+            Manage_FC_Status(uplink.Drone_status);
+        }
         
 		return 1;		
 	}
@@ -216,10 +234,10 @@ uint8_t Receive_Uplink(Uplink *inbound, Downlink *outbound){
 }
 
 // Respond to uplink with downlink
-void Send_Downlink(Downlink *outbound){
+void Send_Downlink(){
     // Downlink message format -> $ND_MM_C_T*CS
 	// Need to attach TX_offset in LORA data buffer to start of message
-	char message[] = {TX_BASE_ADR, '$', 'N', 'D', outbound->ID[0], outbound->ID[1], g_Flight_Controller_Status, outbound->Tracking_Status, '*', 0, 0, 0};
+	char message[] = {TX_BASE_ADR, '$', 'N', 'D', downlink.ID[0], downlink.ID[1], g_Flight_Controller_Status, downlink.Tracking_Status, '*', 0, 0, 0};
     char checksum_hex[4] = {0};
     uint8_t data_in[sizeof(message)+1];
     uint8_t dummy_out[sizeof(message)+1];
@@ -247,6 +265,33 @@ void Manage_FC_Status(FC_Status Desired){
     }
     else{
         g_Flight_Controller_Status = Desired;
+    }
+    
+    switch (g_Flight_Controller_Status){
+        case Standby:
+            Run_Ground_Filter(true);
+            break;
+            
+        case User_Calibration:
+            break;
+            
+        case System_Calibration:
+            break;
+            
+        case Ready:
+            // Save off ground filter states as initial conditions for air filter
+            Run_Air_Filter(true);
+            Run_Altitude_Filter(true);
+            Initialize_Guidance_Machine();
+            Initialize_Controllers();
+            break;
+            
+        case Flying:
+            break;
+            
+        case Landing:
+            break;
+                    
     }
 }
 
@@ -292,4 +337,8 @@ void Xor_Checksum(char *data, uint8_t length, uint8_t start_index, char checksum
 		checksum_hex[1] = checksum_hex[0];
 		checksum_hex[0] = '0';
 	}
+}
+
+double Uplink_Altitude(){
+    return uplink.Desired_altitude;
 }

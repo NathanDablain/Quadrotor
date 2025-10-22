@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-void Initialize_SPI();
+void Initialize_SPI(uint8_t index);
 
 void SPI_transfer(volatile uint32_t *reg, uint8_t pin, uint8_t *data_in, uint8_t *data_out, uint8_t length);
 

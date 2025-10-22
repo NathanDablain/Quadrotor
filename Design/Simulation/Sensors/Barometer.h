@@ -6,33 +6,22 @@
 #include "Gaussian.h"
 #include "Low_Pass_Filter.h"
 
-typedef enum {
-    Bar_Mode_Bypass,
-    Bar_Mode_FIFO
-} Barometer_mode;
-
 class Barometer{
     private:
         //------LPS22HH Barometer Parameters-----//
         // sensitivity in LSB/hpa
         const double sensitivity = 4096.0;
-        // noise is in hpa, data sheet value plus 50% FOS
-        const double noise_rms = 1.5*0.0170;
+        // noise is in hpa, first with low pass en = true, ODR/2, ODR/9, ODR/20 
+        double noise_rms[2][3] = {{0.017, 0.009, 0.0065}, {0.045, 0.026, 0.017}};
         // Output Data Rate in Hz
         uint16_t ODR;
         // Time between sensor readings in microseconds
         Sim_Time Update_rate = {0};
         Sim_Time last_sample_time;
-        // Number of sensor readings at which FIFO is full
-        uint8_t FIFO_watermark;
-        // Determines if FIFO is used or readings are bypassed to output
-        Barometer_mode Mode;
-        // FIFO buffer
-        uint32_t FIFO_buffer[255];
-        // Low pass filter setting -> BW = ODR/Low_Pass_Filter_Setting
+        // Low pass filter setting -> BW = ODR/Low_Pass_Filter_Setting, ODR/2 is the default
         double Low_Pass_Filter_BW[3] = {2.0, 9.0, 20.0};
-        uint8_t Filter_Setting;
-        bool passthrough_flag = false;
+        bool low_noise_en = false;
+        const bool passthrough_flag = false;
         Gaussian Gaussian_Bar;
         Low_Pass_Filter Bar_Filter;
     public:
@@ -42,7 +31,7 @@ class Barometer{
         // FIFO index
         uint32_t FIFO_index = 0;
         // Set data rate, and enable FIFO
-        void Initialize(uint16_t odr, uint8_t watermark, Barometer_mode mode, uint8_t filter_setting);
+        void Initialize(uint16_t odr, bool low_noise, uint8_t filter_setting);
         // Turns true pressure data tracked in environment into a quantized LSB reading
         void Sample(Environment &env, Sim_Time sim_t);
         // Fills supplied array with data in FIFO

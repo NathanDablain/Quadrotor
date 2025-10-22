@@ -1,6 +1,7 @@
 #include <xc.h>
 #include <stdint.h>
 #include <math.h>
+#include <string.h>
 #include "global_variables.h"
 #include "barometer.h"
 #include "spi.h"
@@ -8,15 +9,21 @@
 #include "time.h"
 #include "dma.h"
 
-static BAR_Data barometer = {0};
-static BAR_Machine state = BAR_Standby;
+static BAR_Data barometer;
+static BAR_Machine state;
+static bool offset_initialized;
+
+void Initialize_Barometer_Machine(){
+    memset(&barometer, 0, sizeof(barometer));
+    barometer.BAR_Read_array[0] = (BAR_DATA_START | 0x80);
+    barometer.drdy_flag = false;
+    offset_initialized = false;
+    state = Initialize_Barometer();
+}
 
 void Run_Barometer_Machine(){
     const int32_t ODR_Hz = 75;
     const Time Sample_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/ODR_Hz};
-    static uint8_t BAR_Read_array[4] = {(BAR_DATA_START | 0x80), 0, 0, 0};
-    static Time Last_Update = {0};
-    static bool BAR_data_ready_flag = false;
     
     switch (state){
         case BAR_Standby:
@@ -25,16 +32,16 @@ void Run_Barometer_Machine(){
         case BAR_Fail:
             break;
         case BAR_Ready:
-            if ((g_spi1_rdy_flag) && (Compare_And_Update(Current_Time(), Sample_Rate, &Last_Update))){
-                Prepare_SPI1_For_DMA(&CS_BAR_PORT, CS_BAR_PIN, BAR_Read_array, &BAR_data_ready_flag);
-                Set_DMA_01(&BAR_Read_array[1], &barometer.pressure_LSB_bytes[0], sizeof(barometer.pressure_LSB_bytes));
+            if ((g_spi1_rdy_flag) && (Compare_And_Update(Current_Time(), Sample_Rate, & barometer.Last_Update))){
+                Prepare_SPI1_For_DMA(&CS_BAR_PORT, CS_BAR_PIN,  barometer.BAR_Read_array, &barometer.drdy_flag);
+                Set_DMA_01(&barometer.BAR_Read_array[1], &barometer.pressure_LSB_bytes[0], sizeof(barometer.pressure_LSB_bytes));
                 state = BAR_Reading;
             }
             break;
         case BAR_Reading:
-            if (BAR_data_ready_flag){
+            if ( barometer.drdy_flag){
                 Convert_Pressure();
-                BAR_data_ready_flag = false;
+                 barometer.drdy_flag = false;
                 state = BAR_Ready;
             }
             break;
@@ -54,9 +61,9 @@ BAR_Machine Initialize_Barometer(){
     SPI_transfer(&CS_BAR_PORT, CS_BAR_PIN, data_in, data_out, sizeof(data_in));
 	if (data_out[1] != BAR_ID) return BAR_Fail;
     
-    // Set 75Hz update rate, ODR/20 bandwidth, and block data update
+    // Set 75Hz update rate, ODR/2 bandwidth, and block data update
     data_in[0] = BAR_CTRL_REG1;
-    data_in[1] = BAR_ODR_75 | BAR_LPF | BAR_LPF_CFG | BAR_BDU;
+    data_in[1] = BAR_ODR_75 | BAR_BDU;
     SPI_transfer(&CS_BAR_PORT, CS_BAR_PIN, data_in, data_out, sizeof(data_in));
     
     // Set low noise mode
@@ -66,11 +73,7 @@ BAR_Machine Initialize_Barometer(){
     
     return BAR_Ready;
 }
-/*
-BAR_Machine Calibrate_Barometer(BAR_Data *data){
 
-}
-*/
 void Convert_Pressure(){
     const double sensitivity = 1.0/40.96; // Pa/LSB
     const double standard_temp = 288.15; // Standard temperature at sea level (K)
@@ -87,7 +90,12 @@ void Convert_Pressure(){
             (((uint16_t)barometer.pressure_LSB_bytes[2])<<8) + 
             (((uint32_t)barometer.pressure_LSB_bytes[3])<<16);
     barometer.pressure_pa = ((double)pressure_LSB)*sensitivity;
-    barometer.height = c1*(pow(barometer.pressure_pa/standard_pressure, c2) - 1.0);
+    barometer.height = c1*(pow(barometer.pressure_pa/standard_pressure, c2) - 1.0) - barometer.base_altitude;
+    
+    if (g_Flight_Controller_Status == System_Calibration && !offset_initialized){
+        barometer.base_altitude = barometer.height;
+        offset_initialized = true;
+    }
 }
 
 double Barometer_Altitude(){

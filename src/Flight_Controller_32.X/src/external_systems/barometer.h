@@ -17,6 +17,9 @@ typedef struct{
     double pressure_pa;
     double height;
     double base_altitude;
+    uint8_t BAR_Read_array[4];
+    Time Last_Update;
+    bool drdy_flag;
 } BAR_Data;
 
 #define BAR_WHO_AM_I 0x0F
@@ -47,11 +50,11 @@ typedef struct{
 #define BAR_FIFO_STATUS1 0x25
 #define BAR_P_DRDY_bm 0x01
 
+void Initialize_Barometer_Machine();
+
 void Run_Barometer_Machine();
 
 BAR_Machine Initialize_Barometer();
-
-//BAR_Machine Calibrate_Barometer(BAR_Data *data);
 
 void Convert_Pressure();
 

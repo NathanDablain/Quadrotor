@@ -16,7 +16,7 @@ typedef struct{
     double data[3][3];
 } Matrix_3;
 
-// Variable size matrix functions
+// Variable size heap allocated memory matrix functions
 Matrix* Mat_Constructor(uint8_t rows, uint8_t columns);
 
 void Mat_Destructor(Matrix* Mat);

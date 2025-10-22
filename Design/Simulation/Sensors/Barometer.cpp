@@ -1,21 +1,53 @@
 #include "Barometer.h"
+#include "External_Interface.h"
 
-void Barometer::Initialize(uint16_t odr, uint8_t watermark, Barometer_mode mode, uint8_t filter_setting){
+void Barometer::Initialize(uint16_t odr, bool low_noise, uint8_t filter_setting){
     ODR = odr;
     Update_rate.MicroSeconds = 1000000/ODR;
-    FIFO_watermark = watermark;
-    Mode = mode;
     last_sample_time.Seconds = 0;
     last_sample_time.MicroSeconds = 0;
 
-    Filter_Setting = filter_setting;
-    if (Filter_Setting > 2){
-        Filter_Setting = 0;
-        passthrough_flag = true;
+    // Low noise mode only works on ODRs <=75Hz
+    switch(odr){
+        case 1:
+            low_noise_en = low_noise;
+            ODR = odr;
+            break;
+        case 10:
+            low_noise_en = low_noise;
+            ODR = odr;
+            break;
+        case 25:
+            low_noise_en = low_noise;
+            ODR = odr;
+            break;
+        case 50:
+            low_noise_en = low_noise;
+            ODR = odr;
+            break;
+        case 75:
+            low_noise_en = low_noise;
+            ODR = odr;
+            break;
+        case 100:
+            ODR = odr;
+            break;
+        case 200:
+            ODR = odr;
+            break;
+        default:
+            ODR = 1;
+            break;
     }
+    uint8_t filter_index2 = (low_noise_en)?(0):(1);
+    if (filter_setting > 2){
+        filter_setting = 0;
+    }
+    // Add 50% FOS to the datasheet value
+    double noise_FOS = 1.5*noise_rms[filter_index2][filter_setting];
 
-    Gaussian_Bar.Initialize(noise_rms, 0.0);
-    Bar_Filter.Initialize(static_cast<double>(ODR)/Low_Pass_Filter_BW[Filter_Setting], 0.0);
+    Gaussian_Bar.Initialize(noise_FOS, 0.0);
+    Bar_Filter.Initialize(static_cast<double>(ODR)/Low_Pass_Filter_BW[filter_setting], 0.0);
 }
 
 void Barometer::Sample(Environment &env, Sim_Time sim_t){
@@ -33,15 +65,7 @@ void Barometer::Sample(Environment &env, Sim_Time sim_t){
     // Don't worry about saturating as this sim will never be near that limit
     Pressure_Out_LSB = static_cast<uint32_t>(pressure_LSB);
     drdy_flag = true;
-    if ((Mode == Bar_Mode_FIFO)&&(FIFO_index < FIFO_watermark)){
-        FIFO_buffer[FIFO_index++] = Pressure_Out_LSB;
-    }
-}
-
-void Barometer::Read_FIFO(uint32_t *out){
-    for (int8_t i=FIFO_index-1; i>=0; i--){
-        *out = FIFO_buffer[i];
-        out++;
-    }
-    FIFO_index = 0;
+    e_bar_data[0] = (uint8_t)Pressure_Out_LSB;
+    e_bar_data[1] = (uint8_t)(Pressure_Out_LSB>>8);
+    e_bar_data[2] = (uint8_t)(Pressure_Out_LSB>>16);
 }

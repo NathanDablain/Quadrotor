@@ -1,4 +1,5 @@
 #include "Quadrotor.h"
+#include "External_Interface.h"
 #include "Sim_Time.h"
 #include "Gaussian.h"
 
@@ -6,10 +7,10 @@ void Initialize_Monte_Carlo_Data(Monte_Carlo_Data *MC_Data, uint32_t mc_seed, ui
 
 int main(){
     Sim_Time Sim_time_step = {.Seconds = 0, .MicroSeconds = 100};
-    Sim_Time Sim_finish_time = {.Seconds = 150, .MicroSeconds = 0};
+    Sim_Time Sim_finish_time = {.Seconds = 80, .MicroSeconds = 0};
 
-    uint32_t mc_seed = 191;
-    uint32_t number_of_runs = 1;
+    uint32_t mc_seed = 1;
+    uint32_t number_of_runs = 200;
     Monte_Carlo_Data MC_Data[number_of_runs];
     Initialize_Monte_Carlo_Data(MC_Data, mc_seed, number_of_runs);
     uint32_t crashes = 0;
@@ -21,11 +22,11 @@ int main(){
         Drone.Set_Monte_Carlo_Data(MC_Data[i]);
         Drone.Run_sim();
 
-        if (Drone.PIC.Flight_Controller_Status == Crashed_p32){
-            cout << "Run " << mc_seed + i << " ended in crash" << endl;
+        if (Drone.inbound_Flight_Controller_Status == Crashed){
+            cout << "Run " << mc_seed + i << " ended in crash at " << Drone.sim_t.Time_fp() << endl;
             crashes++;
         }
-        else if (Drone.PIC.Flight_Controller_Status == Standby_p32){
+        else if (Drone.Successful_Landing){
             cout << "Run " << mc_seed + i << " landed successfully at " << Drone.sim_t.Time_fp() << endl;
             landings++;
         }
@@ -83,6 +84,13 @@ void Initialize_Monte_Carlo_Data(Monte_Carlo_Data *MC_Data, uint32_t mc_seed, ui
     const double Propeller_Torque_Constant_variance = Propeller_Torque_Constant_mean/5.0;
     const double Propeller_mu_mean = 1.0;
     const double Propeller_mu_variance = 0.5;
+    // Wind parameters
+    // const double Wind_Speed_mean = 1.5;
+    // const double Wind_Speed_variance = 1.0;
+    // const double Wind_Angle1_mean = 0.0;
+    // const double Wind_Angle1_variance = 0.5;
+    // const double Wind_Angle2_mean = 0.0;
+    // const double Wind_Angle2_variance = 180.0;
     // Initial conditions
     // Here variances are in degrees
     const double Initial_roll_variance = 7.5;
@@ -115,6 +123,7 @@ void Initialize_Monte_Carlo_Data(Monte_Carlo_Data *MC_Data, uint32_t mc_seed, ui
     Gaussian gaus_initial_roll(Initial_roll_variance, Initial_roll_mean);
     Gaussian gaus_initial_pitch(Initial_pitch_variance, Initial_pitch_mean);
     Gaussian gaus_initial_yaw(Initial_yaw_variance, Initial_yaw_mean);
+    // Gaussian guas_wind_speed(Wind_Speed_variance, Wind_Speed_mean);
 
     uint32_t MC_Data_counter = 0;
     for (uint32_t i = 0; i < mc_seed + number_of_runs; i++){

@@ -1,7 +1,8 @@
 #include "Kalman_Filter_p32.h"
-#include "stdint.h"
-#include "stdlib.h"
+#include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 Kalman_Filter* Filter_Constructor(uint8_t states, uint8_t inputs, uint8_t measurements){
     Kalman_Filter *filter = (Kalman_Filter *)malloc(sizeof(Kalman_Filter));
@@ -44,6 +45,12 @@ Kalman_Filter* Filter_Constructor(uint8_t states, uint8_t inputs, uint8_t measur
         return NULL;
     }
 
+    filter->K = Mat_Constructor(states, measurements);
+    if (filter->K == NULL){
+        Filter_Destructor(filter, count++);
+        return NULL;
+    }
+
     filter->xhat = Mat_Constructor(states, 1);
     if (filter->xhat == NULL){
         Filter_Destructor(filter, count);
@@ -59,8 +66,9 @@ void Filter_Destructor(Kalman_Filter *filter, uint8_t stage){
     if (stage > 1) Mat_Destructor(filter->H);
     if (stage > 2) Mat_Destructor(filter->Q);
     if (stage > 3) Mat_Destructor(filter->R);
-    if (stage > 4) Mat_Destructor(filter->P); 
-    if (stage > 5) Mat_Destructor(filter->xhat);
+    if (stage > 4) Mat_Destructor(filter->P);
+    if (stage > 5) Mat_Destructor(filter->K); 
+    if (stage > 6) Mat_Destructor(filter->xhat);
     free(filter);
 }
 
@@ -77,6 +85,7 @@ bool Predict(Kalman_Filter *filter, Matrix *input){
         return false;
     }
 
+    // P_new = F*P*F' + Q
     Matrix *P_new = Mat_Add(Mat_Mul(Mat_Mul(filter->F, filter->P, 0), Mat_Tran(filter->F), 3), filter->Q, 1);
 
     if (P_new != NULL){
@@ -128,13 +137,17 @@ bool Update(Kalman_Filter *filter, Matrix *measurement){
         return false;
     }
 
-    Matrix *K = Mat_Mul(Mat_Mul(filter->P, H_tran, 2), S_inv, 3);
-    if (K == NULL){
+    Matrix *K_new = Mat_Mul(Mat_Mul(filter->P, H_tran, 2), S_inv, 3);
+    if (K_new != NULL){
+        Mat_Destructor(filter->K);
+        filter->K = K_new;
+    }
+    else{
         Mat_Destructor(ybar);
         return false;
     }
 
-    Matrix *x_new = Mat_Add(filter->xhat, Mat_Mul(K, ybar, 2), 2);
+    Matrix *x_new = Mat_Add(filter->xhat, Mat_Mul(filter->K, ybar, 2), 2);
 
     if (x_new != NULL){
         Mat_Destructor(filter->xhat);
@@ -144,7 +157,7 @@ bool Update(Kalman_Filter *filter, Matrix *measurement){
         return false;
     }
 
-    Matrix *P_new = Mat_Mul(Mat_Sub(Mat_Id(filter->xhat->rows), Mat_Mul(K, filter->H, 1), 3) , filter->P, 1);
+    Matrix *P_new = Mat_Mul(Mat_Sub(Mat_Id(filter->xhat->rows), Mat_Mul(filter->K, filter->H, 0), 3) , filter->P, 1);
 
     if (P_new != NULL){
         Mat_Destructor(filter->P);

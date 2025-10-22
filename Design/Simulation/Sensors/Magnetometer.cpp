@@ -1,4 +1,5 @@
 #include "Magnetometer.h"
+#include "External_Interface.h"
 
 void Magnetometer::Initialize(uint16_t odr, uint8_t lpf_setting){
     ODR = odr;
@@ -10,10 +11,11 @@ void Magnetometer::Initialize(uint16_t odr, uint8_t lpf_setting){
     filter_setting = lpf_setting;
     if (filter_setting > 1){
         filter_setting = 0;
-        passthrough_flag = true;
     }
+    // Add 50% to datasheet value
+    double FOS_noise = 1.5*noise_rms[filter_setting];
 
-    Gaussian_mag.Initialize(noise_rms, 0.0);
+    Gaussian_mag.Initialize(FOS_noise, 0.0);
     Mag_Filter_x.Initialize(static_cast<double>(ODR)/Low_Pass_Filter_BW[filter_setting], 0.0);
     Mag_Filter_y.Initialize(static_cast<double>(ODR)/Low_Pass_Filter_BW[filter_setting], 0.0);
     Mag_Filter_z.Initialize(static_cast<double>(ODR)/Low_Pass_Filter_BW[filter_setting], 0.0);
@@ -39,8 +41,16 @@ void Magnetometer::Sample(Environment &env, Sim_Time sim_t){
     Vec3 mag_LSB = filtered_mag_output*(1.0/mag_sens);
 
     magnetic_field_LSB[0] = -static_cast<int16_t>(mag_LSB.data[1]);
+    e_mag_data[0] = static_cast<uint8_t>(magnetic_field_LSB[0]);
+    e_mag_data[1] = static_cast<uint8_t>(magnetic_field_LSB[0]>>8);
+
     magnetic_field_LSB[1] = static_cast<int16_t>(mag_LSB.data[0]);
+    e_mag_data[2] = static_cast<uint8_t>(magnetic_field_LSB[1]);
+    e_mag_data[3] = static_cast<uint8_t>(magnetic_field_LSB[1]>>8);
+
     magnetic_field_LSB[2] = static_cast<int16_t>(mag_LSB.data[2]);
+    e_mag_data[4] = static_cast<uint8_t>(magnetic_field_LSB[2]);
+    e_mag_data[5] = static_cast<uint8_t>(magnetic_field_LSB[2]>>8);
 
     drdy_flag = true;
 }

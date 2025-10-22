@@ -1,4 +1,5 @@
 #include "Global_Variables_p32.h"
+#include "Sim_Types.h"
 #include <stdint.h>
 #include <math.h>
 
@@ -11,3 +12,4 @@ const Time g_gyro_sample_rate = {.seconds = 0, .tmr1_count = 125000};
 
 const double g_mass = 0.5;
 const double g_gravity = 9.8065;
+FC_Status g_Flight_Controller_Status = Standby;

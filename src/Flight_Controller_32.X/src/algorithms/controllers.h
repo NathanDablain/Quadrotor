@@ -1,5 +1,5 @@
-#ifndef CONTROLLERS_P32_H
-#define CONTROLLERS_P32_H
+#ifndef CONTROLLERS_H
+#define	CONTROLLERS_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -28,6 +28,5 @@ void Set_throttles();
 
 void Saturate(double *Value, double Min, double Max);
 
-double Thrust_Command();
-
 #endif
+

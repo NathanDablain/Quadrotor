@@ -1,8 +1,9 @@
-#ifndef NAVIGATION_H
-#define	NAVIGATION_H
+#ifndef NAVIGATION_P32_H
+#define NAVIGATION_P32_H
 
-#include <stdbool.h>
+#include "Sim_Types.h"
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef struct{
     // Diagonal terms of covariance matrix are variances
@@ -91,31 +92,53 @@ typedef struct{
     double P5_6;
 } Air_Filter_Covariance;
 
+// Ground Filter //
+// Used to estimate initial orientation and gyro biases //
+
 void Run_Ground_Filter(bool Initialize);
 
 void Ground_Filter_Predict();
 
+void Ground_Filter_Predict_p32();
+
 void Ground_Filter_Update();
+
+void Ground_Filter_Update_p32();
 
 double Ground_Filter_data(uint8_t index);
 
+void Ground_Filter_State_Transition();
+
+// Air Filter //
+// Used to estimate orientation while flying //
 void Run_Air_Filter(bool Initialize);
 
 void Air_Filter_Predict();
 
+void Air_Filter_Predict_p32();
+
 void Air_Filter_Update();
+
+void Air_Filter_Update_p32();
+
+void Air_Filter_State_Transition();
 
 double Air_Filter_data(uint8_t index);
 
 double Air_Filter_x_Dot(uint8_t index);
 
+// Altitude Filter // 
+// Estimates height and vertical velocity while flying //
 void Run_Altitude_Filter(bool Initialize);
 
 void Altitude_Filter_Predict();
 
 void Altitude_Filter_Update();
 
+void Altitude_Filter_Predict_p32();
+
+void Altitude_Filter_Update_p32();
+
 double Altitude_Filter_data(uint8_t index);
 
 #endif
-

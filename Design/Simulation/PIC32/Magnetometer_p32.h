@@ -2,9 +2,17 @@
 #define MAGNETOMETER_P32_H
 
 #include <stdint.h>
+#include "Time_p32.h"
 #include "Linear_Algebra_p32.h"
 
 #define MAG_SENSITIVITY 1.5
+
+typedef enum{
+    Mag_Standby,
+    Mag_Fail,
+    Mag_Ready,
+    Mag_Reading
+} Mag_Machine;
 
 typedef struct{
     double field[3];
@@ -15,11 +23,15 @@ typedef struct{
     int16_t mag_field_max_LSB[3];
     int16_t mag_field_min_LSB[3];
     Matrix_3 soft_iron;
+    Time Last_Update;
+    bool offset_initialized[3];
 } Mag_Data;
 
 void Initialize_Mag();
 
-void Read_Mag(int16_t magnetic_field[3]);
+void Run_Magnetometer_Machine();
+
+void Convert_Magnetometer();
 
 bool Calculate_Hard_Iron();
 

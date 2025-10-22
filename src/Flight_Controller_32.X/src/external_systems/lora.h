@@ -57,6 +57,8 @@
 
 #define LORA_STANDARD_DELAY 300000
 
+#define ALTITUDE_CEILING 5.0
+
 typedef enum {
 	// LORA is ready to transition modes
 	LORA_Standby,
@@ -65,15 +67,17 @@ typedef enum {
 	// LORA has built a downlink, ready to send
 	LORA_Ready_to_Transmit,
 	// LORA is ramping power and transmitting downlink
-	LORA_Transmitting
+	LORA_Transmitting,
+    // LORA did not initialize properly
+    LORA_Fail
 } LORA_Status;
 
 typedef struct {
 	FC_Status Drone_status;
-	float Desired_north;
-	float Desired_east;
-	float Desired_altitude;
-	float Base_altitude;
+	double Desired_north;
+	double Desired_east;
+	double Desired_altitude;
+	double Base_altitude;
 } Uplink;
 
 typedef struct {
@@ -84,12 +88,13 @@ typedef struct {
 	char ID[3];
 } Downlink;
 
+void Initialize_LORA_Machine();
 // Set radio frequency, antenna power, packet parameters, and interrupt flag bit mask
-uint8_t Setup_LoRa();
+LORA_Status Setup_LoRa();
 // Receive and parse uplink
-uint8_t Receive_Uplink(Uplink *inbound, Downlink *outbound);
+uint8_t Receive_Uplink();
 // Respond to uplink with downlink
-void Send_Downlink(Downlink *outbound);
+void Send_Downlink();
 // State machine to transition drone state
 void Manage_FC_Status(FC_Status Desired);
 // Get payload length in LoRa FIFO
@@ -97,9 +102,11 @@ uint8_t Check_For_Message(uint8_t *rx_offset);
 // Delay and check LORA busy pin
 void LORA_Delay(uint32_t length);
 // Manage LORA state
-void Run_LORA(Uplink *uplink);
+void Run_LORA();
 // Given a string of characters, returns a compound xor checksum in character hex format
 void Xor_Checksum(char *data, uint8_t length, uint8_t start_index, char checksum_hex[3]);
+// Returns the uplinked desired altitude
+double Uplink_Altitude();
 
 #endif
 

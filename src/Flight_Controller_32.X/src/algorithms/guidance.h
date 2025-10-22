@@ -1,5 +1,5 @@
-#ifndef GUIDANCE_P32_H
-#define GUIDANCE_P32_H
+#ifndef GUIDANCE_H
+#define	GUIDANCE_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -11,7 +11,7 @@ typedef enum{
     Hovering,
     Descending,
     Landed
-}Guidance_State;
+} Guidance_State;
 
 typedef struct{
     double h_ref;
@@ -39,3 +39,4 @@ bool Inhibit_Motors();
 Guidance_State Get_Guidance_State();
 
 #endif
+

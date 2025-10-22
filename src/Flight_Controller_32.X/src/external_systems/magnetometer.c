@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
 #include "magnetometer.h"
 #include "linear_algebra.h"
 #include "global_variables.h"
@@ -10,40 +11,46 @@
 #include "dma.h"
 #include "time.h"
     
-static Mag_Machine state = Mag_Standby;
-static Mag_Data mag = {0};
+static Mag_Machine state;
+static Mag_Data mag;
+
+void Initialize_Magnetometer_Machine(){
+    memset(&mag, 0, sizeof(mag));
+    mag.drdy_Flag = false;
+    mag.Read_Array[0] = MAG_DATA_START|0x80;
+    mag.mag_field_min_LSB[0] = INT16_MAX;
+    mag.mag_field_min_LSB[1] = INT16_MAX;
+    mag.mag_field_min_LSB[2] = INT16_MAX;
+    mag.mag_field_max_LSB[0] = INT16_MIN;
+    mag.mag_field_max_LSB[1] = INT16_MIN;
+    mag.mag_field_max_LSB[2] = INT16_MIN;
+    mag.offset_initialized[0] = false;
+    mag.offset_initialized[1] = false;
+    mag.offset_initialized[2] = false;
+    state = Initialize_Magnetometer();
+}
 
 void Run_Magnetometer_Machine(){
-    const int32_t ODR_Hz = 50;
+    const int32_t ODR_Hz = 100;
     const Time Sample_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/ODR_Hz};
-    static uint8_t Read_Array[7] = {0};
-    static Time Last_Update = {0};
-    static bool Data_Ready_Flag = false;
     bool Hard_iron_cal = false;
     bool Soft_iron_cal = false;
     
     switch (state){
        case Mag_Standby:
-           Read_Array[0] = MAG_DATA_START|0x80;
            state = Initialize_Magnetometer();
-           mag.mag_field_min_LSB[0] = INT16_MAX;
-           mag.mag_field_min_LSB[1] = INT16_MAX;
-           mag.mag_field_min_LSB[2] = INT16_MAX;
-           mag.mag_field_max_LSB[0] = INT16_MIN;
-           mag.mag_field_max_LSB[1] = INT16_MIN;
-           mag.mag_field_max_LSB[2] = INT16_MIN;
            break;
        case Mag_Fail:
            break;
        case Mag_Ready:
-           if ((g_spi1_rdy_flag) && (Compare_And_Update(Current_Time(), Sample_Rate, &Last_Update))){
-               Prepare_SPI1_For_DMA(&CS_MAG_PORT, CS_MAG_PIN, Read_Array, &Data_Ready_Flag);
-               Set_DMA_01(&Read_Array[1], &mag.field_LSB_bytes[0], sizeof(Read_Array));
+           if ((g_spi1_rdy_flag) && (Compare_And_Update(Current_Time(), Sample_Rate, &mag.Last_Update))){
+               Prepare_SPI1_For_DMA(&CS_MAG_PORT, CS_MAG_PIN, mag.Read_Array, &mag.drdy_Flag);
+               Set_DMA_01(&mag.Read_Array[1], &mag.field_LSB_bytes[0], sizeof(mag.Read_Array));
                state = Mag_Reading;
            }
            break;
        case Mag_Reading:
-           if (Data_Ready_Flag){
+           if (mag.drdy_Flag){
                Convert_Magnetometer();
                // If the current measurements require the hard iron offsets to be updated, 
                // then a new soft iron calibration will also be required
@@ -53,7 +60,7 @@ void Run_Magnetometer_Machine(){
                }
                Compensate_Magnetometer_Reading(Soft_iron_cal);
 
-               Data_Ready_Flag = false;
+               mag.drdy_Flag = false;
                state = Mag_Ready;
            }
            break;
@@ -79,7 +86,7 @@ Mag_Machine Initialize_Magnetometer(){
 	SPI_transfer(&CS_MAG_PORT, CS_MAG_PIN, mag_id_in, mag_id_out, sizeof(mag_id_in));
 	if (mag_id_out[1] != MAG_ID) return Mag_Fail;
 	
-    // Set 50 Hz ODR, temp compensation enabled
+    // Set 100 Hz ODR, temp compensation enabled
     uint8_t mag_config_a[2] = {MAG_CFG_REG_A, MAG_TEMP_COMP|MAG_ODR_100Hz};
 	SPI_transfer(&CS_MAG_PORT, CS_MAG_PIN, mag_config_a, dummy_out, sizeof(mag_config_a));
     
@@ -105,7 +112,6 @@ void Convert_Magnetometer(){
 bool Calculate_Hard_Iron(){
     // We will find the ellipsoid center offset from 0 by saving off the
     // maximum and minimum measured values and dividing by two
-    static bool offset_initialized[3] = {false, false, false};
     bool update_performed = false;
     
 	for (uint8_t i = 0; i < 3; i++){
@@ -124,13 +130,13 @@ bool Calculate_Hard_Iron(){
 		if (calculate_hard_iron){
 			mag.hard_iron[i] = mag.mag_field_min_LSB[i] + mag.mag_field_max_LSB[i];
 			mag.hard_iron[i] >>= 1;
-            offset_initialized[i] = (mag.mag_field_max_LSB[i] != mag.hard_iron[i])?true:false;
+            mag.offset_initialized[i] = (mag.mag_field_max_LSB[i] != mag.hard_iron[i])?true:false;
             update_performed = true;
 		}
 	}
     
 	// Prevents future divide by 0 error in soft iron offset calculation
-    return (update_performed && (offset_initialized[0] & offset_initialized[1] & offset_initialized[2]))?true:false;
+    return (update_performed && (mag.offset_initialized[0] & mag.offset_initialized[1] & mag.offset_initialized[2]))?true:false;
 
 }
 

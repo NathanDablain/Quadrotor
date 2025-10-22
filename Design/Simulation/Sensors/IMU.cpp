@@ -1,8 +1,9 @@
 #include "IMU.h"
+#include "External_Interface.h"
 
 using namespace std;
 
-void IMU::Initialize(uint16_t gyro_odr, uint16_t accel_odr, uint16_t accel_watermark, uint8_t gyro_lpf_setting, uint8_t accel_lpf_setting){
+void IMU::Initialize(uint16_t gyro_odr, uint16_t accel_odr, uint8_t gyro_lpf_setting, uint8_t accel_lpf_setting){
     // Add some error from the ideal sampling rate
     ODR_Gyro = gyro_odr - gyro_odr/50; // Given in Hz
     ODR_Accel = accel_odr - accel_odr/50; // Given in Hz
@@ -29,9 +30,8 @@ void IMU::Initialize(uint16_t gyro_odr, uint16_t accel_odr, uint16_t accel_water
     // accel_bias.data[1] = -12.0; // -196
     // accel_bias.data[2] = 42.0; // 688
 
-    FIFO_watermark = accel_watermark;
     // data sheet value plus 50% FOS
-    accel_noise_rms = 1.5*0.09*sqrt(static_cast<double>(accel_odr));
+    accel_noise_rms = 1.5*0.06*sqrt(static_cast<double>(accel_odr));
     gyro_noise_rms = 1.5*5.0*sqrt(static_cast<double>(gyro_odr));
 
     Set_Filter_Settings(gyro_lpf_setting, accel_lpf_setting);
@@ -48,9 +48,8 @@ void IMU::Initialize(uint16_t gyro_odr, uint16_t accel_odr, uint16_t accel_water
 
 void IMU::Set_Filter_Settings(uint8_t gyro_lpf_setting, uint8_t accel_lpf_setting){
     Accel_filter_setting = accel_lpf_setting;
-    if (Accel_filter_setting > 3){
+    if (Accel_filter_setting > 8){
         Accel_filter_setting = 0;
-        Accel_passthrough_flag = true;
     }
     Gyro_filter_setting = gyro_lpf_setting;
     if (Gyro_filter_setting > 3){
@@ -100,8 +99,17 @@ void IMU::Sample_Acc(Environment &env, Sim_Time &sim_t){
     // 4. convert from mg to LSB
     Vec3 accel_LSB = accel_filtered_output*(1.0/accel_sens);
     acceleration_LSB[0] = static_cast<int16_t>(accel_LSB.data[0]);
+    e_accel_data[0] = static_cast<uint8_t>(acceleration_LSB[0]);
+    e_accel_data[1] = static_cast<uint8_t>(acceleration_LSB[0]>>8);
+
     acceleration_LSB[1] = static_cast<int16_t>(-accel_LSB.data[1]);
+    e_accel_data[2] = static_cast<uint8_t>(acceleration_LSB[1]);
+    e_accel_data[3] = static_cast<uint8_t>(acceleration_LSB[1]>>8);
+
     acceleration_LSB[2] = static_cast<int16_t>(-accel_LSB.data[2]);
+    e_accel_data[4] = static_cast<uint8_t>(acceleration_LSB[2]);
+    e_accel_data[5] = static_cast<uint8_t>(acceleration_LSB[2]>>8);
+
     // 5. set data ready flag
     accel_drdy_flag = true;
 }
@@ -134,16 +142,16 @@ void IMU::Sample_Gyr(Environment &env, Vec3 &w, Sim_Time &sim_t){
     // 4. convert from dps to LSB
     Vec3 gyro_LSB = Filtered_gyro_output*(1.0/gyro_sens_dps);
     angular_rate_LSB[0] = static_cast<int16_t>(gyro_LSB.data[0]);
+    e_gyro_data[0] = static_cast<uint8_t>(angular_rate_LSB[0]);
+    e_gyro_data[1] = static_cast<uint8_t>(angular_rate_LSB[0]>>8);
+    
     angular_rate_LSB[1] = static_cast<int16_t>(-gyro_LSB.data[1]);
+    e_gyro_data[2] = static_cast<uint8_t>(angular_rate_LSB[1]);
+    e_gyro_data[3] = static_cast<uint8_t>(angular_rate_LSB[1]>>8);
+
     angular_rate_LSB[2] = static_cast<int16_t>(-gyro_LSB.data[2]);
+    e_gyro_data[4] = static_cast<uint8_t>(angular_rate_LSB[2]);
+    e_gyro_data[5] = static_cast<uint8_t>(angular_rate_LSB[2]>>8);
     // 5. set data ready flag
     gyro_drdy_flag = true;
-}
-
-void IMU::Read_FIFO(std::array<int16_t, 3> *out){
-    for (int8_t i=FIFO_index-1; i>=0; i--){
-        *out = FIFO_buffer[i];
-        out++;
-    }
-    FIFO_index = 0;
 }
