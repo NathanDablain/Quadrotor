@@ -71,9 +71,20 @@ void Initialize_ADC(){
     AD1SWTRGbits.CH2TRG = 1;
 }
 
-void Trigger_ADC(){
-    AD1SWTRGbits.CH0TRG = 1;
-    AD1SWTRGbits.CH1TRG = 1;
+void Trigger_ADC(uint8_t channel){
+    switch(channel){
+        case ADC_1S_CHANNEL:
+            AD1SWTRGbits.CH0TRG = 1;
+            break;
+        case ADC_4S_CHANNEL:
+            AD1SWTRGbits.CH1TRG = 1;
+            break;
+        case 255:
+            AD1SWTRGbits.CH0TRG = 1;
+            AD1SWTRGbits.CH1TRG = 1;
+            break;
+    }
+
 }
 
 void _ISR _AD1CH0Interrupt(){

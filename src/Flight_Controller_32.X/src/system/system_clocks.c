@@ -57,6 +57,17 @@ void Initialize_Clocks(){
     while (CLK1CONbits.OSWEN);
     while (!CLK1CONbits.CLKRDY);
     
+    // Clock 5 (PWM clock) settings
+    CLK5CONbits.NOSC = 1; // Takes FRC (8MHz) as its clock source
+    CLK5CONbits.BOSC = 2;
+    CLK5CONbits.FSCMEN = 1;
+    CLK5CONbits.ON = 1;
+    //Enable clock switching
+    CLK5CONbits.OSWEN = 1;
+    //Wait for clock switching complete
+    while (CLK5CONbits.OSWEN);
+    while (!CLK5CONbits.CLKRDY);
+    
     // Clock 6 (ADC clock) settings
     CLK6CONbits.NOSC = 5; // Takes PLL1 FOUT as its clock source
     CLK6CONbits.BOSC = 2;

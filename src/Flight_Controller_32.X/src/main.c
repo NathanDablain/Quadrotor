@@ -29,11 +29,11 @@ static const bool arduino_interchange = false;
 bool Setup(){
     bool setup_status = true;
     INTCON1bits.GIE = 0;
-
-    Setup_Pins();
     
     Initialize_Clocks();
     
+    Setup_Pins();
+
     Initialize_Timer1();
         
     Initialize_ADC();
@@ -68,6 +68,7 @@ bool Setup(){
 int main(void) {
 
     bool setup_status = Setup();     
+    Manage_FC_Status(System_Calibration);
 
     while(setup_status){
         Execute();
@@ -77,7 +78,7 @@ int main(void) {
 }
 
 void Execute(){
-    
+   
     Sample_Voltages();
     
     Run_Barometer_Machine();

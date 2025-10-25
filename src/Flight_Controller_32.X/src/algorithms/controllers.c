@@ -9,6 +9,7 @@
 #include "imu.h"
 #include "barometer.h"
 #include "global_variables.h"
+#include "motors.h"
 
 typedef struct{
     double Sum;
@@ -188,6 +189,9 @@ void Set_throttles(){
         }
         temp = ((sqrt(omega[i]) - motor_c1)/motor_c2)*10.0;
         if (temp > 1000) temp = 1000;
-        Output.Throttles[i] = (uint16_t)temp;
+        Output.Throttles[i] = (uint16_t)temp;  
     }
+    
+    // Convert throttles to PWM and trigger update 
+    Apply_Throttle_Batch(Output.Throttles);
 }
