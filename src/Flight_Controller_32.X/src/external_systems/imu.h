@@ -20,13 +20,10 @@ typedef struct{
     uint8_t gyro_LSB_bytes[7];
     int16_t gyro_LSB[3];
     int16_t accel_LSB[3];
-    int32_t accel_bias_LSB[3];
     double angular_rate[3];
     double acceleration[3];
     uint8_t Accel_Read_Array[7];
     uint8_t Gyro_Read_Array[9];
-    Time Last_Update_Accel;
-    Time Last_Update_Gyro;
     bool drdy_Flag_Accel;
     bool drdy_Flag_Gyro;
 } IMU_Data;
@@ -66,6 +63,11 @@ typedef struct{
     #define IMU_GYRO_BW1 0b001
     #define IMU_GYRO_BW2 0b010
     #define IMU_GYRO_BW3 0b011
+    // 4-7 only availble for ODRs < 1670 kHz
+    #define IMU_GYRO_BW4 0b100
+    #define IMU_GYRO_BW5 0b101
+    #define IMU_GYRO_BW6 0b110
+    #define IMU_GYRO_BW7 0b111
 
     #define IMU_CTRL8_XL 0x17
     #define IMU_ACCEL_BW_2 (0b000<<5)

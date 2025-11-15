@@ -9,6 +9,12 @@
 //    Motor3  RC5	RP38	PWM4L
 //    Motor4  RC2	RP35	PWM4H
 
+void Disable_Motors(){
+    uint16_t zero_throttle[4] = {0, 0, 0, 0};
+    Apply_Throttle_Batch(zero_throttle);
+}
+
+
 void Apply_Throttle(uint16_t throttle, uint8_t index){
     uint32_t duty_cycle = throttle + MIN_DUTY_CYCLE;
     if (duty_cycle > MAX_DUTY_CYCLE){

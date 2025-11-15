@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define MIN_MU 0.01
+#define MAX_MU 4.0
 typedef struct{
     // Diagonal terms of covariance matrix are variances
     double P1_1;
@@ -113,9 +115,9 @@ void Ground_Filter_State_Transition();
 // Used to estimate orientation while flying //
 void Run_Air_Filter(bool Initialize);
 
-void Air_Filter_Predict();
+void Air_Filter_Predict(bool Inhibit_Update);
 
-void Air_Filter_Predict_p32();
+void Air_Filter_Predict_p32(bool Inhibit_Update);
 
 void Air_Filter_Update();
 

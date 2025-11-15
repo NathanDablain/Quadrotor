@@ -201,6 +201,7 @@ unsigned char Write_SPI_Stream(char Port, unsigned char Pin, unsigned char Regis
 
 volatile unsigned char g_LoRa_Check_Flag = 0;
 volatile unsigned char g_LoRa_Uplink_Flag = 0;
+volatile unsigned char g_Latch_Barometer = 0;
 
 unsigned char Setup_LoRa(){
 	unsigned char LoRa_status = 2;
@@ -320,20 +321,20 @@ unsigned char Send_Uplink(Uplink *outbound, Downlink_Reponse_Codes *Downlink_Sta
 	// TX data must be written to LoRa while it is in standby
 	(void)Write_SPI(PORT_LORA, CS_LORA, (LORA_REG_OP_MODE|0x80), LORA_MODE_SLEEP);
 	// Convert desired positions and current base altitude to characters for transmission
-	char buffer[5][7];
+	char buffer[5][8];
 	sprintf(buffer[0], "%06.2f", fabs(outbound->Desired_north));
 	char north_south = (outbound->Desired_north >= 0)?('N'):('S');
 	sprintf(buffer[1], "%06.2f", fabs(outbound->Desired_east));
 	char east_west = (outbound->Desired_east >= 0)?('E'):('W');
 	sprintf(buffer[2], "%06.2f", outbound->Desired_altitude);
-	sprintf(buffer[3], "%06.2f", fabs(outbound->Pressure_altitude));
+	sprintf(buffer[3], "%ld", outbound->Base_pressure_LSB);
 	sprintf(buffer[4], "%d", outbound->Desired_status);
 	// Build up link message
 	char message[] = {'$', 'N', 'D', ID[ID_index][0], ID[ID_index][1],
 		 buffer[0][0], buffer[0][1], buffer[0][2], buffer[0][3], buffer[0][4], buffer[0][5], north_south,
 		 buffer[1][0], buffer[1][1], buffer[1][2], buffer[1][3], buffer[1][4], buffer[1][5], east_west,
 		 buffer[2][0], buffer[2][1], buffer[2][2], buffer[2][3], buffer[2][4], buffer[2][5],
-		 buffer[3][0], buffer[3][1], buffer[3][2], buffer[3][3], buffer[3][4], buffer[3][5], buffer[4][0],
+		 buffer[3][0], buffer[3][1], buffer[3][2], buffer[3][3], buffer[3][4], buffer[3][5], buffer[3][6], buffer[4][0],
 		 '*', 0, 0, 0};
 	// Build checksum
 	char checksum_hex[3] = {0};
@@ -379,6 +380,7 @@ void Set_Desired_Status(Uplink *outbound, Downlink *inbound){
 				break;
 			case System_Calibration:
 				outbound->Desired_status = Ready;
+				break;
 			case Ready:
 				outbound->Desired_status = Flying;
 				break;
@@ -395,6 +397,12 @@ void Set_Desired_Status(Uplink *outbound, Downlink *inbound){
 	if (g_Button1_Flag){
 		g_Button1_Flag = 0;
 		outbound->Desired_status = Standby;
+	}
+	
+	if (g_Button2_Flag){
+		g_Button2_Flag = 0;
+		g_Latch_Barometer ^= 1;
+		PORTD.OUT ^= (1<<7);
 	}
 }
 

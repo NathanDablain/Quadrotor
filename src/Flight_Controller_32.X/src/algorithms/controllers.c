@@ -10,99 +10,22 @@
 #include "barometer.h"
 #include "global_variables.h"
 #include "motors.h"
-
-typedef struct{
-    double Sum;
-    uint8_t counter;
-    bool average_calculated;
-} Average_Set;
+#include "lora.h"
 
 static Control_Variables Output;
-static Average_Set Acceleration_Sample_Points;
-static Time Thrust_Controller_Timelast;
-static Time Moment_Controller_Timelast;
+static Time Outer_Loop_Timelast;
+static double Euler_dot_ref[3];
+static double velocity_vector[3];
+static double acceleration_vector[3];
+static double e_ddot_int;
 
 void Initialize_Controllers(){
     memset(&Output, 0, sizeof(Output));
-    memset(&Acceleration_Sample_Points, 0, sizeof(Acceleration_Sample_Points));
-    Acceleration_Sample_Points.average_calculated = false;
-    Output.Mass_Modifier = 1.0;
-    Thrust_Controller_Timelast = Current_Time();
-    Moment_Controller_Timelast = Current_Time();
-}
-
-void Run_Controllers(){
-    const Time Thrust_Controller_Update_Time = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/50};
-    const Time Moment_Controller_Update_Time = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/3000};
-    
-    if (Compare_And_Update(Current_Time(), Thrust_Controller_Update_Time, &Thrust_Controller_Timelast)){
-        Thrust_Control();
-    }
-    if (Compare_And_Update(Current_Time(), Moment_Controller_Update_Time, &Moment_Controller_Timelast)){
-        Moment_Control();
-    }
-}
-
-void Thrust_Control(){
-    // u = -K*x -> x = h_int, h, h_dot
-    const double expected_takeoff_thrust = g_gravity*g_mass;
-    double K[3] = {1.0, 0.01, 1.0}; // Proportional, Integral, Derivative
-    double minimum_thrust = 0.5*g_gravity*g_mass*Output.Mass_Modifier;
-    double maximum_thrust = 2.5*g_gravity*g_mass*Output.Mass_Modifier;
-    const double maximum_integated_error = 0.5*g_gravity/K[1];
-    const double minimum_integrated_error = -0.5*g_gravity/K[1];
-    const double minimum_error = -5.0;
-    const double maximum_error = 5.0;
-
-    double h = Altitude_Filter_data(0);
-    double h_dot = Altitude_Filter_data(1);
-    double h_ref = Reference_Altitude();
-    double e = h_ref - h;
-    double e_dot = -h_dot;
-    Saturate(&e, minimum_error, maximum_error);
-
-    switch(Get_Guidance_State()){
-        case Awaiting_Guidance:
-            break;
-        case Taking_Off:
-            Output.Thrust_e_int += K[1]*e;
-            Output.Thrust = g_gravity*g_mass + Output.Thrust_e_int;
-            return;
-
-        case Climbing:
-            if (Acceleration_Sample_Points.counter != AVERAGE_SAMPLE_SIZE){
-                Acceleration_Sample_Points.Sum += -IMU_Acceleration(2);
-                Acceleration_Sample_Points.counter++;
-            }
-            else if (!Acceleration_Sample_Points.average_calculated){
-                Output.Hover_Thrust =  Output.Thrust/(Acceleration_Sample_Points.Sum/((double)AVERAGE_SAMPLE_SIZE));
-                Acceleration_Sample_Points.average_calculated = true;
-                Output.Thrust_e_int = 0.0;
-                Output.Mass_Modifier = Output.Hover_Thrust/expected_takeoff_thrust;
-            }
-            else{
-                Output.Thrust_e_int += K[1]*e;
-                Output.Thrust = Output.Hover_Thrust + K[0]*e + Output.Thrust_e_int + K[2]*e_dot;
-            }
-            break;
-
-        case Hovering:
-            Output.Thrust_e_int += K[1]*e;
-            Output.Thrust = Output.Hover_Thrust + K[0]*e + Output.Thrust_e_int + K[2]*e_dot;
-            break;
-        case Descending:
-            K[2] = 5.0;
-            Output.Thrust_e_int += K[1]*e;
-            Output.Thrust = Output.Hover_Thrust + K[0]*e + Output.Thrust_e_int + K[2]*e_dot;
-            break;
-
-        case Landed:
-            Output.Thrust = 0.0;
-            break;
-
-    }
-    Saturate(&Output.Thrust_e_int, minimum_integrated_error, maximum_integated_error);
-    Saturate(&Output.Thrust, minimum_thrust, maximum_thrust);
+    memset(&Outer_Loop_Timelast, 0, sizeof(Outer_Loop_Timelast));
+    memset(&velocity_vector, 0, sizeof(velocity_vector));
+    memset(&acceleration_vector, 0, sizeof(acceleration_vector));
+    memset(&Euler_dot_ref, 0, sizeof(Euler_dot_ref));
+    e_ddot_int = 0.0;
 }
 
 void Saturate(double *Value, double Min, double Max){
@@ -114,84 +37,173 @@ void Saturate(double *Value, double Min, double Max){
     }
 }
 
-void Moment_Control(){
-    const double K[3] = {0.8, 1.0, 0.001};
-    double e[3];
-    double Euler_Frame_Moments[3];
+void Run_Controllers(){
+    const double max_angle = M_PI/4.0;
+    
+    if (g_run_safety_check_flag){
+        g_run_safety_check_flag = false;
+        if ((fabs(Air_Filter_data(3)) > max_angle) || (fabs(Air_Filter_data(4))) > max_angle){
+            Disable_Motors();
+            Manage_FC_Status(Standby);
+            return;
+        }
+    }
+    
     if (Inhibit_Motors()){
-        memset(Output.Moments, 0, sizeof(Output.Moments));
-        Set_throttles();
         return;
     }
     
-    e[0] = Reference_Euler(0) - Air_Filter_data(3);
-    e[1] = Reference_Euler(1) - Air_Filter_data(4);
-    e[2] = Reference_Euler(2) - Air_Filter_data(5);
+    Thrust_Control();
 
-    Euler_Frame_Moments[0] = K[0]*e[0] - K[1]*Air_Filter_x_Dot(3) - K[2]*Output.Moment_e_int[0];
-    Euler_Frame_Moments[1] = K[0]*e[1] - K[1]*Air_Filter_x_Dot(4) - K[2]*Output.Moment_e_int[1];
-    Euler_Frame_Moments[2] = K[0]*e[2] - K[1]*Air_Filter_x_Dot(5) - K[2]*Output.Moment_e_int[2];
-    Euler_Frame_Moments[2] *= 0.1;
+    Moment_Control();
+        
+}
 
-    Output.Moment_e_int[0] += 0.0001*e[0];
-    Output.Moment_e_int[1] += 0.0001*e[1];
-    Output.Moment_e_int[2] += 0.0001*e[2];
+void Thrust_Control(){
+    const Time Outer_Loop_Update_Time = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/2};
+    
+    // Outer loop controls position (height) by setting desired velocity vector
+    if (Compare_And_Update(Current_Time(), Outer_Loop_Update_Time, &Outer_Loop_Timelast)){
+        double h_ref = Reference_Altitude();
+        double h = Altitude_Filter_data(0);
+        velocity_vector[2] = h_ref - h;
+        Saturate(&velocity_vector[2], -0.5, 0.5);
+    }
+    // Middle loop controls velocity to align with desired vector
+    if (g_thrust_control_middle_flag){
+        g_thrust_control_middle_flag = false;
+        double h_dot = Altitude_Filter_data(1);
+        double e_dot = velocity_vector[2] - h_dot;
+        acceleration_vector[2] = 0.5 * e_dot;
+    }
+    // Innermost loop controls acceleration 
+    if (g_thrust_control_inner_flag){
+        g_thrust_control_inner_flag = false;
+        double phi = Air_Filter_data(3);
+        double theta = Air_Filter_data(4);
+        double Accel_Up = -(-sin(theta)*IMU_Acceleration(0) + sin(phi)*cos(theta)*IMU_Acceleration(1) + cos(phi)*cos(theta)*IMU_Acceleration(2) + 1.0);
+    
+        double e_ddot = acceleration_vector[2] - Accel_Up;
+        e_ddot_int += 0.05*e_ddot;
+        Saturate(&e_ddot_int, -0.0, 2.0);
+        Output.Thrust = Output.Thrust * 0.9 + (e_ddot + e_ddot_int) * g_gravity * g_mass * 0.1;
+    }
+}
 
-    // These moments are in the euler frame, the throttles are mapped in the drone body frame
+void Moment_Control(){
+    const double moment_split = 0.75;
+	const double k_f = 0.000001;
+	const double k_t = 0.000000011;
+	const double length_f_b = 0.089;
+	const double length_l_r = 0.095;
+    
+    // Outer loop controls angle 
+    if (g_moment_control_outer_flag){
+        g_moment_control_outer_flag = false;
+        double e[3];
+        for (uint8_t i = 0; i < 3; i++){
+            e[i] = Reference_Euler(i) - Air_Filter_data(3+i);
+            Euler_dot_ref[i] = e[i];
+            Saturate(&Euler_dot_ref[i], -M_PI, M_PI);
+        }
+    }
+    // Inner loop controls angular rate
+    if (g_moment_control_inner_flag){
+        g_moment_control_inner_flag = false;
+        double Euler_Frame_Moments[3];
+        double Euler_dot[3];
+        double Max_moment[3];
+        // Because motors cannot run backwards, there is a saturation point for how much moment can be applied that is a function of the thrust
+        // Compute the omega (speed^2) expected of each motor to reach this thrust, this becomes maximum control authority for euler control
 
-    Output.Moments[0] = Euler_Frame_Moments[0] - sin(Air_Filter_data(4))*Euler_Frame_Moments[2];
-    Output.Moments[1] = cos(Air_Filter_data(3))*Euler_Frame_Moments[1] + sin(Air_Filter_data(3))*cos(Air_Filter_data(4))*Euler_Frame_Moments[2];
-    Output.Moments[2] = -sin(Air_Filter_data(3))*Euler_Frame_Moments[1] + cos(Air_Filter_data(3))*cos(Air_Filter_data(4))*Euler_Frame_Moments[2];
-
-    Set_throttles();
+        Max_moment[0] = (Output.Thrust * length_l_r)/2.0;
+        Max_moment[0] *= moment_split;
+        Max_moment[1] = (Output.Thrust * length_f_b)/2.0;
+        Max_moment[1] *= moment_split;
+        Max_moment[2] = Output.Thrust*(k_t / k_f);
+        Max_moment[2] *= (1.0 - moment_split);
+        
+        for (uint8_t i = 0; i < 3; i++){
+            Euler_dot[i] = Air_Filter_x_Dot(3+i);
+            Euler_Frame_Moments[i] = 0.1 * (Euler_dot_ref[i] - Euler_dot[i]);
+            Saturate(&Euler_Frame_Moments[i], -Max_moment[i], Max_moment[i]);
+        }
+        Output.Moments[0] = Euler_Frame_Moments[0] - sin(Air_Filter_data(4))*Euler_Frame_Moments[2];
+        Output.Moments[1] = cos(Air_Filter_data(3))*Euler_Frame_Moments[1] + sin(Air_Filter_data(3))*cos(Air_Filter_data(4))*Euler_Frame_Moments[2];
+        Output.Moments[2] = -sin(Air_Filter_data(3))*Euler_Frame_Moments[1] + cos(Air_Filter_data(3))*cos(Air_Filter_data(4))*Euler_Frame_Moments[2];
+        Set_throttles();
+    }
 }
 
 void Set_throttles(){
-    // -> Back motor (0) produces negative pitching torque and positive yawing torque
-    // -> Left motor (1) produces positive rolling torque and negative yawing torque
-    // -> Right motor (2) produces negative rolling torque and negative yawing torque
-    // -> Front motor (3) produces positive pitching torque and positive yawing torque
+    // -> Front left  (ESC 2, index 0) produces positive pitching torque, positive rolling torque, and negative yawing torque
+    // -> Front right (ESC 4, index 1) produces positive pitching torque, negative rolling torque, and positive yawing torque
+    // -> Back left   (ESC 1, index 2) produces negative pitching torque, positive rolling torque, and positive yawing torque
+    // -> Back right  (ESC 3, index 3) produces negative pitching torque, negative rolling torque, and negative yawing torque
+    
 	const double k_f = 0.000001;
 	const double k_t = 0.000000011;
-	const double length_f_b =  0.127;
-	const double length_l_r = 0.125; 
+	const double length_f_b = 0.089;
+	const double length_l_r = 0.095;
 
-    const double denom_1 = 4.0 * k_f * k_t * length_f_b;
-    const double denom_2 = 4.0 * k_f * k_t * length_l_r;
-    const double c1 = k_f * length_f_b;
-    const double c2 = k_t * length_f_b;
-    const double c3 = 2.0 * k_t;
-    const double c4 = k_f * length_l_r;
-    const double c5 = k_t * length_l_r;
+    const double denom = 4.0 * k_f * k_t * length_f_b * length_l_r;
+    const double c1 = k_t * length_f_b;
+    const double c2 = k_t * length_l_r;
+    const double c3 = k_f * length_f_b * length_l_r;
+    const double c4 = k_t * length_f_b * length_l_r;
 
-    // w_f: (2*My*kt + Mz*kf*lfb + T*kt*lfb)/(4*kf*kt*lfb)
-    // w_r: (-Mz*kf*lrl - 2*Mx*kt + T*kt*lrl)/(4*kf*kt*lrl)
-    // w_l: (2*Mx*kt - Mz*kf*lrl + T*kt*lrl)/(4*kf*kt*lrl)
-    // w_b: (-2*My*kt + Mz*kf*lfb + T*kt*lfb)/(4*kf*kt*lfb)
+    double T  = Output.Thrust;
+    double Mx = Output.Moments[0];
+    double My = Output.Moments[1];
+    double Mz = Output.Moments[2];
 
-    double omega_front = ((c3*Output.Moments[1]) + (c1*Output.Moments[2]) + (c2*Output.Thrust))/denom_1;
-    double omega_right = ((-c4*Output.Moments[2]) - (c3*Output.Moments[0]) + (c5*Output.Thrust))/denom_2;
-    double omega_left = ((c3*Output.Moments[0]) - (c4*Output.Moments[2]) + (c5*Output.Thrust))/denom_2;
-    double omega_back = (-(c3*Output.Moments[1]) + (c1*Output.Moments[2]) + (c2*Output.Thrust))/denom_1;
-
-    double omega[4] = {omega_back, omega_left, omega_right, omega_front};
-
-    // Solve backwards for throttle by using the equation w = Throt*228 + 316
-    // -> Throt = (w - 316)/228
+    double omega_front_left  = ( c1*Mx - c2*My + c3*Mz + c4*T)/denom;
+    double omega_front_right = ( c1*Mx + c2*My - c3*Mz + c4*T)/denom;
+    double omega_back_left   = (-c1*Mx - c2*My - c3*Mz + c4*T)/denom;
+    double omega_back_right  = (-c1*Mx + c2*My + c3*Mz + c4*T)/denom;
+    
+    double omega[4] = {omega_back_left, omega_front_left, omega_back_right, omega_front_right};
+    
     const double rpm2rads = (M_PI/30.0);
-    const double motor_c1 = 316.0*rpm2rads;
-    const double motor_c2 = 228.0*rpm2rads;
-    double temp;
+    // Solve backwards for throttle by using the equation w = Throt*slope + offset
+    // Throt = (w - offset)/slope
+    // If the throttle is less than 350 (35%), use:
+    const double slope_low  = 23.2 * rpm2rads;
+    const double offset_low = 116.0 * rpm2rads;
+    // Corresponds to about 1200 rpm per 5% throttle
+    // If the throttle is greater than 350, use:
+    const double slope_high  = 21.1 * rpm2rads;
+    const double offset_high = 821.0 * rpm2rads;
+    // Corresponds to about 1000 rpm per 5% throttle
+    const double crossover_speed = (slope_low*350.0 + offset_low)*rpm2rads;
+
+    double throttle_dp;
+    double omega_root;
     for (uint8_t i = 0; i < 4; i++){
         if (omega[i] <= 0.0){
             Output.Throttles[i] = 0;
             continue;
         }
-        temp = ((sqrt(omega[i]) - motor_c1)/motor_c2)*10.0;
-        if (temp > 1000) temp = 1000;
-        Output.Throttles[i] = (uint16_t)temp;  
+
+        omega_root = sqrt(omega[i]);
+        if (omega_root <= crossover_speed){
+            throttle_dp = (omega_root - offset_low) / slope_low;
+        }
+        else{
+            throttle_dp = (omega_root - offset_high) / slope_high;
+        }
+
+        if (throttle_dp > 1000.0){
+            throttle_dp = 1000.0;
+        }
+
+        Output.Throttles[i] = (uint16_t)throttle_dp;
     }
-    
+
     // Convert throttles to PWM and trigger update 
     Apply_Throttle_Batch(Output.Throttles);
+}
+
+uint16_t Get_Throttle(uint8_t index){
+    return Output.Throttles[index];
 }

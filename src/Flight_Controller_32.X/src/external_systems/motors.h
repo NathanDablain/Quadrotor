@@ -8,6 +8,8 @@
 #define MIN_THROTTLE   0
 #define MAX_THROTTLE   1000
 
+void Disable_Motors();
+
 void Apply_Throttle(uint16_t throttle, uint8_t index);
 
 void Apply_Throttle_Batch(uint16_t throttle[4]);

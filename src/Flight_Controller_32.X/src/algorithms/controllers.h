@@ -4,16 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define AVERAGE_SAMPLE_SIZE 20
-
 typedef struct{
     double Thrust;
-    double Hover_Thrust;
     double Moments[3];
     uint16_t Throttles[4];
-    double Thrust_e_int;
-    double Mass_Modifier;
-    double Moment_e_int[3];
 } Control_Variables;
 
 void Initialize_Controllers();
@@ -26,7 +20,7 @@ void Moment_Control();
 
 void Set_throttles();
 
-void Saturate(double *Value, double Min, double Max);
+uint16_t Get_Throttle(uint8_t index);
 
 #endif
 

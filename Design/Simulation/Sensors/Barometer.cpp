@@ -57,9 +57,9 @@ void Barometer::Sample(Environment &env, Sim_Time sim_t){
     // Get noise in hpa
     double noise_hpa = Gaussian_Bar.Get_val();
     // Add to true data in hPa
-    double pressure_combined_hpa =(env.pressure/100.0) + noise_hpa;
+    double pressure_combined_hpa =(env.pressure/100.0);// + noise_hpa;
     // Run through onboard low pass filter
-    double filtered_pressure_hpa = Bar_Filter.Update(pressure_combined_hpa, Update_rate.Time_fp(), passthrough_flag);
+    double filtered_pressure_hpa = Bar_Filter.Update(pressure_combined_hpa, Update_rate.Time_fp(), passthrough_flag) + noise_hpa;
     // Convert from hpa to LSB
     double pressure_LSB = filtered_pressure_hpa*sensitivity;
     // Don't worry about saturating as this sim will never be near that limit

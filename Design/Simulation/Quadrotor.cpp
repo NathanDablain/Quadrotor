@@ -10,6 +10,7 @@ Quadrotor::Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf){
     Time_last_log = {.Seconds = 0, .MicroSeconds = 0};
     last_transmit_time = {.Seconds = 0, .MicroSeconds = 0};
     cal_start_time = {.Seconds = 5, .MicroSeconds = 0};
+    Time_last_update_motors = {.Seconds = 0, .MicroSeconds = 0};
     Lora_ID_index = 0;
     // Initial conditions initialization
     q = Euler2Quat(Initial_Euler);
@@ -40,8 +41,10 @@ void Quadrotor::Set_Monte_Carlo_Data(Monte_Carlo_Data MC_Data){
     inertia.data[2][1] = inertia.data[1][2];
     for (uint8_t i = 0; i < 4; i++){
         Motors[i].deadzone = MC_Data.Motor_deadzone[i];
-        Motors[i].Motor_slope = MC_Data.Motor_slope;
-        Motors[i].Motor_zero_offset = MC_Data.Motor_zero_offset;
+        Motors[i].Motor_slope_l = MC_Data.Motor_slope_l;
+        Motors[i].Motor_zero_offset_l = MC_Data.Motor_zero_offset_l;
+        Motors[i].Motor_slope_h = MC_Data.Motor_slope_h;
+        Motors[i].Motor_zero_offset_h = MC_Data.Motor_zero_offset_h;
         Motors[i].k_f = MC_Data.Propeller_force_constant;
         Motors[i].k_t = MC_Data.Propeller_torque_constant;
     }
@@ -62,8 +65,6 @@ void Quadrotor::Run_sim(){
         env.Update(Position_NED, q, v, a, w);
 
         Run_Sensors(env);
-
-        Manage_FC_Status();
 
         Run_Ground_Controller();
 
@@ -260,11 +261,13 @@ void Quadrotor::Run_Ground_Controller(){
                 (fabs(Position_NED.data[0]) > 15.0) ||
                 (fabs(Position_NED.data[1]) > 15.0))
             {
+                inbound_Flight_Controller_Status = Crashed;
                 Successful_Landing = false;
             }
 
             if (sim_t.Seconds - cal_start_time.Seconds >= 60){
                 if (fabs(-Position_NED.data[2] - Lora_Desired_Altitude) > Lora_Desired_Altitude*0.1){
+                    inbound_Flight_Controller_Status = Crashed;
                     Successful_Landing = false; 
                 }
                 else {
@@ -275,8 +278,8 @@ void Quadrotor::Run_Ground_Controller(){
             
         case Landing:
             if (Position_NED.data[2] >= -0.15){
-                if ((fabs(Euler.data[0] - Initial_Euler.data[0]) >= (20*D2R) ||
-                    fabs(Euler.data[1] - Initial_Euler.data[1]) >= (20*D2R)) ||
+                if ((fabs(Euler.data[0]) >= (10*D2R) ||
+                    fabs(Euler.data[1]) >= (10*D2R)) ||
                     (Velocity_NED.data[2] > 1.0))
                 {
                     inbound_Flight_Controller_Status = Crashed;
@@ -293,57 +296,6 @@ void Quadrotor::Run_Ground_Controller(){
             
     }
 
-}
-
-void Quadrotor::Manage_FC_Status(){
-    // if (sim_t == cal_start_time){
-    //     PIC.Flight_Controller_Status = User_Calibration_p32;
-    // }
-    // if (sim_t.Seconds - cal_start_time.Seconds >= 2){
-    //     if (sim_t.Seconds - cal_start_time.Seconds <= 6){
-    //         w.data[0] = 2.0;
-    //         calibration_phase = 1;
-    //     }
-    //     else if (sim_t.Seconds - cal_start_time.Seconds <= 10){
-    //         if (calibration_phase == 1){
-    //             q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
-    //             w.data[0] = -0.5;
-    //         }
-    //         w.data[1] = 3.0;
-    //         calibration_phase = 2;
-    //     }
-    //     else if (sim_t.Seconds - cal_start_time.Seconds <= 14){
-    //         if (calibration_phase == 2){
-    //             q.data[0] = 1; q.data[1] = 0; q.data[2] = 0; q.data[3] = 0;
-    //             w.data[1] = -0.75;
-    //         }
-    //         w.data[2] = -3.0;
-    //         calibration_phase = 3;
-    //     }
-    //     else if (sim_t.Seconds - cal_start_time.Seconds <= 24){
-    //         q = Euler2Quat(Initial_Euler);
-    //         w.data[0] = 0.0;
-    //         w.data[1] = 0.0;
-    //         w.data[2] = 0.0;
-    //         PIC.Flight_Controller_Status = System_Calibration_p32;
-    //     }
-    //     else if (sim_t.Seconds - cal_start_time.Seconds <= 26){
-    //         PIC.Flight_Controller_Status = Ready_p32;
-    //     }
-    //     else if (sim_t.Seconds - cal_start_time.Seconds <= 28){
-    //         PIC.Flight_Controller_Status = Flying_p32;
-    //     }
-    // }
-    // // Assume that the initial drone orientation corresponds to the ground around it
-    // // If it pitches or rolls a certain distance past this initial orientation while near the ground,
-    // // it will be considered a crash
-    // if (PIC.Flight_Controller_Status == Flying_p32 || PIC.Flight_Controller_Status == Landing_p32){
-    //     if (Position_NED.data[2] >= -0.15){
-    //         if (fabs(Euler.data[0] - Initial_Euler.data[0]) >= (20*D2R) || fabs(Euler.data[1] - Initial_Euler.data[1]) >= (20*D2R)){
-    //             PIC.Flight_Controller_Status = Crashed_p32;
-    //         }
-    //     }
-    // }
 }
 
 void Quadrotor::Run_Sensors(Environment &env){
@@ -467,22 +419,26 @@ void Quadrotor::Update_drone_forces_moments(Environment &env){
     Vec3 g_force_Body = NED2Body(g_vec_NED, q)*mass;
     // Motor force and moment
     // Assume that:
-    // -> Back motor (0) produces negative pitching torque and positive yawing torque
-    // -> Left motor (1) produces positive rolling torque and negative yawing torque
-    // -> Right motor (2) produces negative rolling torque and negative yawing torque
-    // -> Front motor (3) produces positive pitching torque and positive yawing torque
+    // -> Front left (ESC 2, index 0) produces positive pitching torque, positive rolling torque, and negative yawing torque
+    // -> Front right (ESC 4, index 1) produces positive pitching torque, negative rolling torque, and positive yawing torque
+    // -> Back left (ESC 1, index 2) produces negative pitching torque, positive rolling torque, and positive yawing torque
+    // -> Back right (ESC 3, index 3) produces negative pitching torque, negative rolling torque, and negative yawing torque
+    const Sim_Time motor_update_rate = {.Seconds = 0, .MicroSeconds = 333};
 
-    for (uint8_t i = 0; i < 4; i++){
-        Motors[i].Throttle = e_throttle_commands[i];
-        Motors[i].Update_speed();
+    if (sim_t - Time_last_update_motors > motor_update_rate){
+        Time_last_update_motors = sim_t;
+        for (uint8_t i = 0; i < 4; i++){
+            Motors[i].Throttle = e_throttle_commands[i];
+            Motors[i].Update_speed();
+        }
     }
     double motor_thrusts[4] = {Motors[0].Get_motor_thrust(), Motors[1].Get_motor_thrust(),
                           Motors[2].Get_motor_thrust(), Motors[3].Get_motor_thrust()};
     double motor_thrust_magnitude = motor_thrusts[0] + motor_thrusts[1] + motor_thrusts[2] + motor_thrusts[3];
     Vec3 motor_force_Body = {0.0, 0.0, -motor_thrust_magnitude};
     Vec3 motor_moment_Body = {
-        length_l_r*(motor_thrusts[1] - motor_thrusts[2]),
-        length_f_b*(motor_thrusts[3] - motor_thrusts[0]),
+        length_l_r*(motor_thrusts[0] + motor_thrusts[1] - motor_thrusts[2] - motor_thrusts[3]),
+        length_f_b*(motor_thrusts[1] + motor_thrusts[3] - motor_thrusts[0] - motor_thrusts[2]),
         Motors[0].Get_motor_torque() + Motors[3].Get_motor_torque() - Motors[1].Get_motor_torque() - Motors[2].Get_motor_torque()};
 
     // External, uncontrollable forces and moments

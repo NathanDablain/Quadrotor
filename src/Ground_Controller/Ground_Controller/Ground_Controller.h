@@ -27,6 +27,10 @@ extern volatile unsigned char g_ADC_Flag;
 extern volatile unsigned char g_Button0_Flag;
 // Tracks when button 1 has been pressed
 extern volatile unsigned char g_Button1_Flag;
+// Tracks when button 2 has been pressed
+extern volatile unsigned char g_Button2_Flag;
+// Tracks when to update base pressure readings from barometer
+extern volatile unsigned char g_Latch_Barometer;
 // Tracks how often to change button status
 extern volatile unsigned char g_Button_Read_Flag;
 // Tracks when to print

@@ -48,6 +48,21 @@ void Initialize_DMA(){
     DMA2SELbits.CHSEL = DMA_SPI2RX_CHANNEL;
     DMA2DST = (uint32_t) &SPI2BUF;
     
+    // DMA channel 3 will be used to load into the I2C1 TX buffer
+    // it is triggered on a I2C1 transmit buffer empty interrupt
+    // Increment source and keep destination unchanged
+    DMA3CHbits.SAMODE = 1;
+    DMA3CHbits.DAMODE = 0;
+    // Set to one shot mode, size of one byte
+    DMA3CHbits.TRMODE = 0;
+    DMA3CHbits.SIZE = 0;
+    // Enable interrupt upon completion
+    DMA3CHbits.DONEEN = 1;
+    IEC2bits.DMA3IE = 1;
+    // Set to trigger on I2C1 TX buffer empty
+    DMA3SELbits.CHSEL = DMA_I2C1TX_CHANNEL;
+    DMA3DST = (uint32_t) &I2C1TRN;
+    
     // Set limits of data space DMA can access, data space ranges from 0x4000 to 0x8000
     DMALOW = 0x4000;
     DMAHIGH = 0x8000;
@@ -91,6 +106,23 @@ void Set_DMA_2(uint8_t* source_address, uint32_t length){
     SPI2BUF = *g_spi2_data_out_ptr;
 }
 
+void Set_DMA_3(uint8_t* source_address, uint32_t length){
+    // Prevent access to I2C1 by other operations while transfer is in progress
+    g_i2c1_rdy_flag = false;
+    
+    // Destination already initialized as I2C1TRN, set source and count
+    DMA3SRC = (uint32_t)source_address;
+    DMA3CNT = length;
+    // Enable channel
+    DMA3CHbits.CHEN = 1;
+    
+    // Start I2C transfer
+    I2C1CON1bits.SEN = 1;
+    while (I2C1CON1bits.SEN);
+    I2C1CON2bits.NDA = 0;
+    I2C1TRN = ((uint32_t)g_i2c1_slave_address<<1U);
+}
+
 void _ISR _DMA1Interrupt(){
     // Raise SS pin, set global flags that transfer is complete, and disable channels
     RAISE_PIN(*g_spi1_reg_ptr, g_spi1_pin);
@@ -107,4 +139,12 @@ void _ISR _DMA2Interrupt(){
     g_spi2_rdy_flag = true;
     DMA2CHbits.CHEN = 0;
     IFS2bits.DMA2IF = 0;
+}
+
+void _ISR _DMA3Interrupt(){
+    // Send stop command , set global flag that transfer is complete, disable channel
+    I2C1CON1bits.PEN = 1; 
+    g_i2c1_rdy_flag = true;
+    DMA3CHbits.CHEN = 0;
+    IFS2bits.DMA3IF = 0;
 }

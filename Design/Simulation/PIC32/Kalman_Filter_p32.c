@@ -170,37 +170,31 @@ bool Update(Kalman_Filter *filter, Matrix *measurement){
     
 }
 
-bool Update_EKF(Kalman_Filter *filter, Matrix *measurement, Matrix *predicted_measurement){
-    Matrix *ybar = Mat_Sub(measurement, predicted_measurement, 2);
-    if (ybar == NULL) return false;
+bool Update_EKF(Kalman_Filter *filter, Matrix *measurement_error){
 
     Matrix *H_tran = Mat_Tran(filter->H);
     if (H_tran == NULL){
-        Mat_Destructor(ybar);
         return false;
     }
 
     Matrix *S = Mat_Add(Mat_Mul(Mat_Mul(filter->H, filter->P, 0), H_tran, 1), filter->R, 1);
     if (S == NULL){
-        Mat_Destructor(ybar);
         return false;
     }
 
     Matrix *S_inv = Mat_Inv(S);
     Mat_Destructor(S);
     if (S_inv == NULL){
-        Mat_Destructor(ybar);
         return false;
     }
 
     Matrix *K = Mat_Mul(Mat_Mul(filter->P, H_tran, 2), S_inv, 3);
 
     if (K == NULL){
-        Mat_Destructor(ybar);
         return false;
     }
 
-    Matrix *x_new = Mat_Add(filter->xhat, Mat_Mul(K, ybar, 2), 2);
+    Matrix *x_new = Mat_Add(filter->xhat, Mat_Mul(K, measurement_error, 0), 2);
 
     if (x_new != NULL){
         Mat_Destructor(filter->xhat);

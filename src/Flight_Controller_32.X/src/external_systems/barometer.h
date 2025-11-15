@@ -12,13 +12,14 @@ typedef enum{
 
 typedef struct{
     uint8_t pressure_LSB_bytes[4];
+    uint32_t Base_Pressure_LSB;
     uint32_t pressure_LSB;
-    uint8_t pressure_offset;
+    uint32_t pressure_offset;
     double pressure_pa;
     double height;
     double base_altitude;
+    double height_measurement;
     uint8_t BAR_Read_array[4];
-    Time Last_Update;
     bool drdy_flag;
 } BAR_Data;
 

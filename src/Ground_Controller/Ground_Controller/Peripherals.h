@@ -10,6 +10,8 @@ void Setup_Timers();
 void Setup_ADC();
 // Sets up IO pins connected to buttons for interrupts, used to change statuses
 void Setup_Buttons();
+// Setup pins connected to LEDs
+void Setup_LEDs();
 // Converts the digital reading of the potentiometer output to a floating point value used to control reference positions
 float Set_dial_window(Dial *dial);
 // Samples the ADC, returns the ADC reading

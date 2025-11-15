@@ -10,12 +10,20 @@
 #include "spi.h"
 #include "dma.h"
 #include "time.h"
+#include "butterworth_filter.h"
     
-static Mag_Machine state;
+static Mag_Machine state = Mag_Standby;
+static BW_Filter_Data BW_Filter[3];
 static Mag_Data mag;
 
 void Initialize_Magnetometer_Machine(){
     memset(&mag, 0, sizeof(mag));
+    Initialize_BW_Filter(&BW_Filter[0], 1.0/3000.0);
+    Initialize_BW_Filter(&BW_Filter[1], 1.0/3000.0);
+    Initialize_BW_Filter(&BW_Filter[2], 1.0/3000.0);
+    BW_Filter[0].w_c = 5.0;
+    BW_Filter[1].w_c = 5.0;
+    BW_Filter[2].w_c = 5.0;
     mag.drdy_Flag = false;
     mag.Read_Array[0] = MAG_DATA_START|0x80;
     mag.mag_field_min_LSB[0] = INT16_MAX;
@@ -27,12 +35,9 @@ void Initialize_Magnetometer_Machine(){
     mag.offset_initialized[0] = false;
     mag.offset_initialized[1] = false;
     mag.offset_initialized[2] = false;
-    state = Initialize_Magnetometer();
 }
 
 void Run_Magnetometer_Machine(){
-    const int32_t ODR_Hz = 100;
-    const Time Sample_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/ODR_Hz};
     bool Hard_iron_cal = false;
     bool Soft_iron_cal = false;
     
@@ -43,11 +48,36 @@ void Run_Magnetometer_Machine(){
        case Mag_Fail:
            break;
        case Mag_Ready:
-           if ((g_spi1_rdy_flag) && (Compare_And_Update(Current_Time(), Sample_Rate, &mag.Last_Update))){
+           if (g_spi1_rdy_flag && g_magnetometer_sample_flag){
+               g_magnetometer_sample_flag = false;
                Prepare_SPI1_For_DMA(&CS_MAG_PORT, CS_MAG_PIN, mag.Read_Array, &mag.drdy_Flag);
                Set_DMA_01(&mag.Read_Array[1], &mag.field_LSB_bytes[0], sizeof(mag.Read_Array));
                state = Mag_Reading;
            }
+           if (g_Flight_Controller_Status == System_Calibration){
+                if (g_magnetometer_filter_flag){
+                    g_magnetometer_filter_flag = false;
+                    for (uint8_t i = 0; i < 3; i++){
+                        BW_Filter[i].u = mag.field[i];
+                        mag.field_filtered[i] = Run_BW_Filter(&BW_Filter[i]);
+                    }
+                }
+            }
+            else if (g_Flight_Controller_Status > System_Calibration){
+                BW_Filter[0].w_c = 30.0;
+                BW_Filter[1].w_c = 30.0;
+                BW_Filter[2].w_c = 30.0;
+                if (g_magnetometer_filter_flag){
+                    g_magnetometer_filter_flag = false;
+                    for (uint8_t i = 0; i < 3; i++){
+                        BW_Filter[i].u = mag.field[i];
+                        mag.field_filtered[i] = Run_BW_Filter(&BW_Filter[i]);
+                    }
+                }
+            }
+            else{
+                memcpy(&mag.field_filtered, &mag.field, sizeof(mag.field_filtered));
+            }
            break;
        case Mag_Reading:
            if (mag.drdy_Flag){
@@ -59,7 +89,15 @@ void Run_Magnetometer_Machine(){
                    Soft_iron_cal = Calculate_Soft_Iron();
                }
                Compensate_Magnetometer_Reading(Soft_iron_cal);
-
+               
+               // Use low BW LPF when in calibrating
+//               if(g_Flight_Controller_Status < Flying){
+//                   Magnetometer_LPF(0);
+//               }
+//               else {
+//                   Magnetometer_LPF(1);
+//               }
+               
                mag.drdy_Flag = false;
                state = Mag_Ready;
            }
@@ -78,21 +116,24 @@ Mag_Machine Initialize_Magnetometer(){
      // Enables 4 wire SPI, disable I2C, set block data update
     uint8_t com_mag[2] = {MAG_CFG_REG_C, MAG_DISABLE_I2C|MAG_BDU|MAG_4WSPI};
 	SPI_transfer(&CS_MAG_PORT, CS_MAG_PIN, com_mag, dummy_out, sizeof(com_mag));
-	Delay(20000);
+	Delay(200000);
     
     // Check ID to make sure device is functioning
     uint8_t mag_id_in[2] = {(MAG_WHO_AM_I|0x80), 0};
     uint8_t mag_id_out[2] = {0};
 	SPI_transfer(&CS_MAG_PORT, CS_MAG_PIN, mag_id_in, mag_id_out, sizeof(mag_id_in));
 	if (mag_id_out[1] != MAG_ID) return Mag_Fail;
-	
+    Delay(200000);
+
     // Set 100 Hz ODR, temp compensation enabled
     uint8_t mag_config_a[2] = {MAG_CFG_REG_A, MAG_TEMP_COMP|MAG_ODR_100Hz};
 	SPI_transfer(&CS_MAG_PORT, CS_MAG_PIN, mag_config_a, dummy_out, sizeof(mag_config_a));
-    
+    Delay(200000);
+
     // Enable LPF
     uint8_t mag_config_b[2] = {MAG_CFG_REG_B, MAG_LPF_ENABLE};
 	SPI_transfer(&CS_MAG_PORT, CS_MAG_PIN, mag_config_b, dummy_out, sizeof(mag_config_b));
+	Delay(200000);
 
     return Mag_Ready;
 }
@@ -103,9 +144,12 @@ void Convert_Magnetometer(){
     // -> Body y = -Sensor x
     // -> Body z = Sensor z
     
+    // -> Body x = -Sensor y
+    // -> Body y = Sensor x
+    // -> Body z = -Sensor z
     mag.field_LSB[0] = (((int16_t)mag.field_LSB_bytes[4])<<8) + ((int16_t)mag.field_LSB_bytes[3]);
     mag.field_LSB[1] = -(((int16_t)mag.field_LSB_bytes[2])<<8) - ((int16_t)mag.field_LSB_bytes[1]);
-    mag.field_LSB[2] = (((int16_t)mag.field_LSB_bytes[6])<<8) + ((int16_t)mag.field_LSB_bytes[5]);
+    mag.field_LSB[2] = -(((int16_t)mag.field_LSB_bytes[6])<<8) + ((int16_t)mag.field_LSB_bytes[5]);
     
 }
 
@@ -217,6 +261,30 @@ void Compensate_Magnetometer_Reading(bool Soft_iron_cal){
 
 }
 
+void Magnetometer_LPF(uint8_t setting){
+    double c1;
+    double c2;
+    
+    if (setting == 0){
+        c1 = 0.995;
+        c2 = 1.0 - c1;
+        mag.field_filtered[0] = mag.field_filtered[0]*c1 + mag.field[0]*c2;
+        mag.field_filtered[1] = mag.field_filtered[1]*c1 + mag.field[1]*c2;
+        mag.field_filtered[2] = mag.field_filtered[2]*c1 + mag.field[2]*c2;
+    }
+    else if (setting == 1){
+        c1 = 0.75;
+        c2 = 1.0 - c1;
+        mag.field_filtered[0] = mag.field_filtered[0]*c1 + mag.field[0]*c2;
+        mag.field_filtered[1] = mag.field_filtered[1]*c1 + mag.field[1]*c2;
+        mag.field_filtered[2] = mag.field_filtered[2]*c1 + mag.field[2]*c2;
+    }
+}
+
 double Magnetometer_Field(uint8_t index){
     return mag.field[index];
+}
+
+double Magnetometer_Filtered_Field(uint8_t index){
+    return mag.field_filtered[index];
 }

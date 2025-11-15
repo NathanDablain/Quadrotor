@@ -11,32 +11,42 @@
 #include "controllers.h"
 #include "global_variables.h"
 #include "system_types.h"
+#include "motors.h"
+#include "barometer.h"
+#include "magnetometer.h"
 
 static Uplink uplink;
 static Downlink downlink;
 static LORA_Status state;
-static Time Last_Update;
+static uint32_t Last_Uplink;
 
 void Initialize_LORA_Machine(){
     memset(&uplink, 0, sizeof(uplink));
     memset(&downlink, 0, sizeof(downlink));
-    memset(&Last_Update, 0, sizeof(Last_Update));
+    Last_Uplink = 0;
     state = Setup_LoRa();
 }
 
 // Manage LORA state
 void Run_LORA(){
-    const int32_t Update_Rate_Hz = 200;
-    const Time Update_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/Update_Rate_Hz};
 	uint8_t rx_timeout[4] = {LORA_SETRX, 0xFF, 0xFF, 0xFF};
 	uint8_t lora_irq_status_out[5] = {0};
     uint8_t lora_irq_status_in[5] = {LORA_GET_IRQ_STATUS, 0, 0, 0, 0};
     uint8_t lora_irq_clear[3] = {LORA_CLEAR_IRQ_STATUS, 0, LORA_TX_DONE_IRQ};
 	uint8_t uplink_status;
     uint8_t dummy_out[10];
-            
-    if (!g_spi1_rdy_flag || !Compare_And_Update(Current_Time(), Update_Rate, &Last_Update)) return;
-
+    
+//    bool update_time = false;
+    // Only update last update when command has been done
+    // Add check for when the last message received was, if past 2 seconds, put in LORA_Received
+    if (!g_spi1_rdy_flag || !g_lora_update_flag) return;
+    g_lora_update_flag = false;
+    
+    if (g_seconds - Last_Uplink >= 2){
+        state = LORA_Standby;
+        Last_Uplink = g_seconds;
+    }
+    
     switch (state){
         case LORA_Standby:
             // Put LORA in RXContinuous mode
@@ -48,6 +58,7 @@ void Run_LORA(){
         case LORA_Receiving:				
             uplink_status = Receive_Uplink();
             if (uplink_status){
+                Last_Uplink = g_seconds;
                 state = LORA_Ready_to_Transmit;
             }
             break;
@@ -218,10 +229,10 @@ uint8_t Receive_Uplink(){
             uplink.Desired_altitude = 0.0;
         }
 		// Get base altitude
-		char inbound_Base_Altitude[7] = {buffer_out[start_index+25],buffer_out[start_index+26],buffer_out[start_index+27],buffer_out[start_index+28],buffer_out[start_index+29],buffer_out[start_index+30],0};
-		uplink.Base_altitude = atof(inbound_Base_Altitude);
+		char inbound_Base_Altitude[8] = {buffer_out[start_index+25],buffer_out[start_index+26],buffer_out[start_index+27],buffer_out[start_index+28],buffer_out[start_index+29],buffer_out[start_index+30],buffer_out[start_index+31],0};
+		uplink.Base_pressure_LSB = atoi(inbound_Base_Altitude);
 		// Get requested drone status
-		char Requested_Drone_Status_c[2] = {buffer_out[start_index+31], 0};
+		char Requested_Drone_Status_c[2] = {buffer_out[start_index+32], 0};
 		uplink.Drone_status = atoi(Requested_Drone_Status_c);
         if (uplink.Drone_status != g_Flight_Controller_Status){
             Manage_FC_Status(uplink.Drone_status);
@@ -260,6 +271,12 @@ void Send_Downlink(){
 
 // State machine to transition drone state
 void Manage_FC_Status(FC_Status Desired){
+    // Prevent flight controller status from transitioning more than one state
+    // at a time, unless we are transitioning back to standby
+    if ((Desired - g_Flight_Controller_Status > 1) && (Desired != Standby)){
+        return;
+    }
+    
     if (Desired > Landing){
         g_Flight_Controller_Status = Standby;
     }
@@ -269,7 +286,11 @@ void Manage_FC_Status(FC_Status Desired){
     
     switch (g_Flight_Controller_Status){
         case Standby:
+            Initialize_Controllers();
+            Disable_Motors();
             Run_Ground_Filter(true);
+            Initialize_Barometer_Machine();
+            Initialize_Magnetometer_Machine();
             break;
             
         case User_Calibration:
@@ -341,4 +362,8 @@ void Xor_Checksum(char *data, uint8_t length, uint8_t start_index, char checksum
 
 double Uplink_Altitude(){
     return uplink.Desired_altitude;
+}
+
+uint32_t Uplink_Pressure_LSB(){
+    return uplink.Base_pressure_LSB;
 }

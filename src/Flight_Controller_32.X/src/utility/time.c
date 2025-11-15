@@ -50,6 +50,6 @@ bool Compare_And_Update(const Time Time_1, const Time Delta_t, Time* Time_2){
 }
 
 void Delay(uint64_t length){
-    uint64_t counter = 0;;
+    volatile uint64_t counter = 0;;
     while (counter++ != length);
 }

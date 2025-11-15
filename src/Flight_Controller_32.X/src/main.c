@@ -23,7 +23,12 @@
 #include "navigation.h"
 #include "guidance.h"
 #include "controllers.h"
+#include "motors.h"
 
+// Need check on barometer for big data jump to ignore it. 
+// Need check on sensor states or data reasonableness before transitioning to flying or ready
+// Additional LPF on magnetometer, especially during user calibration 
+// Look into lowering the update rate for the moment controller to 200 Hz to coincide with the motor speed update
 static const bool arduino_interchange = false;
 
 bool Setup(){
@@ -43,6 +48,10 @@ bool Setup(){
     if (arduino_interchange){
         Initialize_SPI(2);
     }
+    
+    Initialize_I2C();
+    
+    Setup_OLED();
     
     Initialize_DMA();    
     
@@ -67,9 +76,8 @@ bool Setup(){
 
 int main(void) {
 
-    bool setup_status = Setup();     
-    Manage_FC_Status(System_Calibration);
-
+    bool setup_status = Setup();
+    
     while(setup_status){
         Execute();
     }
@@ -88,7 +96,9 @@ void Execute(){
     Run_Magnetometer_Machine();
 
     Run_LORA();
-    
+
+    Run_OLED();
+ 
     if (arduino_interchange){
         Send_Pages();
     }

@@ -20,7 +20,7 @@ unsigned char Setup_Bar(){
 	return 1;
 }
 
-unsigned char Read_Bar(float *pressure_altitude){
+unsigned char Read_Bar(unsigned long *uplink_pressure_LSB){
 	static unsigned long pressure_window[BAR_WINDOW_SIZE];
 	static unsigned char window_counter = 0;
 	
@@ -35,7 +35,6 @@ unsigned char Read_Bar(float *pressure_altitude){
 	unsigned long pressure_LSB = (((unsigned long)Data[2])<<16);
 	pressure_LSB += (((unsigned int)Data[1])<<8);
 	pressure_LSB += Data[0];
-	
 	pressure_window[window_counter++] = pressure_LSB;
 	
 	if (window_counter >= BAR_WINDOW_SIZE){
@@ -43,8 +42,8 @@ unsigned char Read_Bar(float *pressure_altitude){
 		for (unsigned char i=0;i<BAR_WINDOW_SIZE;i++){
 			pressure_oversampled += pressure_window[i];
 		}
-		pressure_oversampled >>= 4;
-		*pressure_altitude = Height_Bar(pressure_oversampled);
+		pressure_oversampled >>= 5;
+		*uplink_pressure_LSB = pressure_oversampled;
 		window_counter = 0;
 	}
 	

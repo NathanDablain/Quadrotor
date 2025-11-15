@@ -32,13 +32,13 @@ void Magnetometer::Sample(Environment &env, Sim_Time sim_t){
     // Get noise in mgauss
     Vec3 mag_noise = {Gaussian_mag.Get_val(), Gaussian_mag.Get_val(), Gaussian_mag.Get_val()};
     // Add to truth and hard iron offset
-    Vec3 mag_output = env.m_vec_Body + mag_noise + env.mag_hard_iron;
+    Vec3 mag_output = env.m_vec_Body + env.mag_hard_iron;
     // Run through low pass filter
     Vec3 filtered_mag_output = {Mag_Filter_x.Update(mag_output.data[0], Update_Rate.Time_fp(), passthrough_flag),
                                 Mag_Filter_y.Update(mag_output.data[1], Update_Rate.Time_fp(), passthrough_flag),
                                 Mag_Filter_z.Update(mag_output.data[2], Update_Rate.Time_fp(), passthrough_flag)};
     // Convert to LSB
-    Vec3 mag_LSB = filtered_mag_output*(1.0/mag_sens);
+    Vec3 mag_LSB = (filtered_mag_output + mag_noise)*(1.0/mag_sens);
 
     magnetic_field_LSB[0] = -static_cast<int16_t>(mag_LSB.data[1]);
     e_mag_data[0] = static_cast<uint8_t>(magnetic_field_LSB[0]);

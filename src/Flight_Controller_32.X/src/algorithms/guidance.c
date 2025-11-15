@@ -19,14 +19,15 @@ void Initialize_Guidance_Machine(){
 
 void Guidance_Machine(){
     double h = Altitude_Filter_data(0);
-    const double peak_height = Uplink_Altitude();
+    double h_dot = Altitude_Filter_data(1);
+    double peak_height = Uplink_Altitude();
 
     switch(State){
         case Awaiting_Guidance:
             Transition_Guidance_State(Taking_Off, peak_height);
             break;
         case Taking_Off:
-            if (h > 0.35){
+            if (h_dot > 0.2){
                 Transition_Guidance_State(Climbing, peak_height);
             }
             break;
@@ -48,13 +49,7 @@ void Guidance_Machine(){
                 Transition_Guidance_State(Landed, peak_height);
             }
             
-            if (h < 0.5){
-                Reference.Euler_ref[0] = Ground_Filter_data(6);
-                Reference.Euler_ref[1] = Ground_Filter_data(7);
-            }
-            else{
-                memset(Reference.Euler_ref, 0, sizeof(Reference.Euler_ref));
-            }
+            memset(Reference.Euler_ref, 0, sizeof(Reference.Euler_ref));
             
             if (g_Flight_Controller_Status == Flying){
                 Transition_Guidance_State(Climbing, peak_height);

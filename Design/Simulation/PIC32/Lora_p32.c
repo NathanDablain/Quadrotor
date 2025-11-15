@@ -150,7 +150,7 @@ void Send_Downlink(){
 
 // State machine to transition drone state
 void Manage_FC_Status(FC_Status Desired){
-	const char *renum_fcstatus[] = {"Standby", "User_Calibration", "System Calibration", "Ready", "Flying", "Landing", "Crashed"};
+	// const char *renum_fcstatus[] = {"Standby", "User_Calibration", "System Calibration", "Ready", "Flying", "Landing", "Crashed"};
     if (Desired > Landing){
         g_Flight_Controller_Status = Standby;
     }

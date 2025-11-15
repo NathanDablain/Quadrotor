@@ -19,6 +19,7 @@ unsigned char Setup(void){
 	Setup_ADC();
 	Setup_Timers();
 	Setup_Buttons();
+	Setup_LEDs();
 	sei();
 		
 	// [7]		[6]		[5]		[4]		[3]		[2]		[1]		[0]
@@ -34,14 +35,14 @@ int main(void){
 	Dial D_Height = {.ID = Height_Dial, .window_left = -170, .window_right = 170};
 	Dial D_East = {.ID = East_Dial, .window_left = -170, .window_right = 170};
 	Dial D_North = {.ID = North_Dial, .window_left = -170, .window_right = 170};
-	Uplink up_link = {Standby, 0.0, 0.0, 0.0, 0.0};
+	Uplink up_link = {Standby, 0.0, 0.0, 0.0, 0};
 	Downlink down_link = {0, 0};
 	Downlink_Reponse_Codes Downlink_Status = No_response;
 	unsigned char ID_index = 0;
 	
 	if (Setup_Bitmask == SETUP_SUCCESS){
 		while (1) {
-		
+
 			// Read ADCs
 			if (g_ADC_Flag >= 2){
 				g_ADC_Flag = 0;
@@ -49,13 +50,13 @@ int main(void){
 				up_link.Desired_east = Set_dial_window(&D_East);
 				up_link.Desired_north = Set_dial_window(&D_North);
 			}
-			// Set LEDs
-		
-			// Check if a button has been pressed
+			// Set LEDs, located on pins D7-D3
+			
+			// Perform button specific actions
 			if (g_Button_Read_Flag >= 5) Set_Desired_Status(&up_link, &down_link);
 		
 			// Read Barometer
-			if (g_BAR_Read_Flag >= 3) Read_Bar(&up_link.Pressure_altitude);	
+			if (g_BAR_Read_Flag >= 3 && g_Latch_Barometer) Read_Bar(&up_link.Base_pressure_LSB);	
 			
 			// Write Displays
 			if (g_Print_Flag >= 40)	Print_Displays(&D_Height, &D_North, &D_East, &up_link, &down_link, Downlink_Status);
@@ -77,6 +78,7 @@ int main(void){
 ISR(PORTC_PORT_vect){
 	if (!(PORTC_IN & (1<<1))) g_Button0_Flag = 1;
 	if (!(PORTC_IN & (1<<2))) g_Button1_Flag = 1;
+	if (!(PORTC_IN & (1<<3))) g_Button2_Flag = 1;
 	PORTC_INTFLAGS |= PIN1_bm;
 }
 

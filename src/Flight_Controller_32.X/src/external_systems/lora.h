@@ -49,8 +49,8 @@
 #define INTERCHANGE_DOWNLINK_SIZE 10
 #define INTERCHANGE_DATA_SIZE 6
 // Includes $, *, and checksum
-#define UPLINK_SIZE 35
-#define UPLINK_DATA_SIZE 31
+#define UPLINK_SIZE 36
+#define UPLINK_DATA_SIZE 32
 #define RX_BASE_ADR 0
 #define TX_BASE_ADR 100
 #define LORA_SYNC_WORD 0x6494
@@ -77,7 +77,7 @@ typedef struct {
 	double Desired_north;
 	double Desired_east;
 	double Desired_altitude;
-	double Base_altitude;
+	uint32_t Base_pressure_LSB;
 } Uplink;
 
 typedef struct {
@@ -107,6 +107,8 @@ void Run_LORA();
 void Xor_Checksum(char *data, uint8_t length, uint8_t start_index, char checksum_hex[3]);
 // Returns the uplinked desired altitude
 double Uplink_Altitude();
+// Returns the uplinked base pressure in LSB
+uint32_t Uplink_Pressure_LSB();
 
 #endif
 

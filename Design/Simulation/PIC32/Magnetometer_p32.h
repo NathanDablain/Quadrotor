@@ -16,6 +16,7 @@ typedef enum{
 
 typedef struct{
     double field[3];
+    double field_filtered[3];
     uint8_t field_LSB_bytes[7];
     int16_t field_LSB[3];
     int16_t hard_iron[3];
@@ -37,8 +38,12 @@ bool Calculate_Hard_Iron();
 
 bool Calculate_Soft_Iron();
 
+void Magnetometer_LPF(uint8_t setting);
+
 void Compensate_Magnetometer_Reading(bool Soft_iron_cal);
 
 double Magnetometer_Field(uint8_t index);
+
+double Magnetometer_Filtered_Field(uint8_t index);
 
 #endif

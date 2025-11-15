@@ -19,8 +19,8 @@ void Initialize_IMU(){
 }
 
 void Run_IMU_Machine(){
-    const int32_t ODR_Accel_Hz = 1660;
-    const int32_t ODR_Gyro_Hz = 3330;
+    const int32_t ODR_Accel_Hz = 400;//1660;
+    const int32_t ODR_Gyro_Hz = 400;//3330;
     const Time Sample_Rate_Accel = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/ODR_Accel_Hz};
     const Time Sample_Rate_Gyro = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/ODR_Gyro_Hz};
 
@@ -28,9 +28,9 @@ void Run_IMU_Machine(){
     switch (state_accel){
        case IMU_Standby:
 		   e_accel_lpf_setting = 7;
-		   e_accel_odr = 1660;
-		   e_gyro_lpf_setting = 2;
-		   e_gyro_odr = 3330;
+		   e_accel_odr = 400;//1660;
+		   e_gyro_lpf_setting = 5;
+		   e_gyro_odr = 400;//3330;
 		   e_imu_settings_updated = true;
            state_accel = IMU_Ready;
            break;

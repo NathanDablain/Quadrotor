@@ -12,7 +12,6 @@
 #include "Motor.h"
 #include "Environment.h"
 #include "Coordinate_Frames.h"
-#include "Controllers.h"
 #include "Gaussian.h"
 #include "Barometer.h"
 #include "IMU.h"
@@ -34,8 +33,8 @@ class Quadrotor{
     private:
         std::ofstream log_sim;
         std::ofstream log_pic;
-        bool log_flag = false;
-        bool plot_flag = false;
+        bool log_flag = true;
+        bool plot_flag = true;
         bool error_flag = false;
         // The following parameters can be varied with montecarlo seeds, specify the mean value and the expected variance
         // Actual mass of drone in (kg)
@@ -88,6 +87,7 @@ class Quadrotor{
         Gaussian Moment_noise_gauss;
         Gaussian Force_noise_guass;
         Sim_Time Time_last_log;
+        Sim_Time Time_last_update_motors;
         // LORA
         Sim_Time last_transmit_time;
         uint8_t Lora_ID_index;
@@ -111,7 +111,6 @@ class Quadrotor{
         double Navigation_errors[6];
         Quadrotor(Sim_Time Sim_dt, Sim_Time Sim_tf);
         void Run_Sensors(Environment &env);
-        void Manage_FC_Status();
         void Update_drone_states();
         void Update_drone_forces_moments(Environment &env);
         void Run_sim();

@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define MIN_MU 0.01
+
 typedef struct{
     // Diagonal terms of covariance matrix are variances
     double P1_1;
@@ -101,7 +103,7 @@ double Ground_Filter_data(uint8_t index);
 
 void Run_Air_Filter(bool Initialize);
 
-void Air_Filter_Predict();
+void Air_Filter_Predict(bool Inhibit_Update);
 
 void Air_Filter_Update();
 

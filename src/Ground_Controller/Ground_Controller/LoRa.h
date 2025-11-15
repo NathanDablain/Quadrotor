@@ -57,7 +57,7 @@
 #define LORA_IRQ_TX_DONE 0b00001000
 
 #define DOWNLINK_SIZE 10
-#define UPLINK_SIZE 35
+#define UPLINK_SIZE 36
 
 typedef enum {
 	// Drone systems initialized, awaiting calibration
@@ -92,7 +92,7 @@ typedef struct {
 	float Desired_north;
 	float Desired_east;
 	float Desired_altitude;
-	float Pressure_altitude;
+	unsigned long Base_pressure_LSB;
 } Uplink;
 
 typedef struct {

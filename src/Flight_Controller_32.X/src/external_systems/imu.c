@@ -23,10 +23,6 @@ void Initialize_IMU_Machine(){
 }
 
 void Run_IMU_Machine(){
-    const int32_t ODR_Accel_Hz = 1666;
-    const int32_t ODR_Gyro_Hz = 3332;
-    const Time Sample_Rate_Accel = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/ODR_Accel_Hz};
-    const Time Sample_Rate_Gyro = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/ODR_Gyro_Hz};
 
     // Accelerometer state machine
     switch (state_accel){
@@ -36,7 +32,8 @@ void Run_IMU_Machine(){
        case IMU_Fail:
            break;
        case IMU_Ready:
-           if ((g_spi1_rdy_flag) && (Compare_And_Update(Current_Time(), Sample_Rate_Accel, &imu.Last_Update_Accel))){
+           if (g_spi1_rdy_flag && g_accel_sample_flag){
+               g_accel_sample_flag = false;
                Prepare_SPI1_For_DMA(&CS_IMU_PORT, CS_IMU_PIN, imu.Accel_Read_Array, &imu.drdy_Flag_Accel);
                Set_DMA_01(&imu.Accel_Read_Array[1], &imu.accel_LSB_bytes[0], sizeof(imu.Accel_Read_Array));
                state_accel = IMU_Reading;
@@ -59,7 +56,8 @@ void Run_IMU_Machine(){
        case IMU_Fail:
            break;
        case IMU_Ready:
-           if ((g_spi1_rdy_flag) && (Compare_And_Update(Current_Time(), Sample_Rate_Gyro, &imu.Last_Update_Gyro))){
+           if (g_spi1_rdy_flag && g_gyro_sample_flag){
+               g_gyro_sample_flag = false;
                Prepare_SPI1_For_DMA(&CS_IMU_PORT, CS_IMU_PIN, imu.Gyro_Read_Array, &imu.drdy_Flag_Gyro);
                Set_DMA_01(&imu.Gyro_Read_Array[1], &imu.gyro_LSB_bytes[0], sizeof(imu.Gyro_Read_Array));
                state_gyro = IMU_Reading;
@@ -82,14 +80,14 @@ IMU_Machine Initialize_IMU(){
     SPI_transfer(&CS_IMU_PORT, CS_IMU_PIN, data_in, data_out, sizeof(data_in));
 	if (data_out[1] != IMU_ID) return IMU_Fail;
 
-    // Set accelerometer range to +-2g, ODR to 1660 Hz, enable high resolution
+    // Set accelerometer range to +-2g, ODR to 416 Hz, enable high resolution
     data_in[0] = IMU_CTRL1_XL;
-    data_in[1] = IMU_2G_RANGE | IMU_ODR_1660HZ | IMU_ACCEL_HIGH_RES;
+    data_in[1] = IMU_2G_RANGE | IMU_ODR_416HZ | IMU_ACCEL_HIGH_RES;
     SPI_transfer(&CS_IMU_PORT, CS_IMU_PIN, data_in, data_out, sizeof(data_in));
 
-    // Set gyro range to +-500 dps, ODR to 3330 Hz
+    // Set gyro range to +-500 dps, ODR to 416 Hz
     data_in[0] = IMU_CTRL2_G;
-    data_in[1] = IMU_500_RANGE | IMU_ODR_3330HZ;
+    data_in[1] = IMU_500_RANGE | IMU_ODR_416HZ;
     SPI_transfer(&CS_IMU_PORT, CS_IMU_PIN, data_in, data_out, sizeof(data_in));
     
     // Enable Gyro LPF
@@ -99,7 +97,7 @@ IMU_Machine Initialize_IMU(){
     
     // Set gyroscope LPF BW to 153 Hz and enable high performance mode for accel
     data_in[0] = IMU_CTRL6_C;
-    data_in[1] = IMU_ACCEL_HP_MODE | IMU_GYRO_BW2;
+    data_in[1] = IMU_ACCEL_HP_MODE | IMU_GYRO_BW7;
     SPI_transfer(&CS_IMU_PORT, CS_IMU_PIN, data_in, data_out, sizeof(data_in));
     
     // Set accelerometer LPF to ODR/400
@@ -162,8 +160,6 @@ void Convert_Accel(){
     // -> Body x = Sensor x
     // -> Body y = -Sensor y
     // -> Body z = -Sensor z
-	static int16_t accel_max[3] = {0};
-    static int16_t accel_min[3] = {0};
     
     imu.accel_LSB[0] = (((int16_t)imu.accel_LSB_bytes[2])<<8) + ((int16_t)imu.accel_LSB_bytes[1]);
     imu.accel_LSB[1] = -(((int16_t)imu.accel_LSB_bytes[4])<<8) - ((int16_t)imu.accel_LSB_bytes[3]);
@@ -173,21 +169,6 @@ void Convert_Accel(){
     imu.acceleration[1] = ((double)imu.accel_LSB[1])*ACCEL_SENS;
     imu.acceleration[2] = ((double)imu.accel_LSB[2])*ACCEL_SENS;
     
-    for (uint8_t i = 0; i < 3; i++){
-		bool calculate_offset = false;
-		if (imu.accel_LSB[i] > accel_max[i]){
-			accel_max[i] = imu.accel_LSB[i];
-			calculate_offset = true;
-		}
-		else if (imu.accel_LSB[i] < accel_min[i]){
-			accel_min[i] = imu.accel_LSB[i];
-			calculate_offset = true;
-		}
-		if (calculate_offset){
-            imu.accel_bias_LSB[i] = (int32_t)accel_max[i] + (int32_t)accel_min[i];
-			imu.accel_bias_LSB[i] >>= 1;
-		}
-	}
 }
 
 void Convert_Gyro(){

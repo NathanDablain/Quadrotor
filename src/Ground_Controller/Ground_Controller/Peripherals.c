@@ -3,6 +3,7 @@
 volatile unsigned char g_ADC_Flag = 0;
 volatile unsigned char g_Button0_Flag = 0;
 volatile unsigned char g_Button1_Flag = 0;
+volatile unsigned char g_Button2_Flag = 0;
 volatile unsigned char g_Button_Read_Flag = 0;
 
 void Setup_ADC(){
@@ -21,6 +22,13 @@ void Setup_ADC(){
 void Setup_Buttons(){
 	PORTC_PIN1CTRL |= PORT_PULLUPEN_bm | PORT_ISC_FALLING_gc;
 	PORTC_PIN2CTRL |= PORT_PULLUPEN_bm | PORT_ISC_FALLING_gc;
+	PORTC_PIN3CTRL |= PORT_PULLUPEN_bm | PORT_ISC_FALLING_gc;
+}
+
+void Setup_LEDs(){
+	unsigned char pin = 7;
+	PORTD.DIR |= (1<<pin);
+	PORTD.OUT |= (0<<pin);
 }
 
 float Set_dial_window(Dial *dial){

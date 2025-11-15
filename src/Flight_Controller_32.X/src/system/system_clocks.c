@@ -1,4 +1,5 @@
 #include <xc.h>
+#include <limits.h>
 #include "system_clocks.h"
 #include "global_variables.h"
 
@@ -90,6 +91,16 @@ void Initialize_Clocks(){
     while (CLK9CONbits.OSWEN);
     while (!CLK9CONbits.CLKRDY);
     
+    // Clock 12 (CCP clock) settings
+    CLK12CONbits.NOSC = 3;
+    CLK12CONbits.BOSC = 2;
+    CLK12CONbits.FSCMEN = 1;
+    CLK12CONbits.ON = 1;
+    //Enable clock switching
+    CLK12CONbits.OSWEN = 1;
+    //Wait for clock switching complete
+    while (CLK12CONbits.OSWEN);
+    while (!CLK12CONbits.CLKRDY);
 }
 
 void Initialize_Timer1(){
@@ -104,10 +115,105 @@ void Initialize_Timer1(){
     IEC1bits.T1IE = 1;
     // Enable timer
     T1CONbits.ON = 1;
+    
+    // CCP1 setup (750kHz tick rate)
+    // Upper part will trigger the CCP interrupt at 416Hz
+    CCP1PRbits.PRH = 1802;
+    // Lower part will trigger the CCT interrupt at 20Hz
+    CCP1PRbits.PRL = 37500;
+    CCP1TMR = 0;
+    // Take CLKGEN12 as input
+    CCP1CON1bits.CLKSEL = 0b001;
+    // Enable interupt
+    IEC1bits.CCT1IE = 1;
+    IEC1bits.CCP1IE = 1;
+    // Set /16 prescalar, enable module
+    CCP1CON1bits.TMRPS = 0b10;
+    CCP1CON1bits.ON = 1;
+    
+    // CCP2 setup (6.25MHz tick rate)
+    // Upper part will trigger the CCP interrupt at 200Hz
+    CCP2PRbits.PRH = 31250;
+    // Lower part will trigger the CCT interrupt at 100Hz
+    CCP2PRbits.PRL = 62500;
+    CCP2TMR = 0;
+    // Enable interupt
+    IEC1bits.CCT2IE = 1;
+    IEC1bits.CCP2IE = 1;
+    // Set /16 prescalar, enable module
+    CCP2CON1bits.TMRPS = 0b10;
+    CCP2CON1bits.ON = 1;
+    
+    // CCP3 setup (1.5625MHz tick rate)
+    // Upper part will trigger the CCP interrupt at 75Hz
+    CCP3PRbits.PRH = 20833;
+    // Lower part will trigger the CCT interrupt at 50Hz
+    CCP3PRbits.PRL = 31250;
+    CCP3TMR = 0;
+    // Enable interupt
+    IEC1bits.CCT3IE = 1;
+    IEC1bits.CCP3IE = 1;
+    // Set /64 prescalar, enable module
+    CCP3CON1bits.TMRPS = 0b11;
+    CCP3CON1bits.ON = 1;
+    
+    // CCP4 setup (100MHz tick rate)
+    // Upper part will trigger the CCP interrupt at 3000Hz
+    CCP4PRbits.PRH = 33333;
+    CCP4TMR = 0;
+    // Enable interupt
+    IEC1bits.CCP4IE = 1;
+    // Enable module
+    CCP4CON1bits.ON = 1;
 }
 
 void _ISR _T1Interrupt(void){
     IFS1bits.T1IF = 0;
     ++g_seconds;
     TMR1 = 0;
+}
+
+void _ISR _CCT1Interrupt(void){
+    IFS1bits.CCT1IF = 0;
+    g_thrust_control_middle_flag = true;
+    g_moment_control_outer_flag = true;
+}
+
+void _ISR _CCP1Interrupt(void){
+    IFS1bits.CCP1IF = 0;
+    g_accel_sample_flag = true;
+    g_gyro_sample_flag = true;
+    g_barometer_filter_flag = true;
+}
+
+void _ISR _CCT2Interrupt(void){
+    IFS1bits.CCT2IF = 0;
+    g_ground_filter_update_flag = true;
+    g_magnetometer_sample_flag = true;
+}
+
+void _ISR _CCP2Interrupt(void){
+    IFS1bits.CCP2IF = 0;
+    g_lora_update_flag = true;
+    g_ground_filter_predict_flag = true;
+    g_air_filter_predict_flag = true;
+    g_altitude_filter_predict_flag = true;
+    g_thrust_control_inner_flag = true;
+    g_moment_control_inner_flag = true;
+}
+
+void _ISR _CCT3Interrupt(void){
+    IFS1bits.CCT3IF = 0;
+    g_air_filter_update_flag = true;
+}
+
+void _ISR _CCP3Interrupt(void){
+    IFS1bits.CCP3IF = 0;
+    g_altitude_filter_update_flag = true;
+    g_barometer_sample_flag = true;
+}
+
+void _ISR _CCP4Interrupt(void){
+    IFS1bits.CCP4IF = 0;
+    g_magnetometer_filter_flag = true;
 }

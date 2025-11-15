@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cmath>
 #include "Sim_Types.h"
+#include "Low_Pass_Filter.h"
 
 using namespace std;
 
@@ -16,14 +17,19 @@ class Motor{
         double w = 0.0;
         // Throttle command from ESC: 0 - 1000
         double throttle = 0.0;
+        double default_motor_bandwidth = 0.35/0.02;
+        Low_Pass_Filter speed_filter;
+        bool filter_initialized = false;
     public:
         // Propeller thrust constant in N/(rad/s)^2 
         double k_f;
         // Propeller torque constant in N-m/(rad/s)^2
         double k_t;
         // Constants that define linear fit of propeller speed to motor throttle
-        double Motor_slope;
-        double Motor_zero_offset;
+        double Motor_slope_l;
+        double Motor_zero_offset_l;
+        double Motor_slope_h;
+        double Motor_zero_offset_h;
         // Motor specific, found emperically, in throttle units of 0-1000
         uint16_t deadzone = 0; 
         // Throttle command will range from 0-100

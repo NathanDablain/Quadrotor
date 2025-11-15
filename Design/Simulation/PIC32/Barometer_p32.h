@@ -18,6 +18,7 @@ typedef struct{
     double pressure_pa;
     double height;
     double base_altitude;
+    double height_measurement;
     Time Last_Update;
 } BAR_Data;
 

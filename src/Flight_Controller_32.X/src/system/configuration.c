@@ -11,7 +11,7 @@
 #pragma config FICD_JTAGEN = OFF         // JTAG enable bit (JTAG is enabled)
 
 // FDEVOPT
-#pragma config FDEVOPT_ALTI2C1 = OFF    // Alternate I2C1 pins selection bit (Primary I2C1 pins are used)
+#pragma config FDEVOPT_ALTI2C1 = ON    // Alternate I2C1 pins selection bit (Alternate I2C1 pins are used)
 #pragma config FDEVOPT_ALTI2C2 = OFF    // Alternate I2C2 pins selection bit (Primary I2C2 pins are used)
 #pragma config FDEVOPT_BISTDIS = OFF    // Hardware RAM test disable bit (RAM test after reset is enabled)
 #pragma config FDEVOPT_SPI2PIN = OFF    // SPI2 peripheral pin selection disable bit (SPI2 pins are selected by peripheral pin selection feature)

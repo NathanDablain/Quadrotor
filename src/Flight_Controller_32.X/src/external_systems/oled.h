@@ -7,6 +7,16 @@ typedef struct{
     double dble[6];
 } Print_Buffer;
 
+typedef enum{
+    OLED_Standby,
+    OLED_Fail,
+    OLED_Ready,
+    OLED_Printing_Page0,
+    OLED_Printing_Page1,
+    OLED_Printing_Page2,
+    OLED_Printing_Page3
+} OLED_Machine;
+
 // Thanks to https://robotcantalk.blogspot.com/2015/03/interfacing-arduino-with-ssd1306-driven.html
 // 0x80 -> writes single command byte
 // 0x00 -> writes stream of command bytes
@@ -40,17 +50,21 @@ typedef struct{
 #define SSD_PAGE6 0xB6
 #define SSD_PAGE7 0xB7
 
-uint8_t Setup_OLED();
-	
+#define STANDARD_OLED_DELAY 100
+
+#define OLED_PAGE_LENGTH 128
+
+void Setup_OLED();
+
+void Run_OLED();
+
 uint8_t Write_Display(uint8_t Data_Byte);
 
 uint8_t Write_Display_Double(uint8_t Address_Byte, uint8_t Data_Byte);
 
-uint8_t Write_Character(char Character_to_write);
-
 uint8_t Clear_Display();
 
-uint8_t Print_Page(uint8_t page, char *to_print, uint8_t number);
+uint8_t Prep_Page(uint8_t page, char *to_print, uint8_t number);
 
 void Send_Pages();
 

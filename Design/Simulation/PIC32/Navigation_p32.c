@@ -12,9 +12,10 @@
 #include "Sim_Types.h"
 #include "Global_Variables_p32.h"
 #include "External_Interface.h"
+#include "Guidance_p32.h"
 
 // Flag to control whether to use the stack implementation of the kalman filters or the heap implementation
-static const bool Use_Heap_All = false ;
+static const bool Use_Heap_All = false;
 static const bool Use_Heap_Gnd = false;
 static const bool Use_Heap_Air = false;
 static const bool Use_Heap_Alt = false;
@@ -23,10 +24,8 @@ static Kalman_Filter *Ground_Filter;
 static Kalman_Filter *Air_Filter;
 static Kalman_Filter *Altitude_Filter;
 // In units of Hz
-static const double Gyro_ODR = 3330.0;
-static const double Gyro_ODR_2 = 57.706152185014034;
-static const double Accel_ODR = 1660.0;
-static const double Accel_ODR_2 = 40.743097574926725;
+static const double Gyro_ODR_2 = 20.0;//57.706152185014034;
+static const double Accel_ODR_2 = 20.0;//40.743097574926725;
 // Date sheet gives value of 5mdps/sqrt(ODR), convert to rad/s
 static const double Gyro_RMS_Noise = 0.005*Gyro_ODR_2*D2R;
 // Data sheet gives value of 60ug/sqrt(ODR), convert to g
@@ -53,7 +52,7 @@ static Ground_Filter_Covariance P_GF;
 static Air_Filter_Covariance P_AF;
 
 void Run_Ground_Filter(bool Initialize){
-    const Time Filter_Predict_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/3330};
+    const Time Filter_Predict_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/200};
     static Time Filter_Predict_Last;
     const Time Filter_Update_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/100};
     static Time Filter_Update_Last;
@@ -89,7 +88,7 @@ void Run_Ground_Filter(bool Initialize){
                 Ground_Filter->P->data[6][6] = 1.0;
                 Ground_Filter->P->data[7][7] = 1.0;
                 Ground_Filter->P->data[8][8] = 1.0;
-                double d_t = 1.0/Gyro_ODR;
+                double d_t = 1.0/200.0;//Gyro_ODR;
 
                 Ground_Filter->Q->data[0][0] = Gyro_RMS_Noise;
                 Ground_Filter->Q->data[1][1] = Gyro_RMS_Noise;
@@ -141,16 +140,17 @@ void Run_Ground_Filter(bool Initialize){
 }
 
 void Run_Air_Filter(bool Initialize){
-    const Time Filter_Predict_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/3330};
+    const Time Filter_Predict_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/200};
     static Time Filter_Predict_Last;
     const Time Filter_Update_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/50};
     static Time Filter_Update_Last;
+    bool Inhibit_Update = false;
     
     if (Initialize){
         // The accelerometer low pass filter was initially set with a BW of 1660/400 -> 4 Hz
-        // We need to raise this bandwidth above our filter update frequency of 100 Hz
+        // We need to raise this bandwidth above our filter update frequency of 50 Hz
         // Set to 1660/10 -> 166 Hz
-        e_accel_lpf_setting = 2;
+        e_accel_lpf_setting = 0;
         // The gyro BW was set to 153 Hz, disable lpf for flight 
         e_gyro_lpf_setting = 4;
         e_imu_settings_updated = true;
@@ -169,7 +169,7 @@ void Run_Air_Filter(bool Initialize){
             // Initialize process, state, and system covariances
             Air_Filter->P->data[2][2] = 0.1;
             Air_Filter->xhat->data[2][0] = 0.1;
-            double d_t = 1.0/Gyro_ODR;
+            double d_t = 1.0/200.0;//Gyro_ODR;
 
             // Grab initial euler angles from ground filter
             if (Use_Heap_Gnd || Use_Heap_All){
@@ -196,7 +196,7 @@ void Run_Air_Filter(bool Initialize){
             memset(&P_AF, 0, sizeof(P_AF));
 
             // Seed drag coefficient uncertainty so that it will converge faster
-            P_AF.P3_3 = 1.0;
+            P_AF.P3_3 = 0.1;
 
             // The initial conditions for the Euler angle estimates will be taken from the ground filter states
             if (Use_Heap_Gnd){
@@ -220,16 +220,20 @@ void Run_Air_Filter(bool Initialize){
 
     }
     else{
+        if (Get_Guidance_State() < Climbing){
+            Inhibit_Update = true;
+        }
+
         if (Compare_And_Update(Current_Time(), Filter_Predict_Rate, &Filter_Predict_Last)){
             if (Use_Heap_Air || Use_Heap_All){
-                Air_Filter_Predict();
+                Air_Filter_Predict(Inhibit_Update);
             }
             else {
-                Air_Filter_Predict_p32();
+                Air_Filter_Predict_p32(Inhibit_Update);
             }
         }
         // Run filter open loop when near the ground
-        if (Compare_And_Update(Current_Time(), Filter_Update_Rate, &Filter_Update_Last) && Altitude_Filter_data(0) > 0.5){
+        if (Compare_And_Update(Current_Time(), Filter_Update_Rate, &Filter_Update_Last) && !Inhibit_Update){
             if (Use_Heap_Air || Use_Heap_All){
                 Air_Filter_Update();
             }
@@ -244,7 +248,7 @@ void Run_Altitude_Filter(bool Initialize){
     // This filter estimates the drones height off the ground as well as the velocity
     // in the same direction. It takes accelerometer outputs as inputs and barometer
     // outputs as measurements
-    const Time Filter_Predict_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/1660};
+    const Time Filter_Predict_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/200};
     static Time Filter_Predict_Last;
     const Time Filter_Update_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/75};
     static Time Filter_Update_Last;
@@ -256,16 +260,16 @@ void Run_Altitude_Filter(bool Initialize){
             if (Altitude_Filter == NULL) return;
 
             Altitude_Filter->F->data[0][0] = 1.0;
-            Altitude_Filter->F->data[0][1] = 1.0/Accel_ODR;
+            Altitude_Filter->F->data[0][1] = 1.0/200.0;
             Altitude_Filter->F->data[1][1] = 1.0;
 
-            Altitude_Filter->B->data[1][0] = 1.0/Accel_ODR;
+            Altitude_Filter->B->data[1][0] = 1.0/200.0;
 
             Altitude_Filter->H->data[0][0] = 1.0;
 
-            Altitude_Filter->Q->data[1][1] =Accel_RMS_Noise*g_gravity*(1.0/Accel_ODR);
+            Altitude_Filter->Q->data[1][1] = 0.001*Accel_RMS_Noise*g_gravity*(1.0/200.0);
 
-            Altitude_Filter->R->data[0][0] = BAR_RMS_Noise;
+            Altitude_Filter->R->data[0][0] = 0.1*BAR_RMS_Noise;
         }
         else {
             memset(Altitude_Filter_xhat, 0, sizeof(Altitude_Filter_xhat));
@@ -323,7 +327,7 @@ void Ground_Filter_Predict(){
 }
 
 void Ground_Filter_Predict_p32(){
-    const double d_t = 1.0/Gyro_ODR;
+    const double d_t = 1.0/200.0;//Gyro_ODR;
     const double Process_Noise[9] = {Gyro_RMS_Noise, Gyro_RMS_Noise, Gyro_RMS_Noise,
                                      Gyro_Bias_Instability, Gyro_Bias_Instability, Gyro_Bias_Instability,
                                      Gyro_RMS_Noise * d_t, Gyro_RMS_Noise * d_t, Gyro_RMS_Noise * d_t};
@@ -339,7 +343,7 @@ void Ground_Filter_Predict_p32(){
     x_new[4] = Ground_Filter_xhat[4];
     x_new[5] = Ground_Filter_xhat[5];
     x_new[7] = Ground_Filter_xhat[7] + d_t*(Ground_Filter_xhat[1]*c_phi - Ground_Filter_xhat[2]*s_phi);
-    if (abs(Ground_Filter_xhat[8]) != M_PI/2.0){
+    if (fabs(Ground_Filter_xhat[8]) != M_PI/2.0){
         double t_theta = tan(Ground_Filter_xhat[7]);
         double c_theta = cos(Ground_Filter_xhat[7]);
         x_new[6] = Ground_Filter_xhat[6] + d_t*(Ground_Filter_xhat[0] + Ground_Filter_xhat[1]*s_phi*t_theta + Ground_Filter_xhat[2]*c_phi*t_theta); 
@@ -431,8 +435,8 @@ void Ground_Filter_Update(){
         measurement->data[1][0] = theta;
     }
 
-    double mag_x_NED = cos(theta)*Magnetometer_Field(0) + sin(phi)*sin(theta)*Magnetometer_Field(1) + cos(phi)*sin(theta)*Magnetometer_Field(2);
-    double mag_y_NED = cos(phi)*Magnetometer_Field(1) - sin(phi)*Magnetometer_Field(2);
+    double mag_x_NED = cos(theta)*Magnetometer_Filtered_Field(0) + sin(phi)*sin(theta)*Magnetometer_Filtered_Field(1) + cos(phi)*sin(theta)*Magnetometer_Filtered_Field(2);
+    double mag_y_NED = cos(phi)*Magnetometer_Filtered_Field(1) - sin(phi)*Magnetometer_Filtered_Field(2);
     measurement->data[2][0] = -atan2(mag_y_NED, mag_x_NED);
     if (isnan(measurement->data[2][0])){
         measurement->data[2][0] = Ground_Filter->xhat->data[8][0];
@@ -465,8 +469,8 @@ void Ground_Filter_Update_p32(){
         measurements[1] = theta;
     }
 
-    double mag_x_NED = cos(theta)*Magnetometer_Field(0) + s_phi*sin(theta)*Magnetometer_Field(1) + c_phi*sin(theta)*Magnetometer_Field(2);
-    double mag_y_NED = c_phi*Magnetometer_Field(1) - s_phi*Magnetometer_Field(2);
+    double mag_x_NED = cos(theta)*Magnetometer_Filtered_Field(0) + s_phi*sin(theta)*Magnetometer_Filtered_Field(1) + c_phi*sin(theta)*Magnetometer_Filtered_Field(2);
+    double mag_y_NED = c_phi*Magnetometer_Filtered_Field(1) - s_phi*Magnetometer_Filtered_Field(2);
     
     measurements[2] = -atan2(mag_y_NED, mag_x_NED);
     if (isnan(measurements[2])){
@@ -596,7 +600,7 @@ void Ground_Filter_Update_p32(){
 }
 
 void Ground_Filter_State_Transition(){
-    double d_t = 1.0/Gyro_ODR;
+    double d_t = 1.0/200.0;//Gyro_ODR;
     double phi = Ground_Filter->xhat->data[6][0];
     double theta = Ground_Filter->xhat->data[7][0];
     Ground_Filter->F->data[6][0] = d_t;
@@ -623,11 +627,11 @@ double Ground_Filter_data(uint8_t index){
 // is proportional to the product of the body translational rate and some drag constant mu
 // the accelerometers on the body x and y axes will measure this force and can be used to estimate 
 // mu, roll, and pitch
-void Air_Filter_Predict(){
+void Air_Filter_Predict(bool Inhibit_Update){
     // States are : u, v, mu, phi, theta, psi
     // Inputs are : p, q, r
     // Measurements are: (mu/m)*u, (mu/m)*v, psi
-    double d_t = 1.0/Gyro_ODR;
+    double d_t = 1.0/200.0;//Gyro_ODR;
     double phi = Air_Filter->xhat->data[3][0];
     double theta = Air_Filter->xhat->data[4][0];
     double p, q, r;
@@ -640,6 +644,10 @@ void Air_Filter_Predict(){
         p = IMU_Angular_Rate(0)*D2R - Ground_Filter_xhat[3];
         q = IMU_Angular_Rate(1)*D2R - Ground_Filter_xhat[4];
         r = IMU_Angular_Rate(2)*D2R - Ground_Filter_xhat[5];
+    }
+
+    if (Air_Filter->xhat->data[2][0] < MIN_MU){
+        Air_Filter->xhat->data[2][0] = MIN_MU;
     }
     // Perform nonlinear prediction
     Air_Filter_xdot[0] = -g_gravity*sin(theta) - (Air_Filter->xhat->data[2][0]*Air_Filter->xhat->data[0][0]/g_mass);
@@ -654,6 +662,9 @@ void Air_Filter_Predict(){
         Air_Filter_xdot_last2[i] = Air_Filter_xdot[i];
     }
 
+    if (Inhibit_Update){
+        return;
+    }
     // Update state transition matrix
     Air_Filter_State_Transition();
 
@@ -662,11 +673,11 @@ void Air_Filter_Predict(){
     assert(KF_Prediction_Status);
 }
 
-void Air_Filter_Predict_p32(){
-    const double d_t = 1.0/Gyro_ODR;
-    const double Process_Noise[3] = {0.1 * Gyro_RMS_Noise* (1.0/Gyro_ODR),
-                                     0.1 * Gyro_RMS_Noise* (1.0/Gyro_ODR),
-                                     0.1 * Gyro_RMS_Noise* (1.0/Gyro_ODR)};
+void Air_Filter_Predict_p32(bool Inhibit_Update){
+    const double d_t = 1.0/200.0;
+    const double Process_Noise[3] = {0.001 * Gyro_RMS_Noise * d_t,
+                                     0.001 * Gyro_RMS_Noise * d_t,
+                                     0.1 * Gyro_RMS_Noise * d_t};
     Air_Filter_Covariance P_new;
 
     double phi = Air_Filter_xhat[3];
@@ -684,6 +695,9 @@ void Air_Filter_Predict_p32(){
         r = IMU_Angular_Rate(2)*D2R - Ground_Filter_xhat[5];
     }
 
+    if (Air_Filter_xhat[2] < MIN_MU){
+        Air_Filter_xhat[2] = MIN_MU;
+    }
     // Perform nonlinear prediction
     Air_Filter_xdot[0] = -g_gravity*sin(theta) - (Air_Filter_xhat[2]*Air_Filter_xhat[0]/g_mass);
     Air_Filter_xdot[1] = g_gravity*sin(phi)*cos(theta) - (Air_Filter_xhat[2]*Air_Filter_xhat[1]/g_mass);
@@ -697,7 +711,10 @@ void Air_Filter_Predict_p32(){
         Air_Filter_xhat[i] += 0.5*d_t*(Air_Filter_xdot[i] + Air_Filter_xdot_last[i]);
         Air_Filter_xdot_last[i] = Air_Filter_xdot[i];
     }
-    
+
+    if (Inhibit_Update){
+        return;
+    }
     // Update state transition matrix 
     double u = Air_Filter_xhat[0];
     double v = Air_Filter_xhat[1];
@@ -755,8 +772,8 @@ void Air_Filter_Update(){
     measurement->data[0][0] = IMU_Acceleration(0)*g_gravity;
     measurement->data[1][0] = IMU_Acceleration(1)*g_gravity;
 
-    double mag_x_NED = cos(theta)*Magnetometer_Field(0) + sin(phi)*sin(theta)*Magnetometer_Field(1) + cos(phi)*sin(theta)*Magnetometer_Field(2);
-    double mag_y_NED = cos(phi)*Magnetometer_Field(1) - sin(phi)*Magnetometer_Field(2);
+    double mag_x_NED = cos(theta)*Magnetometer_Filtered_Field(0) + sin(phi)*sin(theta)*Magnetometer_Filtered_Field(1) + cos(phi)*sin(theta)*Magnetometer_Filtered_Field(2);
+    double mag_y_NED = cos(phi)*Magnetometer_Filtered_Field(1) - sin(phi)*Magnetometer_Filtered_Field(2);
     measurement->data[2][0] = -atan2(mag_y_NED, mag_x_NED);
     if (isnan(measurement->data[2][0])){
         measurement->data[2][0] = Air_Filter->xhat->data[5][0];
@@ -778,10 +795,19 @@ void Air_Filter_Update(){
     predicted_measurement->data[1][0] = -(mu*v)/g_mass;
     predicted_measurement->data[2][0] = Air_Filter->xhat->data[5][0];
 
-    // Update state and covariances with measurement
-    Update_EKF(Air_Filter, measurement, predicted_measurement);
+    Matrix *measurement_error = Mat_Sub(measurement, predicted_measurement, 3);
+    // This accounts for jump from -pi -> pi in atan2 function
+    if (measurement_error->data[2][0] > M_PI){
+        measurement_error->data[2][0] -= (2.0*M_PI);
+    }
+    else if (measurement_error->data[2][0] < -M_PI){
+        measurement_error->data[2][0] += (2.0*M_PI);
+    }
 
-    Mat_Destructor(measurement);
+    // Update state and covariances with measurement
+    Update_EKF(Air_Filter, measurement_error);
+
+    Mat_Destructor(measurement_error);
 }
 
 void Air_Filter_Update_p32(){
@@ -800,8 +826,8 @@ void Air_Filter_Update_p32(){
     measurement[0] = IMU_Acceleration(0)*g_gravity;
     measurement[1] = IMU_Acceleration(1)*g_gravity;
     
-    double mag_x_NED = cos(theta)*Magnetometer_Field(0) + sin(phi)*sin(theta)*Magnetometer_Field(1) + cos(phi)*sin(theta)*Magnetometer_Field(2);
-    double mag_y_NED = cos(phi)*Magnetometer_Field(1) - sin(phi)*Magnetometer_Field(2);
+    double mag_x_NED = cos(theta)*Magnetometer_Filtered_Field(0) + sin(phi)*sin(theta)*Magnetometer_Filtered_Field(1) + cos(phi)*sin(theta)*Magnetometer_Filtered_Field(2);
+    double mag_y_NED = cos(phi)*Magnetometer_Filtered_Field(1) - sin(phi)*Magnetometer_Filtered_Field(2);
     
     measurement[2] = -atan2(mag_y_NED, mag_x_NED);
     if (isnan(measurement[2])){
@@ -813,7 +839,13 @@ void Air_Filter_Update_p32(){
         measurement[1] + ((mu*v)/g_mass),
         measurement[2] - Air_Filter_xhat[5]
     };
-
+    // This accounts for jump from -pi -> pi in atan2 function
+    if (ybar[2] > M_PI){
+        ybar[2] -= (2.0*M_PI);
+    }
+    else if (ybar[2] < -M_PI){
+        ybar[2] += (2.0*M_PI);
+    }
     // Update measurement matrix
     double c1 = -mu/g_mass;
     double c2 = -u/g_mass;
@@ -900,7 +932,7 @@ void Air_Filter_Update_p32(){
 }
 
 void Air_Filter_State_Transition(){
-    double d_t = 1.0/Gyro_ODR;
+    double d_t = 1.0/200.0;//Gyro_ODR;
     double u = Air_Filter->xhat->data[0][0];
     double v = Air_Filter->xhat->data[1][0];
     double mu = Air_Filter->xhat->data[2][0];
@@ -954,7 +986,7 @@ void Altitude_Filter_Update(){
 }
 
 void Altitude_Filter_Predict_p32(){
-    const double d_t = 1.0/Accel_ODR;
+    const double d_t = 1.0/200.0;
     double Altitude_Filter_xdot[2];
     double phi = Air_Filter_data(3);
     double theta = Air_Filter_data(4);
@@ -971,7 +1003,7 @@ void Altitude_Filter_Predict_p32(){
 
 void Altitude_Filter_Update_p32(){
     // Kalman gain 
-    const double K[2] = {0.0398, 0.0701};
+    const double K[2] = {0.011971, 0.005376};
 
     double ybar = Barometer_Altitude() - Altitude_Filter_xhat[0];
     Altitude_Filter_xhat[0] += K[0]*ybar;

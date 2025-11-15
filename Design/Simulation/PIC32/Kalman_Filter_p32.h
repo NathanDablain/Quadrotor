@@ -27,6 +27,6 @@ bool Predict_EKF(Kalman_Filter *filter);
 
 bool Update(Kalman_Filter *filter, Matrix *measurement);
 
-bool Update_EKF(Kalman_Filter *filter, Matrix *measurement, Matrix *predicted_measurement);
+bool Update_EKF(Kalman_Filter *filter, Matrix *measurement_error);
 
 #endif

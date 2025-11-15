@@ -1,16 +1,28 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include "Magnetometer_p32.h"
 #include "Global_Variables_p32.h"
 #include "External_Interface.h"
+#include "Butterworth_Filter_p32.h"
 
 static Mag_Machine state;
 static Mag_Data mag = {0};
+static BW_Filter_Data BW_Filter[3];
+static Time Last_Filter;
+const int32_t Filter_Rate_Hz = 3000;
 
 void Initialize_Mag(){
     memset(&mag, 0, sizeof(mag));
+    memset(&Last_Filter, 0, sizeof(Last_Filter));
+    Initialize_BW_Filter(&BW_Filter[0], 1.0/((double)Filter_Rate_Hz));
+    Initialize_BW_Filter(&BW_Filter[1], 1.0/((double)Filter_Rate_Hz));
+    Initialize_BW_Filter(&BW_Filter[2], 1.0/((double)Filter_Rate_Hz));
+    BW_Filter[0].w_c = 2.0;
+    BW_Filter[1].w_c = 2.0;
+    BW_Filter[2].w_c = 2.0;
     mag.mag_field_min_LSB[0] = INT16_MAX;
     mag.mag_field_min_LSB[1] = INT16_MAX;
     mag.mag_field_min_LSB[2] = INT16_MAX;
@@ -26,6 +38,7 @@ void Initialize_Mag(){
 void Run_Magnetometer_Machine(){
     const int32_t ODR_Hz = 100;
     const Time Sample_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/ODR_Hz};
+    const Time Filter_Rate = {.seconds = 0, .tmr1_count = g_tmr1_ct_in_s/Filter_Rate_Hz};
     bool Hard_iron_cal = false;
     bool Soft_iron_cal = false;
     
@@ -42,6 +55,28 @@ void Run_Magnetometer_Machine(){
            if (Compare_And_Update(Current_Time(), Sample_Rate, &mag.Last_Update)){
                state = Mag_Reading;
            }
+            if (g_Flight_Controller_Status == System_Calibration){
+                if (Compare_And_Update(Current_Time(), Filter_Rate, &Last_Filter)){
+                    for (uint8_t i = 0; i < 3; i++){
+                        BW_Filter[i].u = mag.field[i];
+                        mag.field_filtered[i] = Run_BW_Filter(&BW_Filter[i]);
+                    }
+                }
+            }
+            else if (g_Flight_Controller_Status > System_Calibration){
+                BW_Filter[0].w_c = 30.0;
+                BW_Filter[1].w_c = 30.0;
+                BW_Filter[2].w_c = 30.0;
+                if (Compare_And_Update(Current_Time(), Filter_Rate, &Last_Filter)){
+                    for (uint8_t i = 0; i < 3; i++){
+                        BW_Filter[i].u = mag.field[i];
+                        mag.field_filtered[i] = Run_BW_Filter(&BW_Filter[i]);
+                    }
+                }
+            }
+            else{
+                memcpy(&mag.field_filtered, &mag.field, sizeof(mag.field_filtered));
+            }
            break;
        case Mag_Reading:
             Convert_Magnetometer();
@@ -53,7 +88,14 @@ void Run_Magnetometer_Machine(){
             }
             Compensate_Magnetometer_Reading(Soft_iron_cal);
 
-            state = Mag_Ready;
+            // if(g_Flight_Controller_Status < Flying){
+            //     Magnetometer_LPF(0);
+            // }
+            // else {
+            //     Magnetometer_LPF(1);
+            // }
+
+           state = Mag_Ready;
            break;
     }
 }
@@ -180,6 +222,30 @@ void Compensate_Magnetometer_Reading(bool Soft_iron_cal){
 
 }
 
+void Magnetometer_LPF(uint8_t setting){
+    double c1;
+    double c2;
+    
+    if (setting == 0){
+        c1 = 0.995;
+        c2 = 1.0 - c1;
+        mag.field_filtered[0] = mag.field_filtered[0]*c1 + mag.field[0]*c2;
+        mag.field_filtered[1] = mag.field_filtered[1]*c1 + mag.field[1]*c2;
+        mag.field_filtered[2] = mag.field_filtered[2]*c1 + mag.field[2]*c2;
+    }
+    else if (setting == 1){
+        c1 = 0.75;
+        c2 = 1.0 - c1;
+        mag.field_filtered[0] = mag.field_filtered[0]*c1 + mag.field[0]*c2;
+        mag.field_filtered[1] = mag.field_filtered[1]*c1 + mag.field[1]*c2;
+        mag.field_filtered[2] = mag.field_filtered[2]*c1 + mag.field[2]*c2;
+    }
+}
+
 double Magnetometer_Field(uint8_t index){
     return mag.field[index];
+}
+
+double Magnetometer_Filtered_Field(uint8_t index){
+    return mag.field_filtered[index];
 }

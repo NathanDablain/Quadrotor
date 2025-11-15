@@ -50,7 +50,7 @@ class IMU{
         //---------------------------------------//
         //--LSM6DS3TR Accelerometer Parameters---//
         // Range of accel measurements in +-mg
-        const double accel_range = 2.0*1000.0;
+        const double accel_range = 1.998*1000.0;//2.0*1000.0;
         // Accel noise RMS is defined as 90ug/sqrt(Hz) -> 0.09 mg/sqrt(Hz)
         double accel_noise_rms;
         // Sensitivity is in units of mg/LSB

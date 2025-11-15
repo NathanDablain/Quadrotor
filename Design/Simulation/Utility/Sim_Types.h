@@ -27,35 +27,6 @@ struct States{
     double Position_ECEF[3];
 };
 
-struct Reference{
-	float Position_NED[3];
-	float Euler[3];
-};
-struct Calibration_Data{
-	// bar_cal_status -> flag with state of calibration, 0: uncalibrated, 1:ready
-	// altitude_bias -> offset to apply against bar reading, either from ground controller or last good reading
-	uint8_t bar_cal_status;
-	float altitude_bias;
-	// imu_cal_status -> flag with state of calibration, 0: uncalibrated, 1: ready
-	// w_bias -> constant offset along each gyro axis in LSB
-	uint8_t imu_cal_status;
-	int16_t w_bias[3];
-	// Magnetometer cal data
-	// mag_cal_status -> flag with state of calibration, 0: uncalibrated, 1: partial calibration, 2: ready
-	// m_max -> max magnetic field recorded along each axis
-	// m_min -> min magnetic field recorded along each axis
-	// hard_iron -> offset incurred by nearby hard iron sources, shifts local field off 0 mean
-	uint8_t mag_cal_status;
-	int16_t m_max[3];
-	int16_t m_min[3];
-	int16_t hard_iron[3];
-	// GPS cal data
-	// gps_cal_status -> flag with state of calibration, 0: uncalibrated, 1: ready
-	// Reference_Position_ecef -> Earth Centered Earth Fixed coordinates of initial reference position which NED offset is based on
-	uint8_t gps_cal_status;
-	float Reference_Position_ecef[3];
-};
-
 typedef enum{
 	// Drone systems initialized, awaiting calibration
 	Standby,
@@ -72,23 +43,6 @@ typedef enum{
 	// This type is obviously only for simulation purposes...
 	Crashed
 }FC_Status;
-
-typedef enum{
-	// Drone systems initialized, awaiting calibration
-	Standby_p32,
-	// Drone systems are being calibrated by the user, involves rotating drone body
-	User_Calibration_p32,
-	// Drone systems are performing automatic pre flight calibration, drone should be in position
-	System_Calibration_p32,
-	// Drone systems are calibrated, ready to fly
-	Ready_p32,
-	// Drone is flying, responding to commands and under autopilot control
-	Flying_p32,
-	// Drone is following landing procedure, will automatically proceed to ready once complete
-	Landing_p32,
-	// This type is obviously only for simulation purposes...
-	Crashed_p32
-}FC_Status_p32;
 
 struct Uplink{
 	FC_Status Drone_status;
@@ -115,8 +69,10 @@ struct Monte_Carlo_Data{
 	double inertia_xz;
 	double inertia_yz;
     uint16_t Motor_deadzone[4];
-	double Motor_zero_offset;
-	double Motor_slope;
+	double Motor_zero_offset_l;
+	double Motor_slope_l;
+	double Motor_zero_offset_h;
+	double Motor_slope_h;
 	double Propeller_force_constant;
 	double Propeller_torque_constant;
     double Propeller_mu;
